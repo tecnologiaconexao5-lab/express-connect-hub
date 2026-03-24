@@ -11,9 +11,10 @@ interface Props {
   description: string;
   icon: LucideIcon;
   subModules: SubModule[];
+  onSubModuleClick?: (title: string) => void;
 }
 
-const PlaceholderPage = ({ title, description, icon: Icon, subModules }: Props) => {
+const PlaceholderPage = ({ title, description, icon: Icon, subModules, onSubModuleClick }: Props) => {
   return (
     <div className="animate-fade-in max-w-6xl mx-auto">
       {/* Header */}
@@ -32,7 +33,8 @@ const PlaceholderPage = ({ title, description, icon: Icon, subModules }: Props) 
         {subModules.map((sub) => (
           <div
             key={sub.title}
-            className="bg-card rounded-xl border border-border p-5 hover:shadow-md transition-shadow"
+            className={`bg-card rounded-xl border border-border p-5 hover:shadow-md transition-shadow ${onSubModuleClick ? "cursor-pointer" : ""}`}
+            onClick={() => onSubModuleClick?.(sub.title)}
           >
             <div className="flex items-start justify-between mb-3">
               <h3 className="font-semibold text-foreground">{sub.title}</h3>
