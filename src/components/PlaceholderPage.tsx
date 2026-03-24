@@ -11,6 +11,7 @@ interface Props {
   description: string;
   icon: LucideIcon;
   subModules: SubModule[];
+  onSubModuleClick?: (title: string) => void;
 }
 
 const PlaceholderPage = ({ title, description, icon: Icon, subModules }: Props) => {
