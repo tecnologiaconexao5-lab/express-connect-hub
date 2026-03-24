@@ -14,7 +14,7 @@ interface Props {
   onSubModuleClick?: (title: string) => void;
 }
 
-const PlaceholderPage = ({ title, description, icon: Icon, subModules }: Props) => {
+const PlaceholderPage = ({ title, description, icon: Icon, subModules, onSubModuleClick }: Props) => {
   return (
     <div className="animate-fade-in max-w-6xl mx-auto">
       {/* Header */}
