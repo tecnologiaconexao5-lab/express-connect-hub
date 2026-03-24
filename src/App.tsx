@@ -10,6 +10,7 @@ import TorreControle from "@/pages/TorreControle";
 import Comercial from "@/pages/Comercial";
 import Operacao from "@/pages/Operacao";
 import Cadastros from "@/pages/Cadastros";
+import CadastrosPrestadores from "@/pages/CadastrosPrestadores";
 import Financeiro from "@/pages/Financeiro";
 import Fiscal from "@/pages/Fiscal";
 import Frota from "@/pages/Frota";
