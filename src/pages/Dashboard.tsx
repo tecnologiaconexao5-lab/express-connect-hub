@@ -1,18 +1,39 @@
 import { LayoutDashboard } from "lucide-react";
-import PlaceholderPage from "@/components/PlaceholderPage";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import DashboardTopbar from "@/components/dashboard/DashboardTopbar";
+import TabExecutivo from "@/components/dashboard/TabExecutivo";
+import TabOperacional from "@/components/dashboard/TabOperacional";
+import TabComercial from "@/components/dashboard/TabComercial";
+import TabFinanceiro from "@/components/dashboard/TabFinanceiro";
+import TabAlertas from "@/components/dashboard/TabAlertas";
 
 const Dashboard = () => (
-  <PlaceholderPage
-    title="Dashboard"
-    description="Visão consolidada de indicadores estratégicos, operacionais, comerciais e financeiros da operação logística."
-    icon={LayoutDashboard}
-    subModules={[
-      { title: "Executivo", description: "KPIs de alto nível com receita, margem, volume e tendências para tomada de decisão estratégica.", status: "development" },
-      { title: "Operacional", description: "Monitoramento em tempo real de entregas, coletas, ocorrências e performance operacional.", status: "development" },
-      { title: "Comercial", description: "Pipeline de vendas, conversão de orçamentos, novos clientes e ticket médio.", status: "development" },
-      { title: "Financeiro", description: "Fluxo de caixa, faturamento, inadimplência e indicadores de rentabilidade.", status: "development" },
-      { title: "Alertas", description: "Central de alertas críticos com notificações de SLA, atrasos e pendências.", status: "integration" },
-    ]}
-  />
+  <div className="animate-fade-in">
+    <div className="flex items-center gap-3 mb-4">
+      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+        <LayoutDashboard className="w-5 h-5 text-primary" />
+      </div>
+      <h1 className="text-2xl font-bold">Dashboard</h1>
+    </div>
+
+    <DashboardTopbar />
+
+    <Tabs defaultValue="executivo" className="w-full">
+      <TabsList className="mb-4 bg-muted/60">
+        <TabsTrigger value="executivo">Executivo</TabsTrigger>
+        <TabsTrigger value="operacional">Operacional</TabsTrigger>
+        <TabsTrigger value="comercial">Comercial</TabsTrigger>
+        <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
+        <TabsTrigger value="alertas">Alertas</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="executivo"><TabExecutivo /></TabsContent>
+      <TabsContent value="operacional"><TabOperacional /></TabsContent>
+      <TabsContent value="comercial"><TabComercial /></TabsContent>
+      <TabsContent value="financeiro"><TabFinanceiro /></TabsContent>
+      <TabsContent value="alertas"><TabAlertas /></TabsContent>
+    </Tabs>
+  </div>
 );
+
 export default Dashboard;
