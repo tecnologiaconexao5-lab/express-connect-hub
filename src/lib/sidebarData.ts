@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Radio, Briefcase, ClipboardList, Database,
+  LayoutDashboard, Network, Radio, Briefcase, ClipboardList, Database,
   DollarSign, FileText, Car, FileSignature, Award, ShieldCheck,
   BarChart3, Users, Smartphone, Settings, UserPlus, Library, LucideIcon, Sparkles,
 } from "lucide-react";
@@ -161,6 +161,17 @@ export const sidebarItems: SidebarItem[] = [
       { title: "Histórico", path: "/governanca?tab=historico" },
       { title: "Permissões", path: "/governanca?tab=permissoes" },
       { title: "LGPD", path: "/governanca?tab=lgpd" },
+    ],
+  },
+  {
+    title: "API e Integrações",
+    icon: Network,
+    path: "/monitor-api",
+    children: [
+      { title: "Monitor Core", path: "/monitor-api?tab=monitor" },
+      { title: "SEFAZ Nacional", path: "/monitor-api?tab=sefaz" },
+      { title: "ANTT / CIOT", path: "/monitor-api?tab=ciot" },
+      { title: "Prefeituras NFSe", path: "/monitor-api?tab=nfse" },
     ],
   },
   {
