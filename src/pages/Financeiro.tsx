@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
+import SegurosFinanceiro from "@/components/financeiro/SegurosFinanceiro";
+import ContabilidadeFinanceiro from "@/components/financeiro/ContabilidadeFinanceiro";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -99,6 +101,8 @@ export default function Financeiro() {
            <TabsTrigger value="pagar" className="data-[state=active]:bg-muted"><ArrowUpRight className="w-4 h-4 mr-2"/> Contas a Pagar</TabsTrigger>
            <TabsTrigger value="fluxo" className="data-[state=active]:bg-muted"><TrendingUp className="w-4 h-4 mr-2"/> Fluxo de Caixa</TabsTrigger>
            <TabsTrigger value="dre" className="data-[state=active]:bg-muted"><PieChart className="w-4 h-4 mr-2"/> DRE Simplificado</TabsTrigger>
+           <TabsTrigger value="seguros" className="data-[state=active]:bg-muted"><DollarSign className="w-4 h-4 mr-2"/> Seguros</TabsTrigger>
+           <TabsTrigger value="contabilidade" className="data-[state=active]:bg-muted"><DollarSign className="w-4 h-4 mr-2"/> Contabilidade</TabsTrigger>
         </TabsList>
 
         {/* --- CONTAS A RECEBER --- */}
@@ -280,6 +284,16 @@ export default function Financeiro() {
               </Card>
 
            </div>
+        </TabsContent>
+
+        {/* --- SEGUROS --- */}
+        <TabsContent value="seguros" className="pt-4">
+           <SegurosFinanceiro />
+        </TabsContent>
+
+        {/* --- CONTABILIDADE --- */}
+        <TabsContent value="contabilidade" className="pt-4">
+           <ContabilidadeFinanceiro />
         </TabsContent>
 
       </Tabs>
