@@ -112,6 +112,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
           <TabsTrigger value="carga" className="text-xs"><Package className="w-3 h-3 mr-1" />Carga</TabsTrigger>
           <TabsTrigger value="veiculo" className="text-xs"><Truck className="w-3 h-3 mr-1" />Veículo</TabsTrigger>
           <TabsTrigger value="valores" className="text-xs"><DollarSign className="w-3 h-3 mr-1" />Valores</TabsTrigger>
+          <TabsTrigger value="documentos" className="text-xs"><FileDown className="w-3 h-3 mr-1" />Docs e PDF</TabsTrigger>
           <TabsTrigger value="historico" className="text-xs">Histórico</TabsTrigger>
         </TabsList>
 
@@ -341,6 +342,44 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* DOCUMENTOS E PDF */}
+        <TabsContent value="documentos">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm text-primary">Documentos Anexos e Geração de Proposta</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="border border-dashed rounded-lg p-10 flex flex-col items-center justify-center text-center text-muted-foreground bg-muted/10">
+                 <FileDown className="w-8 h-8 opacity-50 mb-2" />
+                 <p className="text-sm font-medium">Nenhum anexo encontrado.</p>
+                 <p className="text-xs">Faça upload de cotações, fotos da carga ou referências aqui.</p>
+                 {!readOnly && <Button variant="outline" size="sm" className="mt-4">Anexar Arquivo</Button>}
+              </div>
+              
+              <div className="flex gap-4 p-4 bg-orange-50/50 rounded-lg border border-orange-100 flex-wrap">
+                 <Button onClick={() => gerarPdfOrcamento(data)} className="bg-orange-500 hover:bg-orange-600 text-white gap-2"><FileDown className="w-4 h-4"/> Gerar PDF (Proposta Comercial)</Button>
+                 <Button variant="outline" onClick={() => window.print()}>Imprimir</Button>
+                 <Button variant="outline" className="text-primary hover:text-primary/80" onClick={handleSalvar}>Duplicar</Button>
+                 
+                 <div className="flex-1 min-w-[200px] flex gap-2 justify-end">
+                    {data.status === "enviado" || data.status === "em_analise" ? (
+                      <>
+                        <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => { update("status", "aprovado"); handleSalvar(); }}>Aprovar</Button>
+                        <Button variant="destructive" onClick={() => { update("status", "reprovado"); handleSalvar(); }}>Reprovar</Button>
+                      </>
+                    ) : (data.status === "aprovado" ? (
+                        <Button className="bg-purple-600 hover:bg-purple-700 text-white gap-2"><Truck className="w-4 h-4"/> Converter em OS</Button>
+                    ) : null)}
+                 </div>
+              </div>
+              
+              <Field label="Observações Finais e Condicionantes">
+                <Textarea rows={3} value={data.observacoesGerais} onChange={(e) => update("observacoesGerais", e.target.value)} readOnly={readOnly} />
+              </Field>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* HISTÓRICO */}

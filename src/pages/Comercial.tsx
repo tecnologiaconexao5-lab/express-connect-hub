@@ -3,6 +3,7 @@ import { Briefcase, Users, Calculator, BarChart3 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PlaceholderPage from "@/components/PlaceholderPage";
 import OrcamentosLista from "@/components/comercial/OrcamentosLista";
+import TabelasValoresLista from "@/components/comercial/TabelasValoresLista";
 
 const Comercial = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -43,15 +44,7 @@ const Comercial = () => {
         </TabsContent>
 
         <TabsContent value="tabela">
-          <PlaceholderPage
-            title="Tabela de Valores"
-            description="Gestão de tabelas de preço por região, tipo de serviço e faixa de peso."
-            icon={Calculator}
-            subModules={[
-              { title: "Tabelas Vigentes", description: "Consulta e edição de tabelas de preço ativas.", status: "development" },
-              { title: "Histórico", description: "Versões anteriores e comparativo de valores.", status: "development" },
-            ]}
-          />
+          <TabelasValoresLista />
         </TabsContent>
 
         <TabsContent value="simulador">
