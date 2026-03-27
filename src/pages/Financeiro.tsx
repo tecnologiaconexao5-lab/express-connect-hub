@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { DollarSign, ArrowDownRight, ArrowUpRight, TrendingUp, Download, PieChart, Plus, Search } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Download, UploadCloud, PieChart, CheckCircle2, MoreHorizontal, FileText, Target, UserMinus, ShieldCheck, CreditCard, ArrowRightLeft, Plus, Search } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
 import SegurosFinanceiro from "@/components/financeiro/SegurosFinanceiro";
 import ContabilidadeFinanceiro from "@/components/financeiro/ContabilidadeFinanceiro";
+import PagamentoCNAB from "@/components/financeiro/PagamentoCNAB";
+import PendenciasCadastro from "@/components/financeiro/PendenciasCadastro";
+import Inadimplencia from "@/components/financeiro/Inadimplencia";
+import ConciliacaoAvancada from "@/components/financeiro/ConciliacaoAvancada";
+import MargemOperacional from "@/components/financeiro/MargemOperacional";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -91,16 +96,25 @@ export default function Financeiro() {
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <DollarSign className="w-8 h-8 text-primary" /> Financeiro e Rentabilidade
           </h1>
-          <p className="text-muted-foreground">Gestão unificada de contas, caixa e DRE.</p>
+          <p className="text-muted-foreground">Visão geral e controle do dinheiro do Hub.</p>
+        </div>
+        <div className="flex gap-2">
+           <Badge variant="destructive" className="bg-red-600 font-bold px-3 shadow animate-pulse">2 Cadastros Pendentes! (Auditoria)</Badge>
         </div>
       </div>
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full">
+        <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full mb-4">
            <TabsTrigger value="receber" className="data-[state=active]:bg-muted"><ArrowDownRight className="w-4 h-4 mr-2"/> Contas a Receber</TabsTrigger>
            <TabsTrigger value="pagar" className="data-[state=active]:bg-muted"><ArrowUpRight className="w-4 h-4 mr-2"/> Contas a Pagar</TabsTrigger>
            <TabsTrigger value="fluxo" className="data-[state=active]:bg-muted"><TrendingUp className="w-4 h-4 mr-2"/> Fluxo de Caixa</TabsTrigger>
-           <TabsTrigger value="dre" className="data-[state=active]:bg-muted"><PieChart className="w-4 h-4 mr-2"/> DRE Simplificado</TabsTrigger>
+           <TabsTrigger value="lotes" className="data-[state=active]:bg-muted"><CreditCard className="w-4 h-4 mr-2"/> Pagamentos (CNAB)</TabsTrigger>
+           <TabsTrigger value="pendencias" className="data-[state=active]:bg-muted"><ShieldCheck className="w-4 h-4 mr-2 text-red-500"/> Pendenc. Cadastro</TabsTrigger>
+           
+           <TabsTrigger value="inadimplencia" className="data-[state=active]:bg-muted"><UserMinus className="w-4 h-4 mr-2"/> Inadimplência</TabsTrigger>
+           <TabsTrigger value="conciliacao" className="data-[state=active]:bg-muted"><ArrowRightLeft className="w-4 h-4 mr-2"/> Conciliação</TabsTrigger>
+           <TabsTrigger value="margem" className="data-[state=active]:bg-muted"><Target className="w-4 h-4 mr-2"/> Margem (DRE)</TabsTrigger>
+           
            <TabsTrigger value="seguros" className="data-[state=active]:bg-muted"><DollarSign className="w-4 h-4 mr-2"/> Seguros</TabsTrigger>
            <TabsTrigger value="contabilidade" className="data-[state=active]:bg-muted"><DollarSign className="w-4 h-4 mr-2"/> Contabilidade</TabsTrigger>
         </TabsList>
@@ -231,6 +245,8 @@ export default function Financeiro() {
         </TabsContent>
 
         {/* --- DRE SIMPLIFICADO --- */}
+        {/* This section was replaced by MargemOperacional */}
+        {/*
         <TabsContent value="dre" className="space-y-4 pt-4">
            <div className="flex justify-between items-center mb-6">
               <Select defaultValue="10/2026">
@@ -285,6 +301,12 @@ export default function Financeiro() {
 
            </div>
         </TabsContent>
+        */}
+
+        {/* --- DRE --- / substituido por Margem */}
+        <TabsContent value="margem" className="pt-4">
+           <MargemOperacional />
+        </TabsContent>
 
         {/* --- SEGUROS --- */}
         <TabsContent value="seguros" className="pt-4">
@@ -294,6 +316,23 @@ export default function Financeiro() {
         {/* --- CONTABILIDADE --- */}
         <TabsContent value="contabilidade" className="pt-4">
            <ContabilidadeFinanceiro />
+        </TabsContent>
+
+        {/* --- NOVOS MODULOS --- */}
+        <TabsContent value="lotes" className="pt-4">
+           <PagamentoCNAB />
+        </TabsContent>
+
+        <TabsContent value="pendencias" className="pt-4">
+           <PendenciasCadastro />
+        </TabsContent>
+
+        <TabsContent value="inadimplencia" className="pt-4">
+           <Inadimplencia />
+        </TabsContent>
+
+        <TabsContent value="conciliacao" className="pt-4">
+           <ConciliacaoAvancada />
         </TabsContent>
 
       </Tabs>
