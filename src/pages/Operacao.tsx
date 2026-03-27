@@ -4,6 +4,11 @@ import { ClipboardList, Calendar, MapPin, Truck, AlertTriangle, FileCheck, Arrow
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PlaceholderPage from "@/components/PlaceholderPage";
 import OrdensServicoLista from "@/components/operacao/OrdensServicoLista";
+import OcorrenciasLista from "@/components/operacao/OcorrenciasLista";
+import EscalaLista from "@/components/operacao/EscalaLista";
+import PodLista from "@/components/operacao/PodLista";
+import RoteirizacaoLista from "@/components/operacao/RoteirizacaoLista";
+import { Route as MapIconSolid } from "lucide-react";
 
 const Operacao = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -33,23 +38,27 @@ const Operacao = () => {
           </TabsTrigger>
           <TabsTrigger value="escala" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
             <Calendar className="w-4 h-4 mr-2" />
-            Escala
+            Escala Operacional
+          </TabsTrigger>
+          <TabsTrigger value="roteirizacao" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
+            <MapIconSolid className="w-4 h-4 mr-2" />
+            Roteirizador Web
           </TabsTrigger>
           <TabsTrigger value="ocorrencias" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
             <AlertTriangle className="w-4 h-4 mr-2" />
-            Ocorrências
+            Ocorrências Rastreio
           </TabsTrigger>
           <TabsTrigger value="pod" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
             <FileCheck className="w-4 h-4 mr-2" />
-            Comprovantes / POD
+            Baixas e Evidências
           </TabsTrigger>
           <TabsTrigger value="devolucoes" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
             <RotateCcw className="w-4 h-4 mr-2" />
-            Devoluções
+            Logística Reversa
           </TabsTrigger>
           <TabsTrigger value="reentregas" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary">
             <ArrowRightLeft className="w-4 h-4 mr-2" />
-            Reentregas
+            Reentregas Aprovadas
           </TabsTrigger>
         </TabsList>
 
@@ -58,30 +67,19 @@ const Operacao = () => {
         </TabsContent>
 
         <TabsContent value="escala">
-          <PlaceholderPage
-            title="Escala e Roteirização"
-            description="Distribuição inteligente de frotas e parceiros rodoviários."
-            icon={Calendar}
-            subModules={[]}
-          />
+          <EscalaLista />
+        </TabsContent>
+
+        <TabsContent value="roteirizacao">
+          <RoteirizacaoLista />
         </TabsContent>
 
         <TabsContent value="ocorrencias">
-          <PlaceholderPage
-            title="Ocorrências"
-            description="Tratamento e mediação de anomalias no fluxo de entregas."
-            icon={AlertTriangle}
-            subModules={[]}
-          />
+          <OcorrenciasLista />
         </TabsContent>
 
         <TabsContent value="pod">
-          <PlaceholderPage
-            title="Comprovantes de Entrega (POD)"
-            description="Upload em massa, cruzamento e auditoria de assinaturas, CTe e baixas."
-            icon={FileCheck}
-            subModules={[]}
-          />
+          <PodLista />
         </TabsContent>
 
         <TabsContent value="devolucoes">

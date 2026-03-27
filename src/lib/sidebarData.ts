@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Radio, Briefcase, ClipboardList, Database,
-  DollarSign, FileText, Car, FileSignature, Award,
+  DollarSign, FileText, Car, FileSignature, Award, ShieldCheck,
   BarChart3, Users, Smartphone, Settings, UserPlus, Library, LucideIcon,
 } from "lucide-react";
 
@@ -61,6 +61,7 @@ export const sidebarItems: SidebarItem[] = [
       { title: "Escala", path: "/operacao?tab=escala" },
       { title: "Ocorrências", path: "/operacao?tab=ocorrencias" },
       { title: "Comprovantes/POD", path: "/operacao?tab=pod" },
+      { title: "Roteirização", path: "/operacao?tab=roteirizacao" },
       { title: "Programação", path: "/operacao?tab=programacao" },
       { title: "Devoluções", path: "/operacao?tab=devolucoes" },
       { title: "Reentregas", path: "/operacao?tab=reentregas" },
@@ -178,6 +179,17 @@ export const sidebarItems: SidebarItem[] = [
   },
   { title: "Painel do Cliente", icon: Users, path: "/portal-cliente" },
   { title: "App Prestador", icon: Smartphone, path: "/app-prestador" },
+  {
+    title: "Governança e TI",
+    icon: ShieldCheck,
+    path: "/governanca",
+    children: [
+      { title: "Auditoria", path: "/governanca?tab=auditoria" },
+      { title: "Histórico", path: "/governanca?tab=historico" },
+      { title: "Permissões", path: "/governanca?tab=permissoes" },
+      { title: "LGPD", path: "/governanca?tab=lgpd" },
+    ],
+  },
   {
     title: "Configurações",
     icon: Settings,
