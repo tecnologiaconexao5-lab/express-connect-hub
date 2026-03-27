@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Camera } from "lucide-react";
+import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Camera, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +18,7 @@ import {
   Prestador, TIPO_PARCEIRO_LABEL, TIPO_PARCEIRO_COR, STATUS_LABEL, STATUS_COR,
   TIPO_VEICULO_LABEL, TipoParceiro, StatusPrestador, TipoVeiculo, StatusDocumento,
 } from "./types";
+import { DocumentoAnalyzer } from "@/components/documentos/AnaliseDocumentoIA";
 
 interface Props {
   prestador?: Prestador;
@@ -52,7 +53,6 @@ const fmt = (v?: number) => v != null ? `R$ ${v.toLocaleString("pt-BR", { minimu
 
 const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const isNew = !initial;
-  // Initialize formData with either initial prestador or default values
   const [p, setP] = useState<Partial<Prestador>>(initial || {
     status: "analise",
     tipoParceiro: "autonomo",
@@ -71,6 +71,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     contatosEmergencia: [{}, {}, {}] as any,
   } as Partial<Prestador>);
   const [isLoading, setIsLoading] = useState(false);
+  const [docToAnalyze, setDocToAnalyze] = useState<string | null>(null);
 
   // Helper to handle input changes
   const handleChange = (field: keyof Prestador, value: any) => {
@@ -277,9 +278,34 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                       {doc?.dataVencimento && (
                         <p className="text-xs text-muted-foreground mb-2">Vencimento: {new Date(doc.dataVencimento).toLocaleDateString("pt-BR")}</p>
                       )}
-                      <div className="flex items-center gap-2">
+                      {docToAnalyze === tipo && p.id && (
+                        <DocumentoAnalyzer
+                          prestadorId={p.id}
+                          prestadorData={{
+                            nomeCompleto: p.nomeCompleto,
+                            cpfCnpj: p.cpfCnpj,
+                            dataNascimento: p.dataNascimento
+                          }}
+                          tipoDocumento={tipo}
+                          onAnaliseConcluida={(dados, validade) => {
+                            if (validade) {
+                              handleChange("dataValidadeCNH" as any, validade);
+                            }
+                            setDocToAnalyze(null);
+                          }}
+                        />
+                      )}
+                      <div className="flex items-center gap-2 mt-2">
                         <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
                           <Upload className="w-3 h-3" /> Upload
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-7 text-xs gap-1 text-primary"
+                          onClick={() => setDocToAnalyze(tipo)}
+                        >
+                          <Sparkles className="w-3 h-3" /> IA
                         </Button>
                         <Input type="date" className="h-7 text-xs w-36" defaultValue={doc?.dataVencimento} placeholder="Vencimento" />
                       </div>

@@ -109,4 +109,27 @@ CREATE INDEX IF NOT EXISTS idx_notif_lida ON notificacoes(lida, user_id);
 CREATE INDEX IF NOT EXISTS idx_receber_vencimento ON financeiro_receber(vencimento);
 CREATE INDEX IF NOT EXISTS idx_pagar_vencimento ON financeiro_pagar(vencimento);
 
+-- IA - ANÁLISE DE DOCUMENTOS
+CREATE TABLE IF NOT EXISTS documento_analises (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  prestador_id uuid REFERENCES prestadores(id),
+  documento_id uuid REFERENCES provider_documents(id),
+  veiculo_id uuid REFERENCES veiculos(id),
+  tipo_doc text NOT NULL,
+  arquivo_url text,
+  dados_extraidos jsonb,
+  divergencias jsonb,
+  confianca_pct numeric,
+  status_ia text DEFAULT 'pendente',
+  status_final text DEFAULT 'pendente',
+  aprovado_por uuid REFERENCES usuarios(id),
+  motivo_rejeicao text,
+  observacoes_ia text,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_analise_prestador ON documento_analises(prestador_id);
+CREATE INDEX IF NOT EXISTS idx_analise_status_ia ON documento_analises(status_ia);
+CREATE INDEX IF NOT EXISTS idx_analise_tipo ON documento_analises(tipo_doc);
+
 -- Concluído.

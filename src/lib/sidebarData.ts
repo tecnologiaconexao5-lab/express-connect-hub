@@ -2,6 +2,7 @@ import {
   LayoutDashboard, Network, Radio, Briefcase, ClipboardList, Database,
   DollarSign, FileText, Car, FileSignature, Award, ShieldCheck,
   BarChart3, Users, Smartphone, Settings, UserPlus, Library, LucideIcon, Sparkles,
+  FileCheck,
 } from "lucide-react";
 
 export interface SidebarSubItem {
@@ -39,6 +40,9 @@ export const sidebarItems: SidebarItem[] = [
     path: "/cadastros",
     children: [
       { title: "Prestadores", path: "/cadastros?tab=prestadores" },
+      { title: "Análise de Documentos", path: "/cadastros?tab=analise-documentos" },
+      { title: "Análise em Lote", path: "/cadastros?tab=analise-lote" },
+      { title: "Status Documental", path: "/cadastros?tab=status-documental" },
       { title: "Unidades", path: "/cadastros?tab=unidades" },
       { title: "Locais (Bases/CDs)", path: "/cadastros?tab=locais" },
       { title: "Tipos de Veículo", path: "/cadastros?tab=veiculos" },
