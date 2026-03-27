@@ -1,12 +1,13 @@
 import {
   LayoutDashboard, Radio, Briefcase, ClipboardList, Database,
   DollarSign, FileText, Car, FileSignature, Award, ShieldCheck,
-  BarChart3, Users, Smartphone, Settings, UserPlus, Library, LucideIcon,
+  BarChart3, Users, Smartphone, Settings, UserPlus, Library, LucideIcon, Sparkles,
 } from "lucide-react";
 
 export interface SidebarSubItem {
   title: string;
   path: string;
+  icon?: LucideIcon;
 }
 
 export interface SidebarItem {
@@ -18,42 +19,35 @@ export interface SidebarItem {
 
 export const sidebarItems: SidebarItem[] = [
   {
-    title: "Dashboard",
-    icon: LayoutDashboard,
-    path: "/dashboard",
-    children: [
-      { title: "Executivo", path: "/dashboard?tab=executivo" },
-      { title: "Operacional", path: "/dashboard?tab=operacional" },
-      { title: "Comercial", path: "/dashboard?tab=comercial" },
-      { title: "Financeiro", path: "/dashboard?tab=financeiro" },
-      { title: "Alertas", path: "/dashboard?tab=alertas" },
-    ],
-  },
-  {
     title: "Torre de Controle",
     icon: Radio,
-    path: "/torre-controle",
-    children: [
-      { title: "Operações em Andamento", path: "/torre-controle?tab=operacoes" },
-      { title: "Tracking", path: "/torre-controle?tab=tracking" },
-      { title: "Timeline", path: "/torre-controle?tab=timeline" },
-      { title: "Alertas", path: "/torre-controle?tab=alertas" },
-      { title: "Mapa", path: "/torre-controle?tab=mapa" },
-    ],
+    path: "/dashboard?tab=torre",
   },
   {
-    title: "Comercial",
+    title: "Gestão Comercial",
     icon: Briefcase,
     path: "/comercial",
     children: [
-      { title: "CRM", path: "/comercial?tab=crm" },
+      { title: "Clientes", path: "/comercial?tab=clientes" },
+      { title: "Tabela de Valores", path: "/comercial?tab=tabela-valores" },
       { title: "Orçamentos", path: "/comercial?tab=orcamentos" },
-      { title: "Tabela de Valores", path: "/comercial?tab=tabela" },
-      { title: "Simulador", path: "/comercial?tab=simulador" },
     ],
   },
   {
-    title: "Operação",
+    title: "Cadastros Base",
+    icon: Database,
+    path: "/cadastros",
+    children: [
+      { title: "Prestadores", path: "/cadastros?tab=prestadores" },
+      { title: "Unidades", path: "/cadastros?tab=unidades" },
+      { title: "Locais (Bases/CDs)", path: "/cadastros?tab=locais" },
+      { title: "Tipos de Veículo", path: "/cadastros?tab=veiculos" },
+      { title: "Setores & CCs", path: "/cadastros?tab=setores" },
+      { title: "Departamentos", path: "/cadastros?tab=departamentos" },
+    ],
+  },
+  {
+    title: "Apoio Operacional",
     icon: ClipboardList,
     path: "/operacao",
     children: [
@@ -68,18 +62,15 @@ export const sidebarItems: SidebarItem[] = [
     ],
   },
   {
-    title: "Cadastros",
-    icon: Database,
-    path: "/cadastros",
+    title: "Gestão de Frota",
+    icon: Car,
+    path: "/frota",
     children: [
-      { title: "Clientes", path: "/cadastros/clientes" },
-      { title: "Prestadores", path: "/cadastros/prestadores" },
-      { title: "Veículos", path: "/cadastros/veiculos" },
-      { title: "Regiões", path: "/cadastros/auxiliares?tab=regioes" },
-      { title: "Filiais", path: "/cadastros/auxiliares?tab=filiais" },
-      { title: "Unidades", path: "/cadastros/auxiliares?tab=unidades" },
-      { title: "Centros de Custo", path: "/cadastros/auxiliares?tab=centros-custo" },
-      { title: "Tabelas Auxiliares", path: "/cadastros/auxiliares?tab=tabelas" },
+      { title: "Veículos & Cavalos", path: "/frota?tab=veiculos" },
+      { title: "Manutenção", path: "/frota?tab=manutencao" },
+      { title: "Abastecimento", path: "/frota?tab=abastecimento" },
+      { title: "Docs & Multas", path: "/frota?tab=documentos" },
+      { title: "Custos (Custeio)", path: "/frota?tab=custos" },
     ],
   },
   {
@@ -87,61 +78,54 @@ export const sidebarItems: SidebarItem[] = [
     icon: DollarSign,
     path: "/financeiro",
     children: [
-      { title: "Faturamento", path: "/financeiro?tab=faturamento" },
-      { title: "Contas a Receber", path: "/financeiro?tab=receber" },
-      { title: "Contas a Pagar", path: "/financeiro?tab=pagar" },
-      { title: "Pagamento Prestadores", path: "/financeiro?tab=prestadores" },
-      { title: "Fluxo de Caixa", path: "/financeiro?tab=fluxo" },
-      { title: "DRE", path: "/financeiro?tab=dre" },
-      { title: "Conciliação", path: "/financeiro?tab=conciliacao" },
+      { title: "Extrato/Caixa", path: "/financeiro?tab=fluxo" },
+      { title: "A Receber", path: "/financeiro?tab=receber" },
+      { title: "A Pagar (Prestador)", path: "/financeiro?tab=pagar" },
+      { title: "Seguros Auto", path: "/financeiro?tab=seguros" },
+      { title: "Contabilidade", path: "/financeiro?tab=contabilidade" },
     ],
   },
   {
-    title: "Fiscal",
+    title: "Fiscal & Faturamento",
     icon: FileText,
     path: "/fiscal",
     children: [
-      { title: "CT-e", path: "/fiscal?tab=cte" },
-      { title: "MDF-e", path: "/fiscal?tab=mdfe" },
-      { title: "CIOT", path: "/fiscal?tab=ciot" },
-      { title: "XML/PDF", path: "/fiscal?tab=xml-pdf" },
-      { title: "Parametrizações", path: "/fiscal?tab=parametrizacoes" },
+      { title: "Emissão de CT-e", path: "/fiscal?tab=cte" },
+      { title: "Emissão de MDF-e", path: "/fiscal?tab=mdfe" },
+      { title: "Lotes de Faturamento", path: "/fiscal?tab=fechamento" },
+      { title: "Integração Contábil", path: "/fiscal?tab=xmls" },
     ],
   },
   {
-    title: "Frota",
-    icon: Car,
-    path: "/frota",
-    children: [
-      { title: "Manutenção", path: "/frota?tab=manutencao" },
-      { title: "Abastecimento", path: "/frota?tab=abastecimento" },
-      { title: "Documentos", path: "/frota?tab=documentos" },
-      { title: "Seguros", path: "/frota?tab=seguros" },
-      { title: "Custos por Veículo", path: "/frota?tab=custos" },
-    ],
-  },
-  {
-    title: "Recrutamento",
-    icon: UserPlus,
-    path: "/recrutamento",
-    children: [
-      { title: "Captação", path: "/recrutamento?tab=captacao" },
-      { title: "Triagem", path: "/recrutamento?tab=triagem" },
-      { title: "Banco de Talentos", path: "/recrutamento?tab=banco" },
-      { title: "Homologação", path: "/recrutamento?tab=homologacao" },
-      { title: "Convocação", path: "/recrutamento?tab=convocacao" },
-      { title: "Histórico", path: "/recrutamento?tab=historico" },
-    ],
-  },
-  {
-    title: "Contratos",
+    title: "Contratos Automáticos",
     icon: FileSignature,
     path: "/contratos",
     children: [
-      { title: "Clientes", path: "/contratos?tab=clientes" },
-      { title: "Prestadores", path: "/contratos?tab=prestadores" },
-      { title: "Aditivos", path: "/contratos?tab=aditivos" },
-      { title: "Vigências", path: "/contratos?tab=vigencias" },
+      { title: "Construtor de Modelos", path: "/contratos?tab=modelos" },
+      { title: "Gerados / Assinados", path: "/contratos?tab=gerados" },
+      { title: "Anexos & Evidências", path: "/contratos?tab=anexos" },
+      { title: "Políticas GLOBAIS", path: "/contratos?tab=configs" },
+    ],
+  },
+  {
+    title: "Recrutamento Expresso",
+    icon: UserPlus,
+    path: "/recrutamento",
+    children: [
+      { title: "Mural Captação (Vagas)", path: "/recrutamento?tab=vagas" },
+      { title: "Funil de Triagem", path: "/recrutamento?tab=triagem" },
+      { title: "Homologações", path: "/recrutamento?tab=homologacoes" },
+      { title: "Banco Talentos", path: "/recrutamento?tab=banco" },
+    ],
+  },
+  {
+    title: "Biblioteca Global",
+    icon: Library,
+    path: "/biblioteca",
+    children: [
+      { title: "Repositórios/Doc", path: "/biblioteca?tab=arquivos" },
+      { title: "Manuais Operação", path: "/biblioteca?tab=manuais" },
+      { title: "Manuais Prestador", path: "/biblioteca?tab=onboarding" },
     ],
   },
   {
@@ -149,32 +133,21 @@ export const sidebarItems: SidebarItem[] = [
     icon: Award,
     path: "/sla",
     children: [
-      { title: "SLA por Cliente", path: "/sla?tab=cliente" },
-      { title: "NPS", path: "/sla?tab=nps" },
-      { title: "Taxa de Entrega", path: "/sla?tab=entrega" },
-      { title: "Performance", path: "/sla?tab=performance" },
+      { title: "Indicadores Gerais", path: "/sla?tab=cliente" },
+      { title: "NPS e Confiança", path: "/sla?tab=nps" },
+      { title: "Desempenho Rota", path: "/sla?tab=entrega" },
+      { title: "Ranking Prestadores", path: "/sla?tab=performance" },
     ],
   },
   {
-    title: "Relatórios",
+    title: "Reports & BI",
     icon: BarChart3,
     path: "/relatorios",
     children: [
-      { title: "Operacionais", path: "/relatorios?tab=operacionais" },
-      { title: "Comerciais", path: "/relatorios?tab=comerciais" },
-      { title: "Financeiros", path: "/relatorios?tab=financeiros" },
-      { title: "Fiscais", path: "/relatorios?tab=fiscais" },
-    ],
-  },
-  {
-    title: "Biblioteca",
-    icon: Library,
-    path: "/biblioteca",
-    children: [
-      { title: "Operacional", path: "/biblioteca?tab=operacional" },
-      { title: "Prestador", path: "/biblioteca?tab=prestador" },
-      { title: "Cliente", path: "/biblioteca?tab=cliente" },
-      { title: "Modelos", path: "/biblioteca?tab=modelos" },
+      { title: "Margem Presumida", path: "/relatorios?tab=margem" },
+      { title: "Volume Expedido", path: "/relatorios?tab=volume" },
+      { title: "Extrato Operacional", path: "/relatorios?tab=extrato" },
+      { title: "Exportador Custom", path: "/relatorios?tab=exportador" },
     ],
   },
   { title: "Painel do Cliente", icon: Users, path: "/portal-cliente" },
@@ -195,11 +168,11 @@ export const sidebarItems: SidebarItem[] = [
     icon: Settings,
     path: "/configuracoes",
     children: [
-      { title: "Usuários", path: "/configuracoes?tab=usuarios" },
-      { title: "Perfis", path: "/configuracoes?tab=perfis" },
-      { title: "Parâmetros", path: "/configuracoes?tab=parametros" },
+      { title: "Geral", path: "/configuracoes?tab=geral" },
+      { title: "Empresa", path: "/configuracoes?tab=empresa" },
+      { title: "Acessos", path: "/configuracoes?tab=acessos" },
       { title: "Integrações", path: "/configuracoes?tab=integracoes" },
-      { title: "Templates", path: "/configuracoes?tab=templates" },
+      { title: "IA & Automações", path: "/ia-automacoes", icon: Sparkles },
     ],
   },
 ];

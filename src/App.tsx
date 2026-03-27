@@ -27,6 +27,7 @@ import NotFound from "@/pages/NotFound";
 import Recrutamento from "@/pages/Recrutamento";
 import Biblioteca from "@/pages/Biblioteca";
 import Governanca from "@/pages/Governanca";
+import IAAutomacoes from "@/pages/IAAutomacoes";
 
 const queryClient = new QueryClient();
 
@@ -58,6 +59,7 @@ const App = () => (
             <Route path="/relatorios" element={<Relatorios />} />
             <Route path="/biblioteca" element={<Biblioteca />} />
             <Route path="/governanca" element={<Governanca />} />
+            <Route path="/ia-automacoes" element={<IAAutomacoes />} />
             <Route path="/portal-cliente" element={<PortalCliente />} />
             <Route path="/app-prestador" element={<AppPrestador />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
