@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Outlet, Navigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Outlet, Navigate, useLocation } from "react-router-dom";
 import { getUser } from "@/lib/auth";
 import AppSidebar from "./AppSidebar";
 import AppTopbar from "./AppTopbar";
@@ -7,6 +7,13 @@ import AppTopbar from "./AppTopbar";
 const AppLayout = () => {
   const [collapsed, setCollapsed] = useState(false);
   const user = getUser();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.pathname === "/torre-controle") {
+      setCollapsed(true);
+    }
+  }, [location.pathname]);
 
   if (!user) return <Navigate to="/login" replace />;
 

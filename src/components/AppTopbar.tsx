@@ -1,9 +1,10 @@
-import { Bell, Search, LogOut } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Bell, Search, LogOut, Radio } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { getUser, logout } from "@/lib/auth";
 
 const AppTopbar = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = getUser();
 
   const handleLogout = () => {
@@ -14,13 +15,22 @@ const AppTopbar = () => {
   return (
     <header className="h-16 bg-tms-topbar flex items-center px-6 gap-4 shrink-0">
       {/* Search */}
-      <div className="flex-1 max-w-md relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tms-topbar-fg/50" />
-        <input
-          type="text"
-          placeholder="Buscar módulos, pedidos, clientes..."
-          className="w-full pl-10 pr-4 py-2 rounded-lg bg-secondary/80 border-0 text-sm text-tms-topbar-fg placeholder:text-tms-topbar-fg/40 focus:outline-none focus:ring-2 focus:ring-primary/50 transition"
-        />
+      <div className="flex-1 max-w-md relative flex items-center gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tms-topbar-fg/50" />
+          <input
+            type="text"
+            placeholder="Buscar módulos, pedidos, clientes..."
+            className="w-full pl-10 pr-4 py-2 rounded-lg bg-secondary/80 border-0 text-sm text-tms-topbar-fg placeholder:text-tms-topbar-fg/40 focus:outline-none focus:ring-2 focus:ring-primary/50 transition"
+          />
+        </div>
+        
+        {location.pathname === "/torre-controle" && (
+          <div className="hidden md:flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-600 px-3 py-1.5 rounded-full animate-pulse">
+            <Radio className="w-4 h-4" />
+            <span className="text-xs font-bold uppercase tracking-wider">Torre de Controle — Ao Vivo</span>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-3 ml-auto">
