@@ -1,0 +1,31 @@
+export interface Veiculo {
+  id: string;
+  placa: string;
+  tipo_veiculo: string;
+  subcategoria?: string;
+  marca?: string;
+  modelo?: string;
+  ano_fabricacao?: number;
+  ano_modelo?: number;
+  cor?: string;
+  renavam?: string;
+  chassi?: string;
+  capacidade_kg?: number;
+  capacidade_m3?: number;
+  comprimento?: number;
+  largura?: number;
+  altura?: number;
+  qtd_pallets?: number;
+  tipo_carroceria?: string;
+  classificacao_termica?: string;
+  rastreador?: string;
+  seguro_apolice?: string;
+  validade_documental?: string;
+  prestador_vinculado?: string;
+  unidade?: string;
+  custo_km?: number;
+  custo_diaria?: number;
+  status: string;
+  observacoes?: string;
+  fotos?: string[];
+}

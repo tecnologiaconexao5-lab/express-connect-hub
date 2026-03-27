@@ -11,6 +11,9 @@ import Comercial from "@/pages/Comercial";
 import Operacao from "@/pages/Operacao";
 import Cadastros from "@/pages/Cadastros";
 import CadastrosPrestadores from "@/pages/CadastrosPrestadores";
+import CadastrosClientes from "@/pages/CadastrosClientes";
+import CadastrosVeiculos from "@/pages/CadastrosVeiculos";
+import CadastrosAuxiliares from "@/pages/CadastrosAuxiliares";
 import Financeiro from "@/pages/Financeiro";
 import Fiscal from "@/pages/Fiscal";
 import Frota from "@/pages/Frota";
@@ -40,6 +43,9 @@ const App = () => (
             <Route path="/operacao" element={<Operacao />} />
             <Route path="/cadastros" element={<Cadastros />} />
             <Route path="/cadastros/prestadores" element={<CadastrosPrestadores />} />
+            <Route path="/cadastros/clientes" element={<CadastrosClientes />} />
+            <Route path="/cadastros/veiculos" element={<CadastrosVeiculos />} />
+            <Route path="/cadastros/auxiliares" element={<CadastrosAuxiliares />} />
             <Route path="/financeiro" element={<Financeiro />} />
             <Route path="/fiscal" element={<Fiscal />} />
             <Route path="/frota" element={<Frota />} />
