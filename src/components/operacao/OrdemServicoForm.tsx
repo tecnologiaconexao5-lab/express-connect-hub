@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { generateProfessionalPDF } from "@/lib/pdfGenerator";
 import { OrdemServico, OSEndereco, OSHistorico, STATUS_CORES, OSStatus } from "./osTypes";
 
 interface Props {
@@ -364,7 +365,10 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                     <p className="text-sm text-muted-foreground font-medium">Nenhum upload de NF, Minuta ou CIOT pendente foi efetuado via app.</p>
                   </div>
                   <div className="mt-4 flex gap-2">
-                    <Button variant="outline" className="w-full text-xs" onClick={() => toast("Integração PDF simulada.")}>Gerar PDF OS</Button>
+                    <Button variant="outline" className="w-full text-xs" onClick={() => {
+                        toast.success("Gerando PDF da Ordem de Serviço...");
+                        generateProfessionalPDF(data, "ORDEM DE SERVIÇO");
+                      }}>Gerar PDF OS</Button>
                     <Button variant="outline" className="w-full text-xs">Imprimir Tíquete</Button>
                   </div>
                </CardContent>

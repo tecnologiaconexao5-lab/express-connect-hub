@@ -17,6 +17,10 @@ const AppLayout = () => {
 
   if (!user) return <Navigate to="/login" replace />;
 
+  if (location.pathname === "/portal-cliente" || location.pathname === "/app-prestador") {
+    return <Outlet />;
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <AppSidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />

@@ -12,6 +12,8 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Orcamento, EnderecoOrcamento, STATUS_CONFIG, OrcamentoStatus } from "./types";
 import { gerarPdfOrcamento } from "./orcamentoPdf";
+import { generateProfessionalPDF } from "@/lib/pdfGenerator";
+import { toast } from "sonner";
 
 interface Props {
   orcamento?: Orcamento;
@@ -357,6 +359,20 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                  <p className="text-xs">Faça upload de cotações, fotos da carga ou referências aqui.</p>
                  {!readOnly && <Button variant="outline" size="sm" className="mt-4">Anexar Arquivo</Button>}
               </div>
+              
+              <div className="mt-4 flex gap-2 w-full">
+                        <Button
+                          variant="outline"
+                          className="flex-1 text-xs"
+                          onClick={() => {
+                            toast.success("Gerando PDF profissional...");
+                            generateProfessionalPDF(data, "ORÇAMENTO");
+                          }}
+                        >
+                          Gerar PDF
+                        </Button>
+                        <Button variant="outline" className="flex-1 text-xs"><Copy className="w-3 h-3 mr-1"/> Duplicar</Button>
+                      </div>
               
               <div className="flex gap-4 p-4 bg-orange-50/50 rounded-lg border border-orange-100 flex-wrap">
                  <Button onClick={() => gerarPdfOrcamento(data)} className="bg-orange-500 hover:bg-orange-600 text-white gap-2"><FileDown className="w-4 h-4"/> Gerar PDF (Proposta Comercial)</Button>

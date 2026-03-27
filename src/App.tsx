@@ -24,6 +24,8 @@ import PortalCliente from "@/pages/PortalCliente";
 import AppPrestador from "@/pages/AppPrestador";
 import Configuracoes from "@/pages/Configuracoes";
 import NotFound from "@/pages/NotFound";
+import Recrutamento from "@/pages/Recrutamento";
+import Biblioteca from "@/pages/Biblioteca";
 
 const queryClient = new QueryClient();
 
@@ -49,9 +51,11 @@ const App = () => (
             <Route path="/financeiro" element={<Financeiro />} />
             <Route path="/fiscal" element={<Fiscal />} />
             <Route path="/frota" element={<Frota />} />
+            <Route path="/recrutamento" element={<Recrutamento />} />
             <Route path="/contratos" element={<Contratos />} />
             <Route path="/sla" element={<SLA />} />
             <Route path="/relatorios" element={<Relatorios />} />
+            <Route path="/biblioteca" element={<Biblioteca />} />
             <Route path="/portal-cliente" element={<PortalCliente />} />
             <Route path="/app-prestador" element={<AppPrestador />} />
             <Route path="/configuracoes" element={<Configuracoes />} />

@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Radio, Briefcase, ClipboardList, Database,
   DollarSign, FileText, Car, FileSignature, Award,
-  BarChart3, Users, Smartphone, Settings, LucideIcon,
+  BarChart3, Users, Smartphone, Settings, UserPlus, Library, LucideIcon,
 } from "lucide-react";
 
 export interface SidebarSubItem {
@@ -116,6 +116,20 @@ export const sidebarItems: SidebarItem[] = [
       { title: "Abastecimento", path: "/frota?tab=abastecimento" },
       { title: "Documentos", path: "/frota?tab=documentos" },
       { title: "Seguros", path: "/frota?tab=seguros" },
+      { title: "Custos por Veículo", path: "/frota?tab=custos" },
+    ],
+  },
+  {
+    title: "Recrutamento",
+    icon: UserPlus,
+    path: "/recrutamento",
+    children: [
+      { title: "Captação", path: "/recrutamento?tab=captacao" },
+      { title: "Triagem", path: "/recrutamento?tab=triagem" },
+      { title: "Banco de Talentos", path: "/recrutamento?tab=banco" },
+      { title: "Homologação", path: "/recrutamento?tab=homologacao" },
+      { title: "Convocação", path: "/recrutamento?tab=convocacao" },
+      { title: "Histórico", path: "/recrutamento?tab=historico" },
     ],
   },
   {
@@ -149,6 +163,17 @@ export const sidebarItems: SidebarItem[] = [
       { title: "Comerciais", path: "/relatorios?tab=comerciais" },
       { title: "Financeiros", path: "/relatorios?tab=financeiros" },
       { title: "Fiscais", path: "/relatorios?tab=fiscais" },
+    ],
+  },
+  {
+    title: "Biblioteca",
+    icon: Library,
+    path: "/biblioteca",
+    children: [
+      { title: "Operacional", path: "/biblioteca?tab=operacional" },
+      { title: "Prestador", path: "/biblioteca?tab=prestador" },
+      { title: "Cliente", path: "/biblioteca?tab=cliente" },
+      { title: "Modelos", path: "/biblioteca?tab=modelos" },
     ],
   },
   { title: "Painel do Cliente", icon: Users, path: "/portal-cliente" },
