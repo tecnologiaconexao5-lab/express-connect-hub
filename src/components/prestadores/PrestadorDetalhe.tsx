@@ -12,6 +12,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 import {
   Prestador, TIPO_PARCEIRO_LABEL, TIPO_PARCEIRO_COR, STATUS_LABEL, STATUS_COR,
   TIPO_VEICULO_LABEL, TipoParceiro, StatusPrestador, TipoVeiculo, StatusDocumento,
@@ -50,7 +52,62 @@ const fmt = (v?: number) => v != null ? `R$ ${v.toLocaleString("pt-BR", { minimu
 
 const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const isNew = !initial;
-  const p = initial || {} as Partial<Prestador>;
+  // Initialize formData with either initial prestador or default values
+  const [p, setP] = useState<Partial<Prestador>>(initial || {
+    status: "analise",
+    tipoParceiro: "autonomo",
+    scoreInterno: 0,
+    qtdOperacoes: 0,
+    indiceAceite: 0,
+    indiceComparecimento: 0,
+    indiceEntregaNoPrazo: 0,
+    aceitaRefrigerada: false,
+    aceitaUrbana: false,
+    aceitaDedicada: false,
+    aceitaEsporadica: false,
+    conferenciManual: false,
+    documentos: [],
+    veiculos: [],
+    contatosEmergencia: [{}, {}, {}] as any,
+  } as Partial<Prestador>);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Helper to handle input changes
+  const handleChange = (field: keyof Prestador, value: any) => {
+    setP(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleChangeAddress = (field: string, value: string) => {
+    setP(prev => ({ ...prev, endereco: { ...prev.endereco, [field]: value } as any }));
+  };
+
+  const handleSave = async () => {
+    try {
+      setIsLoading(true);
+      // Ensure we have an ID for updates, or let Supabase generate one for inserts
+      const isUpdate = !!initial?.id;
+      const dataToSave = { ...p };
+      
+      let query;
+      if (isUpdate) {
+        query = supabase.from('prestadores').update(dataToSave).eq('id', p.id);
+      } else {
+        query = supabase.from('prestadores').insert([dataToSave]);
+      }
+
+      const { error } = await query;
+      
+      if (error) throw error;
+      
+      toast.success(isNew ? "Prestador cadastrado com sucesso!" : "Prestador atualizado com sucesso!");
+      onBack();
+    } catch (error) {
+      console.error("Erro ao salvar prestador:", error);
+      toast.error("Erro ao salvar dados no Supabase. Verifique a configuração da rede ou do banco de dados.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const docGeral = () => {
     if (!p.documentos?.length) return { label: "Pendente ⚠️", cls: "bg-yellow-100 text-yellow-700" };
@@ -73,7 +130,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             Gerar Contrato
             <Badge variant="secondary" className="text-[10px] ml-1">em breve</Badge>
           </Button>
-          <Button size="sm">Salvar</Button>
+          <Button size="sm" onClick={handleSave} disabled={isLoading}>
+            {isLoading ? "Salvando..." : "Salvar"}
+          </Button>
         </div>
       </div>
 
@@ -109,9 +168,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               <CardContent>
                 <div className="flex flex-wrap gap-3">
                   {(Object.entries(TIPO_PARCEIRO_LABEL) as [TipoParceiro, string][]).map(([key, label]) => (
-                    <label key={key} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${p.tipoParceiro === key ? "ring-2 ring-primary border-primary" : "hover:bg-muted"}`}>
+                    <label key={key} onClick={() => handleChange('tipoParceiro', key)} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${p.tipoParceiro === key ? "ring-2 ring-primary border-primary bg-primary/5" : "hover:bg-muted"}`}>
                       <div className={`w-3 h-3 rounded-full ${TIPO_PARCEIRO_COR[key].split(" ")[0]}`} />
-                      <span className="text-sm">{label}</span>
+                      <span className="text-sm font-medium">{label}</span>
                     </label>
                   ))}
                 </div>
@@ -123,9 +182,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               <CardContent>
                 <div className="flex flex-wrap gap-3">
                   {(Object.entries(STATUS_LABEL) as [StatusPrestador, string][]).map(([key, label]) => (
-                    <label key={key} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${p.status === key ? "ring-2 ring-primary border-primary" : "hover:bg-muted"}`}>
+                    <label key={key} onClick={() => handleChange('status', key)} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${p.status === key ? "ring-2 ring-primary border-primary bg-primary/5" : "hover:bg-muted"}`}>
                       <div className={`w-3 h-3 rounded-full ${STATUS_COR[key].split(" ")[0]}`} />
-                      <span className="text-sm">{label}</span>
+                      <span className="text-sm font-medium">{label}</span>
                     </label>
                   ))}
                 </div>
@@ -170,13 +229,13 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               <CardHeader className="pb-3"><CardTitle className="text-sm">Preferências</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                  { label: "Aceita refrigerada", val: p.aceitaRefrigerada },
-                  { label: "Aceita urbana", val: p.aceitaUrbana },
-                  { label: "Aceita dedicada", val: p.aceitaDedicada },
-                  { label: "Aceita esporádica", val: p.aceitaEsporadica },
+                  { label: "Aceita refrigerada", field: "aceitaRefrigerada", val: p.aceitaRefrigerada },
+                  { label: "Aceita urbana", field: "aceitaUrbana", val: p.aceitaUrbana },
+                  { label: "Aceita dedicada", field: "aceitaDedicada", val: p.aceitaDedicada },
+                  { label: "Aceita esporádica", field: "aceitaEsporadica", val: p.aceitaEsporadica },
                 ].map((t) => (
                   <div key={t.label} className="flex items-center gap-2">
-                    <Switch defaultChecked={t.val} />
+                    <Switch checked={!!t.val} onCheckedChange={(val) => handleChange(t.field as keyof Prestador, val)} />
                     <Label className="text-xs">{t.label}</Label>
                   </div>
                 ))}
@@ -348,7 +407,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                 <div><Label className="text-xs">Centro de custo</Label><Input defaultValue={p.centroCusto} /></div>
                 <div><Label className="text-xs">Retenções/Descontos</Label><Input defaultValue={p.retencoes} /></div>
                 <div className="flex items-center gap-2 mt-5">
-                  <Switch defaultChecked={p.conferenciManual} />
+                  <Switch checked={!!p.conferenciManual} onCheckedChange={(val) => handleChange('conferenciManual', val)} />
                   <Label className="text-xs">Conferência manual</Label>
                 </div>
                 <div className="md:col-span-2"><Label className="text-xs">Observações financeiras</Label><Textarea defaultValue={p.observacoesFinanceiras} rows={2} /></div>

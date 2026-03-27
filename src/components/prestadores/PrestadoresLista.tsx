@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search, Plus, Star, ChevronLeft, ChevronRight, Filter } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Prestador, TIPO_PARCEIRO_LABEL, TIPO_PARCEIRO_COR, STATUS_LABEL, STATUS_COR, TIPO_VEICULO_LABEL } from "./types";
 import { mockPrestadores } from "./mockPrestadores";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 
 interface Props {
   onSelect: (p: Prestador) => void;
@@ -26,8 +28,30 @@ const PrestadoresLista = ({ onSelect, onNew }: Props) => {
   const [scoreFilter, setScoreFilter] = useState("todos");
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
+  const [prestadores, setPrestadores] = useState<Prestador[]>(mockPrestadores);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const filtered = mockPrestadores.filter((p) => {
+  useEffect(() => {
+    fetchPrestadores();
+  }, []);
+
+  const fetchPrestadores = async () => {
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase.from('prestadores').select('*');
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setPrestadores(data as Prestador[]);
+      }
+    } catch (error) {
+      console.error("Erro ao buscar prestadores:", error);
+      toast.error("Erro ao carregar dados do Supabase. Usando dados locais.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const filtered = prestadores.filter((p) => {
     if (busca && !p.nomeCompleto.toLowerCase().includes(busca.toLowerCase()) && !p.cpfCnpj.includes(busca)) return false;
     if (statusFilter !== "todos" && p.status !== statusFilter) return false;
     if (tipoFilter !== "todos" && p.tipoParceiro !== tipoFilter) return false;
@@ -43,9 +67,9 @@ const PrestadoresLista = ({ onSelect, onNew }: Props) => {
     return true;
   });
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const regioes = [...new Set(mockPrestadores.map((p) => p.regiaoPrincipal))];
+  const regioes = [...new Set(prestadores.map((p) => p.regiaoPrincipal))];
 
   const renderStars = (score: number) => (
     <div className="flex items-center gap-0.5">
@@ -64,7 +88,7 @@ const PrestadoresLista = ({ onSelect, onNew }: Props) => {
           <h2 className="text-xl font-bold">Prestadores</h2>
           <p className="text-sm text-muted-foreground">{filtered.length} parceiro(s) encontrado(s)</p>
         </div>
-        <Button onClick={onNew} className="gap-2">
+        <Button onClick={onNew} className="gap-2 bg-orange-500 hover:bg-orange-600 text-white">
           <Plus className="w-4 h-4" />
           Cadastrar Prestador
         </Button>

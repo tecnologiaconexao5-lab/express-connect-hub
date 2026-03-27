@@ -72,7 +72,7 @@ export const sidebarItems: SidebarItem[] = [
     path: "/cadastros",
     children: [
       { title: "Clientes", path: "/cadastros?tab=clientes" },
-      { title: "Prestadores", path: "/cadastros?tab=prestadores" },
+      { title: "Prestadores", path: "/cadastros/prestadores" },
       { title: "Veículos", path: "/cadastros?tab=veiculos" },
       { title: "Regiões", path: "/cadastros?tab=regioes" },
       { title: "Filiais", path: "/cadastros?tab=filiais" },
