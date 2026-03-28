@@ -31,6 +31,7 @@ import Governanca from "@/pages/Governanca";
 import IAAutomacoes from "@/pages/IAAutomacoes";
 import MonitorIntegracoes from "@/pages/MonitorIntegracoes";
 import CadastroPrestador from "@/pages/CadastroPrestador";
+import Comunicacao from "@/pages/Comunicacao";
 
 const queryClient = new QueryClient();
 
@@ -69,6 +70,7 @@ const App = () => (
             <Route path="/portal-cliente" element={<PortalCliente />} />
             <Route path="/app-prestador" element={<AppPrestador />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
+            <Route path="/comunicacao" element={<Comunicacao />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

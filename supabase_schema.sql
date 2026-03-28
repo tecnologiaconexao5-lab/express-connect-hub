@@ -229,4 +229,119 @@ CREATE INDEX IF NOT EXISTS idx_candidato_interacoes_candidato ON candidato_inter
 CREATE INDEX IF NOT EXISTS idx_homologacoes_candidato ON homologacoes(candidato_id);
 CREATE INDEX IF NOT EXISTS idx_reservas_banco_status ON reservas_banco(status);
 
+-- COMUNICAÇÃO EM LOTE E ENGAJAMENTO
+CREATE TABLE IF NOT EXISTS comunicacoes_lote (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  titulo text NOT NULL,
+  tipo text NOT NULL,
+  conteudo text NOT NULL,
+  canal_whatsapp boolean DEFAULT false,
+  canal_push boolean DEFAULT false,
+  canal_interno boolean DEFAULT false,
+  conteudo_whatsapp text,
+  titulo_push text,
+  corpo_push text,
+  icone_push text DEFAULT 'informativo',
+  agendado_para timestamp with time zone,
+  enviado boolean DEFAULT false,
+  data_envio timestamp with time zone,
+  recurrente boolean DEFAULT false,
+  recorrencia_tipo text,
+  recorrencia_dia_semana integer,
+  recorrencia_dia_mes integer,
+  reenviar_nao_visualizado boolean DEFAULT false,
+  horas_para_reenvio1 integer DEFAULT 2,
+  horas_para_reenvio2 integer DEFAULT 6,
+  max_tentativas integer DEFAULT 2,
+  hora_limite integer DEFAULT 22,
+  filtros jsonb,
+  criado_por uuid REFERENCES usuarios(id),
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS comunicacao_destinatarios (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  comunicacao_id uuid REFERENCES comunicacoes_lote(id) ON DELETE CASCADE,
+  prestador_id uuid REFERENCES prestadores(id),
+  candidato_id uuid REFERENCES candidatos(id),
+  canal text NOT NULL,
+  status text DEFAULT 'pendente',
+  enviado_em timestamp with time zone,
+  visualizado_em timestamp with time zone,
+  respondido_em timestamp with time zone,
+  resposta text,
+  tentativa integer DEFAULT 1,
+  erro text,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS comunicacao_templates (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  nome text NOT NULL,
+  tipo text NOT NULL,
+  categoria text NOT NULL,
+  conteudo text NOT NULL,
+  variaveis_suportadas jsonb,
+  titulo_push text,
+  corpo_push text,
+  ativo boolean DEFAULT true,
+  uso_count integer DEFAULT 0,
+  performance_media numeric,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS aniversarios_log (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  prestador_id uuid REFERENCES prestadores(id),
+  candidato_id uuid REFERENCES candidatos(id),
+  data_aniversario date NOT NULL,
+  canal text NOT NULL,
+  mensagem text,
+  status text DEFAULT 'enviado',
+  enviado_em timestamp with time zone DEFAULT now(),
+  respondeu boolean DEFAULT false,
+  resposta text,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS inbox_mensagens (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  prestador_id uuid REFERENCES prestadores(id),
+  candidato_id uuid REFERENCES candidatos(id),
+  tipo text NOT NULL,
+  canal text NOT NULL,
+  direcao text NOT NULL,
+  mensagem text NOT NULL,
+  resposta text,
+  ia_respondeu boolean DEFAULT false,
+  lida boolean DEFAULT false,
+  referencia_comunicacao_id uuid REFERENCES comunicacoes_lote(id),
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS campanhas_auto (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  nome text NOT NULL,
+  tipo text NOT NULL,
+  ativa boolean DEFAULT true,
+  filtros jsonb,
+  mensagem text,
+  agendamento_tipo text NOT NULL,
+  agendamento_hora integer DEFAULT 8,
+  agendamento_dia_semana integer,
+  agendamento_dia_mes integer,
+  ultima_execucao timestamp with time zone,
+  total_execucoes integer DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE inbox_mensagens;
+
+CREATE INDEX IF NOT EXISTS idx_comunicacoes_enviado ON comunicacoes_lote(enviado);
+CREATE INDEX IF NOT EXISTS idx_comunicacao_destinatarios_comunicacao ON comunicacao_destinatarios(comunicacao_id);
+CREATE INDEX IF NOT EXISTS idx_comunicacao_destinatarios_prestador ON comunicacao_destinatarios(prestador_id);
+CREATE INDEX IF NOT EXISTS idx_inbox_prestador ON inbox_mensagens(prestador_id);
+CREATE INDEX IF NOT EXISTS idx_inbox_lida ON inbox_mensagens(lida, prestador_id);
+CREATE INDEX IF NOT EXISTS idx_aniversarios_data ON aniversarios_log(data_aniversario);
+
 -- Concluído.

@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Network, Radio, Briefcase, ClipboardList, Database,
   DollarSign, FileText, Car, FileSignature, Award, ShieldCheck,
   BarChart3, Users, Smartphone, Settings, UserPlus, Library, LucideIcon, Sparkles,
-  FileCheck,
+  FileCheck, Megaphone,
 } from "lucide-react";
 
 export interface SidebarSubItem {
@@ -187,6 +187,7 @@ export const sidebarItems: SidebarItem[] = [
       { title: "Empresa", path: "/configuracoes?tab=empresa" },
       { title: "Acessos", path: "/configuracoes?tab=acessos" },
       { title: "Integrações", path: "/configuracoes?tab=integracoes" },
+      { title: "Central de Comunicação", path: "/comunicacao", icon: Megaphone },
       { title: "IA & Automações", path: "/ia-automacoes", icon: Sparkles },
     ],
   },
