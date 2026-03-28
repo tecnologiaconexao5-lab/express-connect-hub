@@ -1,4 +1,4 @@
-export type OrcamentoStatus = "rascunho" | "enviado" | "em_analise" | "aprovado" | "reprovado" | "expirado" | "convertido";
+export type OrcamentoStatus = "rascunho" | "enviado" | "em_analise" | "aprovado" | "reprovado" | "expirado" | "convertido" | "convertido_em_os";
 
 export const STATUS_CONFIG: Record<OrcamentoStatus, { label: string; color: string }> = {
   rascunho: { label: "Rascunho", color: "bg-gray-400 text-white" },
@@ -8,6 +8,7 @@ export const STATUS_CONFIG: Record<OrcamentoStatus, { label: string; color: stri
   reprovado: { label: "Reprovado", color: "bg-red-500 text-white" },
   expirado: { label: "Expirado", color: "bg-orange-400 text-white" },
   convertido: { label: "Convertido em OS", color: "bg-emerald-600 text-white" },
+  convertido_em_os: { label: "Convertido em OS", color: "bg-purple-600 text-white" },
 };
 
 export interface EnderecoOrcamento {

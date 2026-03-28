@@ -14,6 +14,7 @@ import OrcamentoForm from "./OrcamentoForm";
 import { useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { gerarPdfOrcamento } from "./orcamentoPdf";
 
 const ITEMS_PER_PAGE = 8;
 
@@ -59,7 +60,25 @@ const OrcamentosLista = () => {
     const matchBusca = !busca || o.numero.toLowerCase().includes(busca.toLowerCase()) || o.cliente.toLowerCase().includes(busca.toLowerCase()) || o.clienteCnpj.includes(busca);
     const matchStatus = filtroStatus === "todos" || o.status === filtroStatus;
     const matchResp = filtroResponsavel === "todos" || o.responsavel === filtroResponsavel;
-    return matchBusca && matchStatus && matchResp;
+    
+    let matchPeriodo = true;
+    if (filtroPeriodo !== "todos") {
+      const hoje = new Date();
+      const dataOrc = new Date(o.dataEmissao);
+      if (filtroPeriodo === "hoje") {
+        matchPeriodo = dataOrc.toDateString() === hoje.toDateString();
+      } else if (filtroPeriodo === "semana") {
+        const umaSemanaAtras = new Date(hoje);
+        umaSemanaAtras.setDate(hoje.getDate() - 7);
+        matchPeriodo = dataOrc >= umaSemanaAtras && dataOrc <= hoje;
+      } else if (filtroPeriodo === "mes") {
+        const umMesAtras = new Date(hoje);
+        umMesAtras.setMonth(hoje.getMonth() - 1);
+        matchPeriodo = dataOrc >= umMesAtras && dataOrc <= hoje;
+      }
+    }
+    
+    return matchBusca && matchStatus && matchResp && matchPeriodo;
   });
 
   const totalPaginas = Math.ceil(filtrados.length / ITEMS_PER_PAGE);

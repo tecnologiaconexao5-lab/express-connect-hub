@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, Save, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, Clock } from "lucide-react";
+import { ArrowLeft, Save, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, Clock, Lightbulb, Check, Copy } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,55 @@ import { FavoritosDropdown, SaveFavoritoButton } from "@/components/enderecos/En
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { toast } from "sonner";
+import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
+
+const gerarNumeroOrcamento = () => {
+  const now = new Date();
+  const ano = now.getFullYear();
+  const mes = String(now.getMonth() + 1).padStart(2, '0');
+  const seq = String(Math.floor(Math.random() * 9000) + 1000);
+  return `ORC-${ano}${mes}-${seq}`;
+};
+
+interface SugestaoVeiculo {
+  tipo: string;
+  motivo: string;
+}
+
+const sugerirVeiculo = (peso: number, cubagem: number, refrigerado: boolean): SugestaoVeiculo | null => {
+  if (refrigerado) {
+    if (peso > 6000) {
+      return { tipo: 'van', motivo: 'Carga refrigerada acima de 6t requer van ou veículo refrigerado dedicado' };
+    }
+    return { tipo: 'van', motivo: 'Carga refrigerada leve/média indica van refrigerada' };
+  }
+  
+  if (peso > 20000) {
+    return { tipo: 'carreta', motivo: 'Acima de 20t requer carreta para transporte adequado' };
+  }
+  if (peso > 15000) {
+    return { tipo: 'bitrem', motivo: 'Carga de 15-20t adequada para bitrem' };
+  }
+  if (peso > 10000) {
+    return { tipo: 'truck', motivo: 'Carga de 10-15t indica truck como opção econômica' };
+  }
+  if (peso > 8000) {
+    return { tipo: 'toco', motivo: 'Carga de 8-10t adequada para toco com carroceria' };
+  }
+  if (peso > 4000) {
+    return { tipo: 'vuc', motivo: 'Carga de 4-8t indica VUC (Veículo Urbano de Carga)' };
+  }
+  if (peso > 1500) {
+    return { tipo: 'van', motivo: 'Carga de 1.5-4t adequada para van ou Fiorino grande' };
+  }
+  if (peso > 600) {
+    return { tipo: 'hr', motivo: 'Carga de 600kg-1.5t indica HR (utilitário médio)' };
+  }
+  if (peso > 200) {
+    return { tipo: 'fiorino', motivo: 'Carga de 200-600kg adequada para Fiorino' };
+  }
+  return { tipo: 'moto', motivo: 'Carga leve até 200kg pode ser transportada por moto' };
+};
 
 interface Props {
   orcamento?: Orcamento;
@@ -28,7 +77,7 @@ interface Props {
 const emptyEndereco = (): EnderecoOrcamento => ({ tipo: "coleta", sequencia: 1, endereco: "", cidade: "", uf: "", cep: "", contato: "", telefone: "", instrucoes: "", janelaInicio: "", janelaFim: "" });
 
 const emptyOrcamento = (): Orcamento => ({
-  id: String(Date.now()), numero: `ORC-${String(Math.floor(Math.random() * 9000) + 1000)}`,
+  id: String(Date.now()), numero: gerarNumeroOrcamento(),
   cliente: "", clienteCnpj: "", unidade: "São Paulo - Matriz", centroCusto: "", responsavel: "",
   dataEmissao: new Date().toISOString().split("T")[0], validade: "", tipoOperacao: "", modalidade: "contrato",
   prioridade: "normal", pedidoInterno: "", observacoesGerais: "", status: "rascunho",
@@ -48,6 +97,7 @@ const Field = ({ label, children, className = "" }: { label: React.ReactNode; ch
 
 const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
   const [data, setData] = useState<Orcamento>(orcamento ? JSON.parse(JSON.stringify(orcamento)) : emptyOrcamento());
+  const [sugestaoVeiculo, setSugestaoVeiculo] = useState<SugestaoVeiculo | null>(null);
   const readOnly = modo === "ver";
 
   const update = (path: string, value: any) => {
@@ -57,8 +107,25 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
       let obj = clone;
       for (let i = 0; i < keys.length - 1; i++) obj = obj[keys[i]];
       obj[keys[keys.length - 1]] = value;
+      
+      if (path === 'carga.peso' || path === 'carga.cubagem' || path === 'carga.refrigerado') {
+        const novoPeso = path === 'carga.peso' ? value : clone.carga.peso;
+        const novaCubagem = path === 'carga.cubagem' ? value : clone.carga.cubagem;
+        const refrigerado = path === 'carga.refrigerado' ? value : clone.carga.refrigerado;
+        const sugestao = sugerirVeiculo(novoPeso || 0, novaCubagem || 0, refrigerado || false);
+        setSugestaoVeiculo(sugestao);
+      }
+      
       return clone;
     });
+  };
+  
+  const aplicarSugestaoVeiculo = () => {
+    if (sugestaoVeiculo) {
+      update("veiculo.tipo", sugestaoVeiculo.tipo);
+      toast.success(`Veículo ${sugestaoVeiculo.tipo} aplicado!`);
+      setSugestaoVeiculo(null);
+    }
   };
 
   const recalcular = () => {
@@ -307,14 +374,34 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
 
         {/* VEÍCULO */}
         <TabsContent value="veiculo">
+          {sugestaoVeiculo && !readOnly && (
+            <Card className="mb-4 border-blue-200 bg-blue-50">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                      <Lightbulb className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-blue-800">Veículo sugerido pela IA: <span className="uppercase">{sugestaoVeiculo.tipo}</span></p>
+                      <p className="text-sm text-blue-600">Motivo: {sugestaoVeiculo.motivo}</p>
+                    </div>
+                  </div>
+                  <Button onClick={aplicarSugestaoVeiculo} className="bg-blue-600 hover:bg-blue-700 gap-2">
+                    <Check className="w-4 h-4" /> Usar esta sugestão
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardContent className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
               <Field label="Tipo de Veículo">
                 <Select value={data.veiculo.tipo} onValueChange={(v) => update("veiculo.tipo", v)} disabled={readOnly}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    {["moto", "utilitário leve", "Fiorino", "Kangoo", "HR", "van", "VUC", "3/4", "toco", "truck", "carreta", "carreta LS", "bitrem", "rodotrem", "cavalo mecânico", "baú urbano", "veículo dedicado", "veículo refrigerado leve", "outro"].map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    {TIPOS_VEICULO.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -420,24 +507,34 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                  <Button variant="outline" onClick={() => window.print()}>Imprimir</Button>
                  <Button variant="outline" className="text-primary hover:text-primary/80" onClick={handleSalvar}>Duplicar</Button>
                  
-                 <div className="flex-1 min-w-[200px] flex gap-2 justify-end">
-                    {data.status === "enviado" || data.status === "em_analise" ? (
-                      <>
-                        <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => { update("status", "aprovado"); handleSalvar(); }}>Aprovar</Button>
-                        <Button variant="destructive" onClick={() => { update("status", "reprovado"); handleSalvar(); }}>Reprovar</Button>
-                      </>
-                    ) : (data.status === "aprovado" ? (
-                        <Button 
-                          className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
-                          onClick={() => {
-                            localStorage.setItem('DraftOS_Orcamento', JSON.stringify(data));
-                            toast.success("Orçamento aprovado. Redirecionando e convertendo...");
-                            window.location.hash = '#/operacao?tab=os&new_from_orc=true';
-                            window.location.reload();
-                          }}
-                        ><Truck className="w-4 h-4"/> Converter em OS</Button>
-                    ) : null)}
-                 </div>
+                  <div className="flex-1 min-w-[200px] flex gap-2 justify-end">
+                     {data.status === "enviado" || data.status === "em_analise" ? (
+                       <>
+                         <Button className="bg-green-600 hover:bg-green-700 text-white gap-2" onClick={() => { 
+                           update("status", "aprovado"); 
+                           handleSalvar();
+                           toast.success("Orçamento aprovado com sucesso!");
+                         }}><Check className="w-4 h-4"/> Aprovar</Button>
+                         <Button variant="destructive" onClick={() => { update("status", "reprovado"); handleSalvar(); }}>Reprovar</Button>
+                       </>
+                     ) : (data.status === "aprovado" ? (
+                         <Button 
+                           className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
+                           onClick={() => {
+                             localStorage.setItem('DraftOS_Orcamento', JSON.stringify({
+                               ...data,
+                               status: "convertido_em_os"
+                             }));
+                             update("status", "convertido_em_os");
+                             toast.success("Orçamento convertido em OS! Redirecionando...");
+                             setTimeout(() => {
+                               window.location.hash = '#/operacao?tab=os&new=true';
+                               window.location.reload();
+                             }, 1000);
+                           }}
+                         ><Truck className="w-4 h-4"/> Converter em OS</Button>
+                     ) : null)}
+                  </div>
               </div>
               
               <Field label="Observações Finais e Condicionantes">

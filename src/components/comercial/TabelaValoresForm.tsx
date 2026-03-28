@@ -13,6 +13,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { toast } from "sonner";
 import { TabelaValores, emptyTabelaValores, RegraFaixa, AdicionaisTaxas } from "./tabelaValoresTypes";
+import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
+
+const TIPOS_COBRANCA = [
+  { id: 'saida', label: 'Por Saída (Valor fixo por operação)' },
+  { id: 'diaria', label: 'Por Diária (Valor diário)' },
+  { id: 'km', label: 'Por km Rodado' },
+  { id: 'faixa_km', label: 'Por Faixa de km' },
+  { id: 'peso', label: 'Por Peso (R$/kg)' },
+  { id: 'faixa_peso', label: 'Por Faixa de Peso' },
+  { id: 'cubagem', label: 'Por Cubagem (R$/m³)' },
+  { id: 'diaria_km', label: 'Diária + km Excedente' },
+  { id: 'regiao_cep', label: 'Por Região/CEP' },
+  { id: 'rota_fixa', label: 'Rota Fixa' },
+  { id: 'dedicado_mensal', label: 'Dedicado Mensal (Valor fixo mensal)' },
+];
 
 interface Props {
   tabela?: TabelaValores | null;
@@ -129,23 +144,28 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
               </CardHeader>
               <CardContent className="pt-4 grid grid-cols-1 md:grid-cols-4 gap-6">
                  
-                 <div className="border border-indigo-100 rounded-lg p-3 bg-indigo-50/30 space-y-2 md:col-span-4 lg:col-span-1">
-                    <Label className="font-bold text-indigo-900 border-b border-indigo-100 pb-1 flex w-full">Método de Cobrança Base</Label>
-                    {[
-                      {id: 'diaria', lbl: 'Por Diária (Valor Dia)'}, {id: 'km', lbl: 'Por km Rodado'},
-                      {id: 'diaria_km', lbl: 'Diária + km Excedente'}, {id: 'peso', lbl: 'Por Peso Faturado'},
-                      {id: 'faixa_peso', lbl: 'Por Faixas de Peso'}, {id: 'saida', lbl: 'Por Saída (Fixo)'},
-                      {id: 'dedicada', lbl: 'Mensal Dedicado'}
-                    ].map(cb => (
-                       <div key={cb.id} className="flex items-center space-x-2 w-full hover:bg-white p-1 rounded transition">
-                         <Switch checked={data.cobrancaPrincipais.includes(cb.id)} onCheckedChange={() => handleToggleCobranca(cb.id)} disabled={readOnly} id={`cb-${cb.id}`}/>
-                         <Label htmlFor={`cb-${cb.id}`} className="text-xs cursor-pointer flex-1">{cb.lbl}</Label>
-                       </div>
-                    ))}
-                 </div>
+                  <div className="border border-indigo-100 rounded-lg p-3 bg-indigo-50/30 space-y-2 md:col-span-4 lg:col-span-1">
+                     <Label className="font-bold text-indigo-900 border-b border-indigo-100 pb-1 flex w-full">Método de Cobrança Base</Label>
+                     {TIPOS_COBRANCA.map(cb => (
+                        <div key={cb.id} className="flex items-center space-x-2 w-full hover:bg-white p-1 rounded transition">
+                          <Switch checked={data.cobrancaPrincipais.includes(cb.id)} onCheckedChange={() => handleToggleCobranca(cb.id)} disabled={readOnly} id={`cb-${cb.id}`}/>
+                          <Label htmlFor={`cb-${cb.id}`} className="text-xs cursor-pointer flex-1">{cb.label}</Label>
+                        </div>
+                     ))}
+                  </div>
 
-                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Field label="Tipo Veículo Perfil"><Select value={data.tipoVeiculo} onValueChange={v => update("tipoVeiculo", v)} disabled={readOnly}><SelectTrigger><SelectValue placeholder="Aplicável a..."/></SelectTrigger><SelectContent><SelectItem value="qualquer">Qualquer Veículo</SelectItem><SelectItem value="VUC">VUC / Leves</SelectItem><SelectItem value="Todos Pesados">Carga Pesada</SelectItem></SelectContent></Select></Field>
+                  <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+                     <Field label="Tipo Veículo Perfil (Múltiplo)">
+                       <Select value={data.tipoVeiculo || ""} onValueChange={v => update("tipoVeiculo", v)} disabled={readOnly}>
+                         <SelectTrigger><SelectValue placeholder="Selecione..."/></SelectTrigger>
+                         <SelectContent>
+                           <SelectItem value="qualquer">Qualquer Veículo</SelectItem>
+                           {TIPOS_VEICULO.map(t => (
+                             <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                           ))}
+                         </SelectContent>
+                       </Select>
+                     </Field>
                     <Field label="Exigência Térmica"><Select value={data.classificacaoTermica} onValueChange={v => update("classificacaoTermica", v)} disabled={readOnly}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="seco">Seco</SelectItem><SelectItem value="refrigerado">Refrigerado</SelectItem></SelectContent></Select></Field>
                     <Field label="Arredondamento de Cálculos"><Select value={data.arredondamento} onValueChange={v => update("arredondamento", v)} disabled={readOnly}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="normal">Matemático Normal</SelectItem><SelectItem value="cima">Sempre p/ Cima</SelectItem></SelectContent></Select></Field>
 

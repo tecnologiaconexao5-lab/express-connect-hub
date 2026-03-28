@@ -478,11 +478,16 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                   />
                 </Field>
                 <Field label="Faturamento Status">
-                 <Select value={data.statusFaturamento} onValueChange={(v) => update("statusFaturamento", v)} disabled={readOnly}>
-                  <SelectTrigger><SelectValue/></SelectTrigger>
-                  <SelectContent><SelectItem value="a faturar">A Faturar</SelectItem><SelectItem value="faturada">Minuta Gerada / Faturada</SelectItem><SelectItem value="paga">Baixada C.R</SelectItem></SelectContent>
-                 </Select>
-               </Field>
+                  <Select value={data.statusFaturamento} onValueChange={(v) => update("statusFaturamento", v)} disabled={readOnly}>
+                   <SelectTrigger><SelectValue/></SelectTrigger>
+                   <SelectContent>
+                     <SelectItem value="a faturar">A Faturar</SelectItem>
+                     <SelectItem value="a vista">A Vista</SelectItem>
+                     <SelectItem value="faturada">Minuta Gerada / Faturada</SelectItem>
+                     <SelectItem value="paga">Baixada C.R</SelectItem>
+                   </SelectContent>
+                  </Select>
+                </Field>
                <Field label="Repasse Status">
                  <Select value={data.statusPagamento} onValueChange={(v) => update("statusPagamento", v)} disabled={readOnly}>
                   <SelectTrigger><SelectValue/></SelectTrigger>
