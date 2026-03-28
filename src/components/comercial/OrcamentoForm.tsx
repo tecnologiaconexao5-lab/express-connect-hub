@@ -14,6 +14,8 @@ import { Orcamento, EnderecoOrcamento, STATUS_CONFIG, OrcamentoStatus } from "./
 import { gerarPdfOrcamento } from "./orcamentoPdf";
 import { generateProfessionalPDF } from "@/lib/pdfGenerator";
 import { FavoritosDropdown, SaveFavoritoButton } from "@/components/enderecos/EnderecosFavoritos";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { toast } from "sonner";
 
 interface Props {
@@ -124,7 +126,21 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
           <Card>
             <CardContent className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <Field label="Número"><Input value={data.numero} readOnly className="bg-muted" /></Field>
-              <Field label="Cliente"><Input value={data.cliente} readOnly={readOnly} onChange={(e) => update("cliente", e.target.value)} /></Field>
+              <Field label="Cliente">
+                 {readOnly ? <Input value={data.cliente} readOnly /> : (
+                   <SearchableSelect 
+                     table="clientes" 
+                     labelField="nome_fantasia" 
+                     valueField="nome_fantasia" 
+                     searchFields={["nome_fantasia", "razao_social", "cnpj"]} 
+                     value={data.cliente} 
+                     onChange={(v, rec) => {
+                        update("cliente", v || "");
+                        if (rec && rec.cnpj) update("clienteCnpj", rec.cnpj);
+                     }} 
+                   />
+                 )}
+              </Field>
               <Field label="CNPJ do Cliente"><Input value={data.clienteCnpj} readOnly={readOnly} onChange={(e) => update("clienteCnpj", e.target.value)} /></Field>
               <Field label="Unidade">
                 <Select value={data.unidade} onValueChange={(v) => update("unidade", v)} disabled={readOnly}>
@@ -212,26 +228,41 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 p-4 pt-0">
-                  <Field label="Tipo">
-                    <Select value={end.tipo} onValueChange={(v) => { const e = [...data.enderecos]; e[idx] = { ...e[idx], tipo: v as any }; setData((p) => ({ ...p, enderecos: e })); }} disabled={readOnly}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="coleta">Coleta</SelectItem>
-                        <SelectItem value="entrega">Entrega</SelectItem>
-                        <SelectItem value="retorno">Retorno</SelectItem>
-                      </SelectContent>
-                    </Select>
+                <CardContent className="space-y-4 p-4 pt-0">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <Field label="Tipo">
+                      <Select value={end.tipo} onValueChange={(v) => { const e = [...data.enderecos]; e[idx] = { ...e[idx], tipo: v as any }; setData((p) => ({ ...p, enderecos: e })); }} disabled={readOnly}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="coleta">Coleta</SelectItem>
+                          <SelectItem value="entrega">Entrega</SelectItem>
+                          <SelectItem value="retorno">Retorno</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Contato"><Input value={end.contato} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], contato: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
+                    <Field label="Telefone"><Input value={end.telefone} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], telefone: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
+                    <Field label="Janela Início"><Input type="time" value={end.janelaInicio} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], janelaInicio: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
+                    <Field label="Janela Fim"><Input type="time" value={end.janelaFim} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], janelaFim: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
+                  </div>
+
+                  {readOnly ? (
+                     <Field label="Endereço Cadastrado"><Input value={`${end.endereco}, ${end.cidade}/${end.uf} - ${end.cep}`} readOnly /></Field>
+                  ) : (
+                     <EnderecoCompleto
+                        label="Dados do Endereço (ViaCEP)"
+                        value={{ cep: end.cep, logradouro: end.endereco, numero: "", complemento: "", bairro: "", cidade: end.cidade, estado: end.uf, referencia: end.instrucoes } as any}
+                        onChange={(obj) => {
+                           const es = [...data.enderecos];
+                           es[idx] = { ...es[idx], cep: obj.cep, endereco: obj.logradouro + (obj.numero ? ', ' + obj.numero : ''), cidade: obj.cidade, uf: obj.estado, instrucoes: obj.referencia || "" };
+                           setData((p) => ({ ...p, enderecos: es }));
+                        }}
+                     />
+                  )}
+                  
+                  <Field label="Instruções Específicas / Referência" className="lg:col-span-2">
+                     <Input value={end.instrucoes} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], instrucoes: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} />
                   </Field>
-                  <Field label={<>CEP {!readOnly && <FavoritosDropdown onSelect={(fav) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], cep: fav.cep, endereco: fav.endereco, cidade: fav.cidade, uf: fav.uf, contato: fav.contato || '', telefone: fav.telefone || '', instrucoes: fav.instrucoes || '' }; setData((p) => ({ ...p, enderecos: es })); }} />}</>} className="lg:col-span-1"><Input value={end.cep} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], cep: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
-                  <Field label="Endereço" className="lg:col-span-2"><Input value={end.endereco} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], endereco: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
-                  <Field label="Cidade"><Input value={end.cidade} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], cidade: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
-                  <Field label="UF"><Input value={end.uf} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], uf: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
-                  <Field label="Contato"><Input value={end.contato} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], contato: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
-                  <Field label="Telefone"><Input value={end.telefone} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], telefone: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
-                  <Field label="Janela Início"><Input type="time" value={end.janelaInicio} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], janelaInicio: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
-                  <Field label="Janela Fim"><Input type="time" value={end.janelaFim} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], janelaFim: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
-                  <Field label="Instruções" className="lg:col-span-2"><Input value={end.instrucoes} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], instrucoes: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
                 </CardContent>
               </Card>
             ))}

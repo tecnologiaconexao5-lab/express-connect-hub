@@ -20,9 +20,14 @@ export interface SidebarItem {
 
 export const sidebarItems: SidebarItem[] = [
   {
+    title: "Dashboard Executivo",
+    icon: LayoutDashboard,
+    path: "/dashboard",
+  },
+  {
     title: "Torre de Controle",
     icon: Radio,
-    path: "/dashboard?tab=torre",
+    path: "/torre-controle",
   },
   {
     title: "Gestão Comercial",
