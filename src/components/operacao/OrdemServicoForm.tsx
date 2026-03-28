@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowLeft, Save, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +46,27 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [data, setData] = useState<OrdemServico>(os ? JSON.parse(JSON.stringify(os)) : emptyOS());
   const [isSaving, setIsSaving] = useState(false);
   const readOnly = modo === "ver";
+
+  useEffect(() => {
+    if (modo === "novo") {
+       const draft = localStorage.getItem('DraftOS_Orcamento');
+       if (draft) {
+          try {
+            const orc = JSON.parse(draft);
+            setData(p => ({
+               ...p,
+               cliente: orc.cliente || p.cliente,
+               valorCliente: orc.valores?.diaria || orc.valores?.total || p.valorCliente,
+               orcamentoOrigem: orc.numero || p.orcamentoOrigem,
+               enderecos: orc.enderecos && orc.enderecos.length > 0 ? orc.enderecos : p.enderecos,
+               veiculoTipo: orc.veiculo?.tipo || p.veiculoTipo
+            }));
+            localStorage.removeItem('DraftOS_Orcamento');
+            toast.success("Dados do Orçamento importados com sucesso.");
+          } catch(e) {}
+       }
+    }
+  }, [modo]);
 
   const update = (field: keyof OrdemServico, value: any) => setData((p) => ({ ...p, [field]: value }));
 
@@ -146,7 +167,10 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
           </div>
         </div>
         <div className="flex gap-2">
-          {!readOnly && <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={handleSalvar} disabled={isSaving}><Save className="w-4 h-4 mr-1"/> Salvar OS</Button>}
+          {!readOnly && data.status === "finalizada" && (
+             <Button className="bg-orange-500 hover:bg-orange-600 text-white font-bold animate-pulse" onClick={() => toast.success("CT-e #92341 Emitido com Sucesso.")}>Emitir CT-e</Button>
+          )}
+          {!readOnly && <Button className="bg-primary hover:bg-primary/90 text-white" onClick={handleSalvar} disabled={isSaving}><Save className="w-4 h-4 mr-1"/> Salvar OS</Button>}
         </div>
       </div>
 
@@ -194,9 +218,14 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
               <Field label="Unidade Base"><Input value={data.unidade} readOnly={readOnly} onChange={(e) => update("unidade", e.target.value)} /></Field>
               <Field label="Centro de Custo (Cliente)"><Input value={data.centroCusto} readOnly={readOnly} onChange={(e) => update("centroCusto", e.target.value)} /></Field>
               <Field label="Prestador Atual">
-                 {readOnly ? <Input value={data.prestador} readOnly /> : (
-                   <SearchableSelect table="prestadores" labelField="nome" valueField="nome" searchFields={["nome", "cpf", "cnpj"]} value={data.prestador} onChange={(v) => update("prestador", v || "")} />
-                 )}
+                 {readOnly ? <Input value={data.prestador} readOnly /> : <SearchableSelect table="prestadores" labelField="nome" valueField="nome" searchFields={["nome", "cpf", "cnpj"]} value={data.prestador} onChange={(v, rec) => {
+                        update("prestador", v || "");
+                        if (rec && rec.valor_diaria) {
+                           update("custoPrestador", rec.valor_diaria);
+                           toast.success(`Financeiro do Prestador carregado: R$ ${rec.valor_diaria} diária`);
+                        }
+                     }} />
+                 }
               </Field>
               <Field label="Veículo Alocado">
                  {readOnly ? <Input value={data.veiculoAlocado} readOnly /> : (

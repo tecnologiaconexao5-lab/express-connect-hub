@@ -19,6 +19,7 @@ import {
   TIPO_VEICULO_LABEL, TipoParceiro, StatusPrestador, TipoVeiculo, StatusDocumento,
 } from "./types";
 import { DocumentoAnalyzer } from "@/components/documentos/AnaliseDocumentoIA";
+import ContratoPrestadorModal from "./ContratoPrestadorModal";
 
 interface Props {
   prestador?: Prestador;
@@ -72,6 +73,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   } as Partial<Prestador>);
   const [isLoading, setIsLoading] = useState(false);
   const [docToAnalyze, setDocToAnalyze] = useState<string | null>(null);
+  const [modalContratoOpen, setModalContratoOpen] = useState(false);
 
   // Helper to handle input changes
   const handleChange = (field: keyof Prestador, value: any) => {
@@ -126,11 +128,12 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           <h2 className="text-xl font-bold">{isNew ? "Cadastrar Prestador" : (p.nomeFantasia || p.nomeCompleto)}</h2>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5 opacity-60 cursor-not-allowed">
-            <FileSignature className="w-4 h-4" />
-            Gerar Contrato
-            <Badge variant="secondary" className="text-[10px] ml-1">em breve</Badge>
-          </Button>
+          {p.id && (
+            <Button variant="outline" size="sm" className="gap-1.5 focus:ring-2" onClick={() => setModalContratoOpen(true)}>
+              <FileSignature className="w-4 h-4" />
+              Gerar Contrato
+            </Button>
+          )}
           <Button size="sm" onClick={handleSave} disabled={isLoading}>
             {isLoading ? "Salvando..." : "Salvar"}
           </Button>
@@ -554,9 +557,16 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                 </button>
               </div>
               {p.status && (
-                <span className={`text-xs px-3 py-1 rounded-full font-semibold mb-2 ${STATUS_COR[p.status]}`}>
-                  {STATUS_LABEL[p.status]}
-                </span>
+                <div className="flex flex-col items-center gap-2">
+                  <span className={`text-xs px-3 py-1 rounded-full font-semibold mb-1 ${STATUS_COR[p.status]}`}>
+                    {STATUS_LABEL[p.status]}
+                  </span>
+                  {p.observacoesTorre?.includes("Contrato") && (
+                    <Badge className="bg-blue-100 text-blue-800 border-blue-300 gap-1 text-[10px] uppercase font-bold hover:bg-blue-100 mb-2">
+                       <FileSignature className="w-3 h-3"/> Contrato Ativo
+                    </Badge>
+                  )}
+                </div>
               )}
               <div className="flex items-center gap-1 mb-1">{renderStars(p.scoreInterno || 0, "w-5 h-5")}</div>
               <p className="text-xs text-muted-foreground">{p.scoreInterno?.toFixed(1) || "0"} / 5.0</p>
@@ -604,6 +614,14 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           )}
         </div>
       </div>
+      
+      {modalContratoOpen && (
+         <ContratoPrestadorModal
+            open={modalContratoOpen}
+            onOpenChange={setModalContratoOpen}
+            prestador={p}
+         />
+      )}
     </div>
   );
 };

@@ -12,6 +12,9 @@ const AppTopbar = () => {
   const location = useLocation();
   const user = getUser();
   const [notifs, setNotifs] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
   const naoLidas = notifs.filter(n => !n.lida).length;
 
   useEffect(() => {
@@ -22,6 +25,28 @@ const AppTopbar = () => {
       { id: 3, tipo: "atraso", mensagem: "OS-880 está atrasada em 2h", tempo: "1 hora", lida: true }
     ]);
   }, []);
+
+  useEffect(() => {
+    if (searchQuery.length < 2) {
+       setSearchResults([]);
+       return;
+    }
+    const q = searchQuery.toLowerCase();
+    const mockDb = [
+      { tipo: "Ordem de Serviço", titulo: "OS-9982", sub: "Cliente: Votorantim", path: "/operacao?tab=os&id=OS-9982" },
+      { tipo: "Ordem de Serviço", titulo: "OS-1240", sub: "Status: Atrasada", path: "/operacao?tab=os&id=OS-1240" },
+      { tipo: "Orçamento", titulo: "ORC-5541", sub: "Logística Alpha - R$ 15.000", path: "/comercial?tab=orcamentos&id=ORC-5541" },
+      { tipo: "Cliente", titulo: "Ambev S.A (Matriz)", sub: "CNPJ: 07.526.557/0001-00", path: "/comercial?tab=clientes" },
+      { tipo: "Prestador", titulo: "Diego Balbino", sub: "CPF: 123.456.789-00 / HR Seco", path: "/cadastros?tab=prestadores" },
+      { tipo: "Prestador", titulo: "Ailton Transportes LTDA", sub: "CNPJ: 14.526.557/0001-00 / Cavalo LS", path: "/cadastros?tab=prestadores" }
+    ];
+    setSearchResults(mockDb.filter(m => m.titulo.toLowerCase().includes(q) || m.sub.toLowerCase().includes(q)));
+  }, [searchQuery]);
+
+  const handleNav = (path: string) => {
+    setShowSearch(false);
+    navigate(path);
+  };
 
   const handleLogout = () => {
     logout();
@@ -43,17 +68,42 @@ const AppTopbar = () => {
     <header className="h-16 bg-tms-topbar flex items-center px-6 gap-4 shrink-0">
       {/* Search */}
       <div className="flex-1 max-w-md relative flex items-center gap-4">
-        <div className="relative flex-1">
+        <div className="relative w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tms-topbar-fg/50" />
           <input
             type="text"
-            placeholder="Buscar módulos, pedidos, clientes..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg bg-secondary/80 border-0 text-sm text-tms-topbar-fg placeholder:text-tms-topbar-fg/40 focus:outline-none focus:ring-2 focus:ring-primary/50 transition"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setShowSearch(true)}
+            placeholder="Buscar motorista, cliente ou pedido (Ex: OS-998)"
+            className="w-full pl-10 pr-4 py-2 rounded-lg bg-secondary/80 border-0 text-sm text-tms-topbar-fg placeholder:text-tms-topbar-fg/40 focus:outline-none focus:ring-2 focus:ring-primary/50 transition z-20 relative relative-focused"
           />
+          {showSearch && searchQuery.length > 1 && (
+             <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-lg shadow-xl z-50 p-2 overflow-y-auto max-h-80">
+                {searchResults.length === 0 ? (
+                  <p className="p-3 text-xs text-center text-slate-500">Nenhum resultado encontrado.</p>
+                ) : (
+                  searchResults.map((res: any, idx) => (
+                    <div 
+                      key={idx} 
+                      className="p-3 border-b last:border-0 hover:bg-slate-50 cursor-pointer rounded transition"
+                      onClick={() => handleNav(res.path)}
+                    >
+                       <div className="flex items-center gap-2">
+                         <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-sm ${res.tipo === 'Cliente' ? 'bg-blue-100 text-blue-700' : res.tipo === 'Ordem de Serviço' ? 'bg-green-100 text-green-700' : res.tipo === 'Orçamento' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700'}`}>{res.tipo}</span>
+                         <p className="text-sm font-bold text-slate-800 shrink-0">{res.titulo}</p>
+                       </div>
+                       <p className="text-xs text-muted-foreground mt-1 truncate">{res.sub}</p>
+                    </div>
+                  ))
+                )}
+             </div>
+          )}
+          {showSearch && <div className="fixed inset-0 z-10" onClick={() => setShowSearch(false)} />}
         </div>
         
         {location.pathname === "/torre-controle" && (
-          <div className="hidden md:flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-600 px-3 py-1.5 rounded-full animate-pulse">
+          <div className="hidden lg:flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-600 px-3 py-1.5 rounded-full animate-pulse whitespace-nowrap">
             <Radio className="w-4 h-4" />
             <span className="text-xs font-bold uppercase tracking-wider">Torre de Controle — Ao Vivo</span>
           </div>

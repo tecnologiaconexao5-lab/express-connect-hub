@@ -137,6 +137,10 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                      onChange={(v, rec) => {
                         update("cliente", v || "");
                         if (rec && rec.cnpj) update("clienteCnpj", rec.cnpj);
+                        if (rec && rec.condicao_comercial_tabela_id) {
+                           setData(p => ({ ...p, valores: { ...p.valores, tabelaVinculada: String(rec.condicao_comercial_tabela_id) }}));
+                           toast.success("Tabela de Valores vinculada carregada automaticamente!");
+                        }
                      }} 
                    />
                  )}
@@ -421,7 +425,15 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                         <Button variant="destructive" onClick={() => { update("status", "reprovado"); handleSalvar(); }}>Reprovar</Button>
                       </>
                     ) : (data.status === "aprovado" ? (
-                        <Button className="bg-purple-600 hover:bg-purple-700 text-white gap-2"><Truck className="w-4 h-4"/> Converter em OS</Button>
+                        <Button 
+                          className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
+                          onClick={() => {
+                            localStorage.setItem('DraftOS_Orcamento', JSON.stringify(data));
+                            toast.success("Orçamento aprovado. Redirecionando e convertendo...");
+                            window.location.hash = '#/operacao?tab=os&new_from_orc=true';
+                            window.location.reload();
+                          }}
+                        ><Truck className="w-4 h-4"/> Converter em OS</Button>
                     ) : null)}
                  </div>
               </div>
