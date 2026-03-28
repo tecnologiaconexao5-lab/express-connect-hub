@@ -21,6 +21,13 @@ interface Props {
   onSalvar: (tab: TabelaValores) => void;
 }
 
+const Field = ({ label, children, className = "" }: any) => (
+  <div className={className}>
+    <Label className="text-xs font-medium text-muted-foreground mb-1 block">{label}</Label>
+    {children}
+  </div>
+);
+
 export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: Props) {
   const [data, setData] = useState<TabelaValores>(tabela || emptyTabelaValores());
   const readOnly = modo === "ver";
@@ -45,12 +52,7 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
     update("faixas", [...data.faixas, f]);
   };
 
-  const Field = ({ label, children, className = "" }: any) => (
-    <div className={className}>
-      <Label className="text-xs font-medium text-muted-foreground mb-1 block">{label}</Label>
-      {children}
-    </div>
-  );
+
 
   return (
     <div className="space-y-4 max-w-[1400px] mx-auto pb-10">

@@ -39,6 +39,13 @@ const emptyOrcamento = (): Orcamento => ({
   historico: [{ data: new Date().toLocaleString("pt-BR"), acao: "Orçamento criado", usuario: "Usuário atual" }],
 });
 
+const Field = ({ label, children, className = "" }: { label: React.ReactNode; children: React.ReactNode; className?: string }) => (
+  <div className={className}>
+    <Label className="text-xs font-medium text-muted-foreground mb-1 flex items-center justify-between pr-1">{label}</Label>
+    {children}
+  </div>
+);
+
 const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
   const [data, setData] = useState<Orcamento>(orcamento ? JSON.parse(JSON.stringify(orcamento)) : emptyOrcamento());
   const readOnly = modo === "ver";
@@ -79,12 +86,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  const Field = ({ label, children, className = "" }: { label: React.ReactNode; children: React.ReactNode; className?: string }) => (
-    <div className={className}>
-      <Label className="text-xs font-medium text-muted-foreground mb-1 flex items-center justify-between pr-1">{label}</Label>
-      {children}
-    </div>
-  );
+
 
   return (
     <div className="space-y-4">

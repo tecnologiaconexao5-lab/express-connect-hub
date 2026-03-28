@@ -42,6 +42,13 @@ const emptyOS = (): OrdemServico => ({
   enderecos: [emptyEnd()], historico: [{ data: new Date().toISOString(), acao: "OS Criada", status_novo: "rascunho", usuario: "Usuário atual" }]
 });
 
+const Field = ({ label, children, className = "" }: { label: React.ReactNode; children: React.ReactNode; className?: string }) => (
+  <div className={className}>
+    <Label className="text-xs font-medium text-muted-foreground mb-1 flex items-center justify-between pr-1">{label}</Label>
+    {children}
+  </div>
+);
+
 const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [data, setData] = useState<OrdemServico>(os ? JSON.parse(JSON.stringify(os)) : emptyOS());
   const [isSaving, setIsSaving] = useState(false);
@@ -144,12 +151,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     }
   };
 
-  const Field = ({ label, children, className = "" }: { label: React.ReactNode; children: React.ReactNode; className?: string }) => (
-    <div className={className}>
-      <Label className="text-xs font-medium text-muted-foreground mb-1 flex items-center justify-between pr-1">{label}</Label>
-      {children}
-    </div>
-  );
+
 
   return (
     <div className="space-y-4">
