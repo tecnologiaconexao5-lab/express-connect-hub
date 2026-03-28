@@ -71,6 +71,7 @@ export const sidebarItems: SidebarItem[] = [
     path: "/frota",
     children: [
       { title: "Veículos & Cavalos", path: "/frota?tab=veiculos" },
+      { title: "Monitoramento de Combustíveis", path: "/combustiveis" },
       { title: "Manutenção", path: "/frota?tab=manutencao" },
       { title: "Abastecimento", path: "/frota?tab=abastecimento" },
       { title: "Docs & Multas", path: "/frota?tab=documentos" },

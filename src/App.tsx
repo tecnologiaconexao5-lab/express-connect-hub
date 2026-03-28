@@ -33,6 +33,7 @@ import MonitorIntegracoes from "@/pages/MonitorIntegracoes";
 import CadastroPrestador from "@/pages/CadastroPrestador";
 import Comunicacao from "@/pages/Comunicacao";
 import Tracking from "@/pages/Tracking";
+import Combustiveis from "@/pages/Combustiveis";
 
 const queryClient = new QueryClient();
 
@@ -63,6 +64,7 @@ const App = () => (
             <Route path="/financeiro" element={<Financeiro />} />
             <Route path="/fiscal" element={<Fiscal />} />
             <Route path="/frota" element={<Frota />} />
+            <Route path="/combustiveis" element={<Combustiveis />} />
             <Route path="/recrutamento" element={<Recrutamento />} />
             <Route path="/contratos" element={<Contratos />} />
             <Route path="/sla" element={<SLA />} />
