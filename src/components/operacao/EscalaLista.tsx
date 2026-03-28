@@ -1,81 +1,222 @@
 import { useState } from "react";
-import { Calendar, Plus, CalendarCheck, Users, Search, Truck } from "lucide-react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { format, addDays, startOfWeek, isSameDay } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { Calendar as CalendarIcon, Filter, Search, Plus, MapPin, Truck, Smartphone, Check, ChevronLeft, ChevronRight, MessageCircle } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
-const EscalaLista = () => {
-   return (
-     <div className="space-y-6">
-       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-         <Card className="bg-primary/5 border-primary/20"><CardContent className="p-4 flex flex-col items-center text-center"><CalendarCheck className="w-8 h-8 text-primary mb-2"/><p className="text-xl font-bold text-primary">Sexta, 27/03</p><p className="text-xs text-muted-foreground uppercase font-semibold">Hoje</p></CardContent></Card>
-         <Card><CardContent className="p-4"><p className="text-xs text-slate-500 uppercase font-bold mb-1 mt-2">Disponíveis Hoje (Reserva)</p><p className="text-3xl font-black text-slate-800">14 <span className="text-sm font-medium text-muted-foreground">Prestadores</span></p></CardContent></Card>
-         <Card><CardContent className="p-4"><p className="text-xs text-blue-500 uppercase font-bold mb-1 mt-2">Agendados / Confirmados</p><p className="text-3xl font-black text-blue-600">32 <span className="text-sm font-medium text-blue-400">Escalados</span></p></CardContent></Card>
-         <Card><CardContent className="p-4"><p className="text-xs text-orange-500 uppercase font-bold mb-1 mt-2">Pendentes de Aceite (App)</p><p className="text-3xl font-black text-orange-600">03 <span className="text-sm font-medium text-orange-400">Avisados</span></p></CardContent></Card>
-       </div>
+// Mock data
+const PRESTADORES = [
+  { id: 1, nome: "João Silva", veiculo: "VUC", regiao: "Zona Sul SP", status: "disponivel", avatar: "JS" },
+  { id: 2, nome: "Carlos Barros", veiculo: "Fiorino", regiao: "Guarulhos", status: "ocupado", avatar: "CB" },
+  { id: 3, nome: "Ana Santos", veiculo: "3/4", regiao: "Campinas", status: "disponivel", avatar: "AS" },
+  { id: 4, nome: "Marcos Lima", veiculo: "VUC", regiao: "ABC", status: "inativo", avatar: "ML" },
+];
 
-       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 bg-white p-4 rounded-lg border shadow-sm">
-         <div className="flex gap-2 flex-1 w-full max-w-lg">
-           <div className="relative flex-1">
-             <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-             <Input placeholder="Filtrar por região, veículo ou nome..." className="pl-9 h-10 w-full" />
-           </div>
-         </div>
-         <Button className="bg-blue-600 hover:bg-blue-700 text-white"><Plus className="w-4 h-4 mr-2" /> Nova Reserva de Agenda</Button>
-       </div>
+const RESERVAS = [
+  { id: 1, prestadorId: 1, data: new Date().toISOString(), turno: "integral", status: "confirmado" },
+  { id: 2, prestadorId: 3, data: addDays(new Date(), 1).toISOString(), turno: "manha", status: "aguardando" },
+  { id: 3, prestadorId: 2, data: new Date().toISOString(), turno: "integral", status: "operacao" },
+];
 
-       <div className="bg-card border rounded-lg shadow-sm overflow-hidden">
-         <div className="p-3 bg-slate-50 border-b flex items-center justify-between">
-            <h3 className="font-bold text-sm text-slate-700 flex items-center gap-2"><Users className="w-4 h-4 text-primary"/> Quadro Operacional da Semana (D+1, D+2)</h3>
-            <div className="flex gap-2 text-xs">
-               <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700">Confirmados</Badge>
-               <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700">Pendentes</Badge>
-               <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700">Recusas / Faltas</Badge>
-            </div>
-         </div>
-         <Table>
-           <TableHeader>
-             <TableRow>
-               <TableHead>Prestador Base</TableHead>
-               <TableHead>Veículo Principal</TableHead>
-               <TableHead className="text-center font-bold">Hoje (27/03)</TableHead>
-               <TableHead className="text-center">Sábado (28/03)</TableHead>
-               <TableHead className="text-center">Domingo (29/03)</TableHead>
-               <TableHead className="text-center">Segunda (30/03)</TableHead>
-             </TableRow>
-           </TableHeader>
-           <TableBody>
-             <TableRow>
-               <TableCell className="font-bold text-slate-800 text-sm">João Transportes</TableCell>
-               <TableCell className="text-xs text-muted-foreground"><Truck className="w-3 h-3 inline mr-1"/> Truck / Refrigerado</TableCell>
-               <TableCell className="text-center p-1"><div className="bg-green-100 text-green-800 text-[10px] uppercase font-bold p-1.5 rounded w-full border border-green-200">Em Rota (T1)</div></TableCell>
-               <TableCell className="text-center p-1"><div className="bg-green-100 text-green-800 text-[10px] uppercase font-bold p-1.5 rounded w-full border border-green-200">Rota Matinal (Confirmado)</div></TableCell>
-               <TableCell className="text-center p-1"><div className="bg-slate-100 text-slate-400 text-[10px] uppercase font-bold p-1.5 rounded w-full border-dashed border">Folga DSR</div></TableCell>
-               <TableCell className="text-center p-1"><div className="bg-orange-100 text-orange-800 text-[10px] uppercase font-bold p-1.5 rounded w-full border border-orange-200">Aguardando App</div></TableCell>
-             </TableRow>
-             <TableRow>
-               <TableCell className="font-bold text-slate-800 text-sm">Carlos Agregado</TableCell>
-               <TableCell className="text-xs text-muted-foreground"><Truck className="w-3 h-3 inline mr-1"/> Fiorino / Seca</TableCell>
-               <TableCell className="text-center p-1"><div className="bg-blue-100 text-blue-800 text-[10px] uppercase font-bold p-1.5 rounded w-full border border-blue-200">Dedicado (Base Cliente)</div></TableCell>
-               <TableCell className="text-center p-1"><div className="bg-slate-100 text-slate-400 text-[10px] uppercase font-bold p-1.5 rounded w-full border-dashed border">Alocado c/ Folga</div></TableCell>
-               <TableCell className="text-center p-1"><div className="bg-slate-100 text-slate-400 text-[10px] uppercase font-bold p-1.5 rounded w-full border-dashed border">Folga</div></TableCell>
-               <TableCell className="text-center p-1"><div className="bg-green-100 text-green-800 text-[10px] uppercase font-bold p-1.5 rounded w-full border border-green-200">Confirmado T1</div></TableCell>
-             </TableRow>
-             <TableRow>
-               <TableCell className="font-bold text-slate-800 text-sm">Pedro Spot 12</TableCell>
-               <TableCell className="text-xs text-muted-foreground"><Truck className="w-3 h-3 inline mr-1"/> Van (Geral)</TableCell>
-               <TableCell className="text-center p-1"><div className="bg-red-100 text-red-800 text-[10px] uppercase font-bold p-1.5 rounded w-full border border-red-200">Mot. Faltou / Mecânica</div></TableCell>
-               <TableCell className="text-center p-1"><div className="bg-orange-100 text-orange-800 text-[10px] uppercase font-bold p-1.5 rounded w-full border border-orange-200">Convocado (Substituição)</div></TableCell>
-               <TableCell className="text-center p-1"><div className="bg-slate-100 text-slate-400 text-[10px] uppercase font-bold p-1.5 rounded w-full border-dashed border">No Radar</div></TableCell>
-               <TableCell className="text-center p-1"><div className="bg-slate-100 text-slate-400 text-[10px] uppercase font-bold p-1.5 rounded w-full border-dashed border">No Radar</div></TableCell>
-             </TableRow>
-           </TableBody>
-         </Table>
-       </div>
-     </div>
-   );
+const CORES_STATUS: any = {
+  disponivel: "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-emerald-300",
+  confirmado: "bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-300",
+  aguardando: "bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-300 dashed-border",
+  operacao: "bg-orange-500 text-white hover:bg-orange-600 border-orange-600",
+  indisponivel: "bg-slate-100 text-slate-500 hover:bg-slate-200 border-slate-200",
 };
 
-export default EscalaLista;
+export default function EscalaLista() {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedCell, setSelectedCell] = useState<{prestadorId: number, data: Date} | null>(null);
+  
+  // Form Nova Reserva
+  const [novoTurno, setNovoTurno] = useState("integral");
+  const [novaOS, setNovaOS] = useState("");
+  const [novoTipo, setNovoTipo] = useState("reserva");
+
+  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
+  const diasSemana = Array.from({length: 6}).map((_, i) => addDays(weekStart, i)); // Seg a Sab
+
+  const nextWeek = () => setCurrentDate(addDays(currentDate, 7));
+  const prevWeek = () => setCurrentDate(addDays(currentDate, -7));
+
+  const handleCellClick = (prestadorId: number, data: Date) => {
+    setSelectedCell({prestadorId, data});
+    setModalOpen(true);
+  };
+
+  const handleCreateReserva = () => {
+     toast.success("Reserva salva. WhatsApp automático disparado para confirmação!");
+     setModalOpen(false);
+  };
+
+  const prestadorAtivo = selectedCell ? PRESTADORES.find(p => p.id === selectedCell.prestadorId) : null;
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-[calc(100vh-230px)]">
+       {/* Sidebar Prestadores */}
+       <div className="xl:col-span-1 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-full">
+          <div className="p-4 border-b bg-slate-50/50">
+             <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4"><Truck className="w-5 h-5 text-primary"/> Prestadores Homologados</h3>
+             <div className="relative mb-3">
+               <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground"/>
+               <Input placeholder="Buscar por placa ou nome..." className="pl-9 text-xs h-9"/>
+             </div>
+             <div className="flex gap-2">
+               <Select defaultValue="todos"><SelectTrigger className="text-xs h-8"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="todos">Qqr Veículo</SelectItem><SelectItem value="vuc">VUC</SelectItem><SelectItem value="fiorino">Fiorino</SelectItem></SelectContent></Select>
+               <Button variant="outline" size="sm" className="h-8 px-2"><Filter className="w-4 h-4"/></Button>
+             </div>
+          </div>
+          <div className="overflow-y-auto flex-1 p-2 space-y-2 custom-scrollbar">
+             {PRESTADORES.map(p => (
+                <div key={p.id} className="p-3 bg-white border rounded-lg hover:border-primary/40 transition cursor-pointer flex gap-3 items-center group">
+                   <Avatar className="w-10 h-10 border shadow-sm"><AvatarFallback className="bg-slate-100 text-slate-600 font-bold">{p.avatar}</AvatarFallback></Avatar>
+                   <div className="flex-1 overflow-hidden">
+                      <p className="text-sm font-bold text-slate-800 truncate">{p.nome}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">{p.veiculo} • {p.regiao}</p>
+                   </div>
+                   <div className={`w-2 h-2 rounded-full shrink-0 ${p.status === 'disponivel' ? 'bg-green-500' : p.status === 'ocupado' ? 'bg-orange-500' : 'bg-slate-300'}`}/>
+                </div>
+             ))}
+          </div>
+       </div>
+
+       {/* Calendário Principal */}
+       <div className="xl:col-span-3 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col h-full overflow-hidden">
+          <div className="p-4 border-b flex justify-between items-center bg-slate-50/50">
+             <div>
+               <h3 className="font-bold text-slate-800 flex items-center gap-2"><CalendarIcon className="w-5 h-5 text-primary"/> Escala de Operação</h3>
+               <p className="text-xs text-muted-foreground">Arraste ou clique na célula para configurar grade de alocação</p>
+             </div>
+             <div className="flex items-center gap-4">
+                <div className="flex items-center bg-white border rounded-lg shadow-sm">
+                   <Button variant="ghost" size="icon" onClick={prevWeek} className="h-9 w-9 rounded-r-none"><ChevronLeft className="w-4 h-4"/></Button>
+                   <div className="px-4 text-sm font-bold border-x text-slate-700 min-w-[200px] text-center">
+                      Semana {format(weekStart, "dd/MM")} - {format(diasSemana[5], "dd/MM")}
+                   </div>
+                   <Button variant="ghost" size="icon" onClick={nextWeek} className="h-9 w-9 rounded-l-none"><ChevronRight className="w-4 h-4"/></Button>
+                </div>
+                <Button className="h-9 gap-2"><Plus className="w-4 h-4"/> Alocar</Button>
+             </div>
+          </div>
+
+          <div className="flex-1 overflow-auto custom-scrollbar">
+             <div className="min-w-[800px]">
+                <div className="grid grid-cols-[200px_repeat(6,1fr)] bg-slate-100/50 border-b">
+                   <div className="p-3 border-r font-bold text-xs uppercase text-slate-500 flex items-center">Recurso</div>
+                   {diasSemana.map((d, i) => (
+                      <div key={i} className={`p-3 border-r text-center ${isSameDay(d, new Date()) ? 'bg-primary/5 border-b-2 border-b-primary' : ''}`}>
+                         <p className="text-[10px] uppercase font-bold text-slate-500">{format(d, "EEEE", {locale: ptBR})}</p>
+                         <p className={`text-lg font-black ${isSameDay(d, new Date()) ? 'text-primary' : 'text-slate-800'}`}>{format(d, "dd/MM")}</p>
+                      </div>
+                   ))}
+                </div>
+                
+                <div className="divide-y">
+                   {PRESTADORES.map(p => (
+                      <div key={p.id} className="grid grid-cols-[200px_repeat(6,1fr)] hover:bg-slate-50/50 transition">
+                         <div className="p-3 border-r flex items-center gap-2 bg-white">
+                            <span className="text-xs font-bold text-slate-700 truncate">{p.nome}</span>
+                         </div>
+                         {diasSemana.map((d, i) => {
+                            // Find mock reserva
+                            const res = RESERVAS.find(r => r.prestadorId === p.id && isSameDay(new Date(r.data), d));
+                            let slotStatus = "disponivel";
+                            let slotLabel = "Livre";
+                            
+                            if (p.status === "inativo") { slotStatus = "indisponivel"; slotLabel = "Inativo"; }
+                            else if (res) {
+                               slotStatus = res.status;
+                               slotLabel = res.status === "confirmado" ? "Confirmado" : res.status === "aguardando" ? "Aguard. Conf" : "Em Rota";
+                               if (res.turno !== "integral") slotLabel += ` (${res.turno})`;
+                            }
+
+                            return (
+                               <div key={i} className="p-1 border-r min-h-[60px] cursor-pointer relative group" onClick={() => handleCellClick(p.id, d)}>
+                                  <div className="absolute inset-0 group-hover:bg-slate-100/50 z-0"/>
+                                  {res || p.status === 'inativo' ? (
+                                    <div className={`relative z-10 w-full h-full rounded border flex items-center justify-center p-1 text-center shadow-sm transition ${CORES_STATUS[slotStatus]}`}>
+                                       <span className="text-[10px] font-bold uppercase tracking-wider">{slotLabel}</span>
+                                    </div>
+                                  ) : (
+                                    <div className="relative z-10 w-full h-full rounded border border-transparent group-hover:border-dashed group-hover:border-slate-300 flex items-center justify-center transition">
+                                       <Plus className="w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100"/>
+                                    </div>
+                                  )}
+                               </div>
+                            )
+                         })}
+                      </div>
+                   ))}
+                </div>
+             </div>
+          </div>
+       </div>
+
+       {/* Modal de Reserva */}
+       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+         <DialogContent className="sm:max-w-md">
+           <DialogHeader>
+             <DialogTitle>Gerenciar Alocação de Recurso</DialogTitle>
+             <DialogDescription>
+               Defina o bloqueio na Malha Logística para <strong className="text-slate-800">{prestadorAtivo?.nome}</strong> em <strong className="text-slate-800">{selectedCell?.data ? format(selectedCell.data, "dd/MM/yyyy") : ''}</strong>.
+             </DialogDescription>
+           </DialogHeader>
+           
+           <div className="space-y-4 py-4">
+             <div className="space-y-1">
+                <Label className="text-xs">OS Vinculada (Opcional)</Label>
+                <SearchableSelect table="ordens_servico" labelField="numero" searchFields={["numero"]} value={novaOS} onChange={v => setNovaOS(v||"")} placeholder="Associe uma OS..."/>
+             </div>
+             <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                   <Label className="text-xs">Turno da Alocação</Label>
+                   <Select value={novoTurno} onValueChange={setNovoTurno}>
+                      <SelectTrigger><SelectValue/></SelectTrigger>
+                      <SelectContent>
+                         <SelectItem value="integral">Dia Integral</SelectItem>
+                         <SelectItem value="manha">Manhã (06 as 14)</SelectItem>
+                         <SelectItem value="tarde">Tarde (14 as 22)</SelectItem>
+                      </SelectContent>
+                   </Select>
+                </div>
+                <div className="space-y-1">
+                   <Label className="text-xs">Natureza da Reserva</Label>
+                   <Select value={novoTipo} onValueChange={setNovoTipo}>
+                      <SelectTrigger><SelectValue/></SelectTrigger>
+                      <SelectContent>
+                         <SelectItem value="reserva">Reserva Operacional Real</SelectItem>
+                         <SelectItem value="bloqueio">Bloqueio Protetivo (Folga)</SelectItem>
+                      </SelectContent>
+                   </Select>
+                </div>
+             </div>
+             <div className="space-y-1">
+                <Label className="text-xs">Instruções Prévias / Observações</Label>
+                <Textarea placeholder="Ex: Necessário chegar 30m antes na base para carregar." rows={2}/>
+             </div>
+           </div>
+
+           <DialogFooter className="flex justify-between items-center sm:justify-between">
+             <Button variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 bg-emerald-50/50 gap-2 font-bold text-xs" onClick={() => toast.success("Mensagem reenviada!")}>
+               <MessageCircle className="w-4 h-4"/> Confirmar via WA
+             </Button>
+             <Button onClick={handleCreateReserva}>Salvar na Grade</Button>
+           </DialogFooter>
+         </DialogContent>
+       </Dialog>
+    </div>
+  );
+}

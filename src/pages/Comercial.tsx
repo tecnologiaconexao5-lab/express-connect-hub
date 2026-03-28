@@ -5,6 +5,7 @@ import PlaceholderPage from "@/components/PlaceholderPage";
 import OrcamentosLista from "@/components/comercial/OrcamentosLista";
 import TabelasValoresLista from "@/components/comercial/TabelasValoresLista";
 import SimuladorFrete from "@/components/comercial/SimuladorFrete";
+import CrmBase from "@/components/comercial/crm/CrmBase";
 
 const Comercial = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -27,17 +28,8 @@ const Comercial = () => {
           <TabsTrigger value="simulador"><BarChart3 className="w-3.5 h-3.5 mr-1" />Simulador</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="crm">
-          <PlaceholderPage
-            title="CRM"
-            description="Gerenciamento de leads, oportunidades e relacionamento com clientes prospects."
-            icon={Users}
-            subModules={[
-              { title: "Pipeline", description: "Visualização do funil de vendas e oportunidades em andamento.", status: "development" },
-              { title: "Leads", description: "Cadastro e qualificação de leads com scoring automático.", status: "development" },
-              { title: "Atividades", description: "Registro de visitas, ligações e follow-ups comerciais.", status: "development" },
-            ]}
-          />
+        <TabsContent value="crm" className="mt-0 pt-2">
+          <CrmBase />
         </TabsContent>
 
         <TabsContent value="orcamentos">
