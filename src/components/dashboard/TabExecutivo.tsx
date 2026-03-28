@@ -2,6 +2,7 @@ import { DollarSign, Activity, Users, TrendingUp, UserCheck, CheckCircle2, Recei
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { kpisExecutivo, faturamentoMensal, operacoesSemana, operacoesTipoVeiculo, topClientes, CORES_GRAFICOS } from "./mockData";
+import { AniversariantesWidget } from "@/components/comunicacao/AniversariantesWidget";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const fmtN = (v: number) => v.toLocaleString("pt-BR");
@@ -38,6 +39,8 @@ const KpiSmall = ({ title, value, icon: Icon }: { title: string; value: string; 
 
 const TabExecutivo = () => (
   <div className="space-y-6">
+    <AniversariantesWidget />
+
     {/* Linha 1 — 4 KPIs grandes */}
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <KpiCard title="Faturamento do mês" value={fmt(kpisExecutivo.faturamentoMes)} icon={DollarSign} accent />

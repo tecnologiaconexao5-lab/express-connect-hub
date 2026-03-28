@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bell, Search, LogOut, Radio, CheckCircle, AlertTriangle, Truck, Clock } from "lucide-react";
+import { Bell, Search, LogOut, Radio, CheckCircle, AlertTriangle, Truck, Clock, Megaphone, Inbox } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getUser, logout } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -61,6 +61,25 @@ const AppTopbar = () => {
       </div>
 
       <div className="flex items-center gap-3 ml-auto">
+        {/* Inbox Comunicacoes */}
+        <button 
+          onClick={() => navigate('/configuracoes?tab=comunicacoes-inbox')}
+          className="relative p-2 rounded-lg hover:bg-secondary/50 text-tms-topbar-fg transition"
+          title="Inbox de Mensagens"
+        >
+          <Inbox className="w-5 h-5" />
+          <span className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center text-[9px] font-bold text-white bg-blue-600 rounded-full">3</span>
+        </button>
+
+        {/* Central de Comunicacao */}
+        <button 
+          onClick={() => navigate('/comunicacao')}
+          className="p-2 rounded-lg hover:bg-secondary/50 text-tms-topbar-fg transition text-orange-500 bg-orange-500/10 hover:bg-orange-500/20"
+          title="Central de Comunicação"
+        >
+          <Megaphone className="w-5 h-5" />
+        </button>
+
         {/* Notifications */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
