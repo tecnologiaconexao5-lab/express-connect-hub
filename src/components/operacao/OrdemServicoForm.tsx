@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Save, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Upload, X, Download, File, FilePlus, Check } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,57 @@ import { FavoritosDropdown, SaveFavoritoButton } from "@/components/enderecos/En
 import CompartilharRastreioModal from "./CompartilharRastreioModal";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
+import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
+
+interface SugestaoVeiculo {
+  tipo: string;
+  motivo: string;
+}
+
+const sugerirVeiculo = (peso: number, cubagem: number, refrigerado: boolean): SugestaoVeiculo | null => {
+  if (refrigerado) {
+    if (peso > 6000) {
+      return { tipo: 'van', motivo: 'Carga refrigerada acima de 6t requer van ou veículo refrigerado dedicado' };
+    }
+    return { tipo: 'van', motivo: 'Carga refrigerada leve/média indica van refrigerada' };
+  }
+  
+  if (peso > 20000) {
+    return { tipo: 'carreta', motivo: 'Acima de 20t requer carreta para transporte adequado' };
+  }
+  if (peso > 15000) {
+    return { tipo: 'bitrem', motivo: 'Carga de 15-20t adequada para bitrem' };
+  }
+  if (peso > 10000) {
+    return { tipo: 'truck', motivo: 'Carga de 10-15t indica truck como opção econômica' };
+  }
+  if (peso > 8000) {
+    return { tipo: 'toco', motivo: 'Carga de 8-10t adequada para toco com carroceria' };
+  }
+  if (peso > 4000) {
+    return { tipo: 'vuc', motivo: 'Carga de 4-8t indica VUC (Veículo Urbano de Carga)' };
+  }
+  if (peso > 1500) {
+    return { tipo: 'van', motivo: 'Carga de 1.5-4t adequada para van ou Fiorino grande' };
+  }
+  if (peso > 600) {
+    return { tipo: 'hr', motivo: 'Carga de 600kg-1.5t indica HR (utilitário médio)' };
+  }
+  if (peso > 200) {
+    return { tipo: 'fiorino', motivo: 'Carga de 200-600kg adequada para Fiorino' };
+  }
+  return { tipo: 'moto', motivo: 'Carga leve até 200kg pode ser transportada por moto' };
+};
+
+interface DocumentoOS {
+  id: string;
+  tipo: 'nf' | 'cte' | 'xml' | 'comprovante' | 'foto' | 'outro';
+  nome: string;
+  url?: string;
+  dataUpload: string;
+  numeroCte?: string;
+  chaveAcesso?: string;
+}
 
 interface Props {
   os?: OrdemServico;
@@ -52,6 +103,8 @@ const Field = ({ label, children, className = "" }: { label: React.ReactNode; ch
 const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [data, setData] = useState<OrdemServico>(os ? JSON.parse(JSON.stringify(os)) : emptyOS());
   const [isSaving, setIsSaving] = useState(false);
+  const [sugestaoVeiculo, setSugestaoVeiculo] = useState<SugestaoVeiculo | null>(null);
+  const [documentos, setDocumentos] = useState<DocumentoOS[]>([]);
   const readOnly = modo === "ver";
 
   useEffect(() => {
@@ -66,8 +119,15 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                valorCliente: orc.valores?.diaria || orc.valores?.total || p.valorCliente,
                orcamentoOrigem: orc.numero || p.orcamentoOrigem,
                enderecos: orc.enderecos && orc.enderecos.length > 0 ? orc.enderecos : p.enderecos,
-               veiculoTipo: orc.veiculo?.tipo || p.veiculoTipo
+               veiculoTipo: orc.veiculo?.tipo || p.veiculoTipo,
+               peso: orc.carga?.peso || p.peso,
+               cubagem: orc.carga?.cubagem || p.cubagem,
+               cargaRefrigerada: orc.carga?.refrigerado || p.cargaRefrigerada
             }));
+            if (orc.carga?.peso) {
+              const sugestao = sugerirVeiculo(orc.carga.peso, orc.carga.cubagem || 0, orc.carga.refrigerado || false);
+              setSugestaoVeiculo(sugestao);
+            }
             localStorage.removeItem('DraftOS_Orcamento');
             toast.success("Dados do Orçamento importados com sucesso.");
           } catch(e) {}
@@ -75,7 +135,54 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     }
   }, [modo]);
 
-  const update = (field: keyof OrdemServico, value: any) => setData((p) => ({ ...p, [field]: value }));
+  const update = (field: keyof OrdemServico, value: any) => {
+    setData((p) => {
+      const newData = { ...p, [field]: value };
+      
+      if (field === 'peso' || field === 'cubagem' || field === 'cargaRefrigerada') {
+        const novoPeso = field === 'peso' ? value : p.peso;
+        const novaCubagem = field === 'cubagem' ? value : p.cubagem;
+        const refrigerado = field === 'cargaRefrigerada' ? value : p.cargaRefrigerada;
+        const sugestao = sugerirVeiculo(novoPeso || 0, novaCubagem || 0, refrigerado || false);
+        setSugestaoVeiculo(sugestao);
+      }
+      
+      if (field === 'cliente' && value) {
+        toast.info("Tabela de valores vinculada ao cliente. Para alterar, procure o perfil Operador/Admin.");
+      }
+      
+      return newData;
+    });
+  };
+  
+  const aplicarSugestaoVeiculo = () => {
+    if (sugestaoVeiculo) {
+      update("veiculoTipo", sugestaoVeiculo.tipo);
+      toast.success(`Veículo ${sugestaoVeiculo.tipo} aplicado!`);
+      setSugestaoVeiculo(null);
+    }
+  };
+  
+  const handleUploadDocumento = (tipo: DocumentoOS['tipo'], file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const novoDoc: DocumentoOS = {
+        id: String(Date.now()),
+        tipo,
+        nome: file.name,
+        url: reader.result as string,
+        dataUpload: new Date().toISOString()
+      };
+      setDocumentos([...documentos, novoDoc]);
+      toast.success(`Documento ${file.name} anexado com sucesso!`);
+    };
+    reader.readAsDataURL(file);
+  };
+  
+  const removerDocumento = (id: string) => {
+    setDocumentos(documentos.filter(d => d.id !== id));
+    toast.success("Documento removido.");
+  };
 
   const setStatus = async (novoStatus: OSStatus, motivo: string = "") => {
     const acaoLabel = motivo ? `Status alterado p/ ${novoStatus}: ${motivo}` : `Status alterado p/ ${novoStatus}`;
@@ -359,6 +466,26 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
         </TabsContent>
 
         <TabsContent value="carga">
+          {sugestaoVeiculo && !readOnly && (
+            <Card className="mb-4 border-orange-200 bg-orange-50">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
+                      <Lightbulb className="w-5 h-5 text-orange-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-orange-800">Veículo sugerido: <span className="uppercase">{sugestaoVeiculo.tipo}</span></p>
+                      <p className="text-sm text-orange-600">Capacidade adequada para {data.peso}kg. {sugestaoVeiculo.motivo}</p>
+                    </div>
+                  </div>
+                  <Button onClick={aplicarSugestaoVeiculo} className="bg-orange-500 hover:bg-orange-600 gap-2">
+                    <Check className="w-4 h-4" /> Aplicar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader><CardTitle className="text-sm text-primary">Detalhamento Condicional da Carga</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -389,11 +516,13 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                  <Field label="Tipo e Eixo de Veículo">
-                   <Select value={data.veiculoTipo} onValueChange={(v) => update("veiculoTipo", v)} disabled={readOnly}>
-                    <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>{["moto", "utilitário leve", "Fiorino", "Kangoo", "HR", "van", "VUC", "3/4", "toco", "truck", "carreta", "carreta LS", "bitrem", "rodotrem", "cavalo mecânico", "veículo refrigerado"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                   </Select>
-                 </Field>
+                    <Select value={data.veiculoTipo} onValueChange={(v) => update("veiculoTipo", v)} disabled={readOnly}>
+                     <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                     <SelectContent>
+                       {TIPOS_VEICULO.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                     </SelectContent>
+                    </Select>
+                  </Field>
                  <Field label="Classificação Térmica (Baú)">
                    <Select value={data.veiculoTermica} onValueChange={(v) => update("veiculoTermica", v)} disabled={readOnly}>
                     <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
@@ -500,22 +629,71 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
 
         <TabsContent value="documentos">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-             <Card>
-               <CardHeader><CardTitle className="text-sm">Documentação Vinculada e CTEs</CardTitle></CardHeader>
-               <CardContent>
-                  <div className="p-8 border-dashed border-2 rounded-lg text-center bg-muted/20">
-                    <FileText className="w-8 h-8 mx-auto opacity-40 mb-2"/>
-                    <p className="text-sm text-muted-foreground font-medium">Nenhum upload de NF, Minuta ou CIOT pendente foi efetuado via app.</p>
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    <Button variant="outline" className="w-full text-xs" onClick={() => {
-                        toast.success("Gerando PDF da Ordem de Serviço...");
-                        generateProfessionalPDF(data, "ORDEM DE SERVIÇO");
-                      }}>Gerar PDF OS</Button>
-                    <Button variant="outline" className="w-full text-xs">Imprimir Tíquete</Button>
-                  </div>
-               </CardContent>
-             </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-sm">Documentação Vinculada e CTEs</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
+                   {!readOnly && (
+                     <div className="flex gap-2 flex-wrap">
+                       <input type="file" id="doc-nf" className="hidden" onChange={(e) => e.target.files?.[0] && handleUploadDocumento('nf', e.target.files[0])} />
+                       <label htmlFor="doc-nf"><Button variant="outline" size="sm" asChild><span><FilePlus className="w-3 h-3 mr-1"/> NF</span></Button></label>
+                       
+                       <input type="file" id="doc-cte" className="hidden" onChange={(e) => e.target.files?.[0] && handleUploadDocumento('cte', e.target.files[0])} />
+                       <label htmlFor="doc-cte"><Button variant="outline" size="sm" asChild><span><FilePlus className="w-3 h-3 mr-1"/> CT-e</span></Button></label>
+                       
+                       <input type="file" id="doc-xml" className="hidden" onChange={(e) => e.target.files?.[0] && handleUploadDocumento('xml', e.target.files[0])} />
+                       <label htmlFor="doc-xml"><Button variant="outline" size="sm" asChild><span><FilePlus className="w-3 h-3 mr-1"/> XML NF</span></Button></label>
+                       
+                       <input type="file" id="doc-comp" className="hidden" onChange={(e) => e.target.files?.[0] && handleUploadDocumento('comprovante', e.target.files[0])} />
+                       <label htmlFor="doc-comp"><Button variant="outline" size="sm" asChild><span><FilePlus className="w-3 h-3 mr-1"/> Comprovante</span></Button></label>
+                       
+                       <input type="file" id="doc-foto" className="hidden" onChange={(e) => e.target.files?.[0] && handleUploadDocumento('foto', e.target.files[0])} />
+                       <label htmlFor="doc-foto"><Button variant="outline" size="sm" asChild><span><FilePlus className="w-3 h-3 mr-1"/> Foto</span></Button></label>
+                       
+                       <input type="file" id="doc-outro" className="hidden" onChange={(e) => e.target.files?.[0] && handleUploadDocumento('outro', e.target.files[0])} />
+                       <label htmlFor="doc-outro"><Button variant="outline" size="sm" asChild><span><FilePlus className="w-3 h-3 mr-1"/> Outro</span></Button></label>
+                     </div>
+                   )}
+                   
+                   {documentos.length === 0 ? (
+                     <div className="p-8 border-dashed border-2 rounded-lg text-center bg-muted/20">
+                       <FileText className="w-8 h-8 mx-auto opacity-40 mb-2"/>
+                       <p className="text-sm text-muted-foreground font-medium">Nenhum documento anexado.</p>
+                     </div>
+                   ) : (
+                     <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                       {documentos.map((doc) => (
+                         <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
+                           <div className="flex items-center gap-3">
+                             <File className="w-5 h-5 text-blue-500" />
+                             <div>
+                               <p className="text-sm font-medium">{doc.nome}</p>
+                               <p className="text-xs text-muted-foreground">{new Date(doc.dataUpload).toLocaleString('pt-BR')}</p>
+                               {doc.tipo === 'cte' && (
+                                 <div className="flex gap-2 mt-1">
+                                   <Input placeholder="Nº CT-e" className="h-7 text-xs" />
+                                   <Input placeholder="Chave de acesso" className="h-7 text-xs" />
+                                 </div>
+                               )}
+                             </div>
+                           </div>
+                           <div className="flex gap-1">
+                             {doc.url && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => window.open(doc.url, '_blank')}><Download className="w-3 h-3" /></Button>}
+                             {!readOnly && <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => removerDocumento(doc.id)}><X className="w-3 h-3" /></Button>}
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                   )}
+                   
+                   <div className="flex gap-2 pt-2 border-t">
+                     <Button variant="outline" className="flex-1 text-xs" onClick={() => {
+                         toast.success("Gerando PDF da Ordem de Serviço...");
+                         generateProfessionalPDF(data, "ORDEM DE SERVIÇO");
+                       }}>Gerar PDF OS</Button>
+                     <Button variant="outline" className="flex-1 text-xs">Imprimir Tiquete</Button>
+                   </div>
+                </CardContent>
+              </Card>
              <Card>
                <CardHeader className="flex flex-row items-center justify-between">
                  <CardTitle className="text-sm">Timeline e Tracking (Realtime)</CardTitle>
