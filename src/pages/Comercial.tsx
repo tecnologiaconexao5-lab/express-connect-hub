@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PlaceholderPage from "@/components/PlaceholderPage";
 import OrcamentosLista from "@/components/comercial/OrcamentosLista";
 import TabelasValoresLista from "@/components/comercial/TabelasValoresLista";
+import SimuladorFrete from "@/components/comercial/SimuladorFrete";
 
 const Comercial = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -48,15 +49,7 @@ const Comercial = () => {
         </TabsContent>
 
         <TabsContent value="simulador">
-          <PlaceholderPage
-            title="Simulador de Frete"
-            description="Simulação de frete com cálculo automático baseado em tabelas vigentes."
-            icon={BarChart3}
-            subModules={[
-              { title: "Simulação Rápida", description: "Cálculo de frete com base em origem, destino e carga.", status: "integration" },
-              { title: "Comparativo", description: "Comparação entre fornecedores e modalidades.", status: "integration" },
-            ]}
-          />
+          <SimuladorFrete />
         </TabsContent>
       </Tabs>
     </div>

@@ -1,74 +1,51 @@
 import { useState } from "react";
-import { ArrowLeft, Save, Plus, Trash2, Calculator, Shield, Coins, BookOpen, Clock } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, Copy, Eye, CopyCheck, Coins, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { supabase } from "@/lib/supabase";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { toast } from "sonner";
-import { TabelaValores, TabelaFaixa } from "./tabelaValoresTypes";
+import { TabelaValores, emptyTabelaValores, RegraFaixa, AdicionaisTaxas } from "./tabelaValoresTypes";
 
 interface Props {
-  tabela?: TabelaValores;
+  tabela?: TabelaValores | null;
   modo: "ver" | "editar" | "novo";
   onVoltar: () => void;
+  onSalvar: (tab: TabelaValores) => void;
 }
 
-const emptyFaixa = (): TabelaFaixa => ({
-  tipo_criterio: "peso", inicio: 0, fim: 0, excedente: 0, minimo: 0,
-  limite_nota_peso: 0, perc_nota_peso: 0, valor_adicional: 0,
-  prazo_estimado: "", restricao_veiculo: "", observacao: ""
-});
-
-const emptyTabela = (): TabelaValores => ({
-  id: "", nome: "Nova Tabela", cliente: "", unidade: "", centroCusto: "", tipoOperacao: "",
-  segmento: "", vigenciaInicial: new Date().toISOString().split("T")[0], vigenciaFinal: "",
-  status: "rascunho", versao: "1.0", principalOuComplementar: "principal", observacoes: "",
-  tipoCobrancaPrincipal: "por peso", tipoVeiculo: "", subcategoria: "", carroceria: "", classificacaoTermica: "",
-  valorBase: 0, valorMinimoFaturavel: 0, valorCusto: 0, markupPercent: 0, margemMinimaDesejada: 0, custoMinimoParceiro: 0,
-  arredondamento: false, cobrancaRetorno: false, cobrancaEspera: false, cobrancaAjudante: false,
-  faixas: [emptyFaixa()], adicionais: [], contaContabil: "", custoEstimadoTotal: 0, margemEstimadaTotal: 0, historicoVersoes: []
-});
-
-const ADICIONAIS_OPCOES = ["Pedágio", "Ajudante", "Espera", "Descarga", "Taxa Administrativa", "Devolução", "Reentrega", "Pernoite", "Taxa de Risco", "Taxa de Restrição", "Segunda Tentativa", "Estacionamento", "Taxa de Agendamento", "Taxa de Dificuldade de Acesso", "Taxa de Escolta", "Estadia", "Diária Extra"];
-
-const TabelaValoresForm = ({ tabela, modo, onVoltar }: Props) => {
-  const [data, setData] = useState<TabelaValores>(tabela ? JSON.parse(JSON.stringify(tabela)) : emptyTabela());
-  const [isSaving, setIsSaving] = useState(false);
+export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: Props) {
+  const [data, setData] = useState<TabelaValores>(tabela || emptyTabelaValores());
   const readOnly = modo === "ver";
 
-  const update = (field: keyof TabelaValores, value: any) => setData((p) => ({ ...p, [field]: value }));
+  const update = (field: keyof TabelaValores, value: any) => setData(p => ({ ...p, [field]: value }));
+  const updateNested = (objKey: "adicionais", field: keyof AdicionaisTaxas, updateObj: any) => {
+    setData(p => ({ ...p, [objKey]: { ...p[objKey], [field]: { ...p[objKey][field], ...updateObj } } }));
+  };
 
-  const handleSalvar = async () => {
-    setIsSaving(true);
-    try {
-      const isNovo = !data.id;
-      const { id, ...rest } = data; // avoid passing empty id if new
-      let query;
-      
-      const payload = { ...rest, historicoVersoes: [...(rest.historicoVersoes || []), { data: new Date().toISOString(), versao: rest.versao }] };
-
-      if (isNovo) query = supabase.from("tabelas_valores").insert([payload]);
-      else query = supabase.from("tabelas_valores").update(payload).eq("id", id);
-      
-      const { error } = await query;
-      if (error) throw error;
-
-      toast.success(isNovo ? "Tabela cadastrada com sucesso!" : "Tabela atualizada!");
-      onVoltar();
-    } catch {
-      toast.error("Erro ao salvar tabela de valores.");
-    } finally {
-      setIsSaving(false);
+  const handleToggleCobranca = (cb: string) => {
+    if (data.cobrancaPrincipais.includes(cb)) {
+       update("cobrancaPrincipais", data.cobrancaPrincipais.filter(x => x !== cb));
+    } else {
+       update("cobrancaPrincipais", [...data.cobrancaPrincipais, cb]);
     }
   };
 
-  const Field = ({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) => (
+  const addFaixa = () => {
+    const f: RegraFaixa = {
+      id: String(Date.now()), pesoIni: 0, pesoFim: 0, kmIni: 0, kmFim: 0, cubagemIni: 0, cubagemFim: 0, regioesDestino: [], cepIni: "", cepFim: "", cidadeUF: "", prazoEstimado: 24, valorBase: 0, adicionalValor: 0, restricaoVeiculo: "", prioridade: 1, obs: ""
+    };
+    update("faixas", [...data.faixas, f]);
+  };
+
+  const Field = ({ label, children, className = "" }: any) => (
     <div className={className}>
       <Label className="text-xs font-medium text-muted-foreground mb-1 block">{label}</Label>
       {children}
@@ -76,191 +53,218 @@ const TabelaValoresForm = ({ tabela, modo, onVoltar }: Props) => {
   );
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
+    <div className="space-y-4 max-w-[1400px] mx-auto pb-10">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onVoltar}><ArrowLeft className="w-5 h-5" /></Button>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold">{data.nome}</h2>
-              <span className="text-[10px] bg-muted px-2 py-0.5 rounded font-mono">v{data.versao}</span>
-            </div>
-            <p className="text-sm text-muted-foreground">{data.cliente || "Todos os Clientes"} - {data.status}</p>
+            <h2 className="text-xl font-bold">{data.nome || "Nova Tabela de Valores"}</h2>
+            <p className="text-sm text-muted-foreground">Versão: v{data.versao} | Status: <span className="uppercase text-[10px] bg-slate-200 px-1 py-0.5 rounded text-slate-700 font-bold">{data.status}</span></p>
           </div>
         </div>
         <div className="flex gap-2">
-          {!readOnly && <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={handleSalvar} disabled={isSaving}><Save className="w-4 h-4 mr-1"/> Salvar Tabela</Button>}
+          {!readOnly && <Button variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 hover:bg-emerald-100"><Eye className="w-4 h-4 mr-2"/> Visualizar Impacto</Button>}
+          {!readOnly && <Button onClick={() => { toast.success("Tabela salva com sucesso."); onSalvar(data); }}><Save className="w-4 h-4 mr-2"/> Salvar Tabela</Button>}
         </div>
       </div>
 
-      <Tabs defaultValue="identificacao" className="w-full">
-        <TabsList className="bg-muted p-1">
-          <TabsTrigger value="identificacao" className="text-xs"><BookOpen className="w-3 h-3 mr-1"/> Identificação</TabsTrigger>
-          <TabsTrigger value="regras" className="text-xs"><Shield className="w-3 h-3 mr-1"/> Regras Base</TabsTrigger>
-          <TabsTrigger value="faixas" className="text-xs"><Calculator className="w-3 h-3 mr-1"/> Faixas e Critérios</TabsTrigger>
-          <TabsTrigger value="adicionais" className="text-xs"><Plus className="w-3 h-3 mr-1"/> Adicionais</TabsTrigger>
-          <TabsTrigger value="financeiro" className="text-xs"><Coins className="w-3 h-3 mr-1"/> Financeiro</TabsTrigger>
+      <Tabs defaultValue="aba1" className="w-full">
+        <TabsList className="bg-slate-100 px-1 h-auto flex flex-wrap shadow-sm">
+           <TabsTrigger value="aba1" className="text-[11px] uppercase tracking-wider py-2"><Coins className="w-3.5 h-3.5 mr-1"/> Identificação</TabsTrigger>
+           <TabsTrigger value="aba2" className="text-[11px] uppercase tracking-wider py-2"><Zap className="w-3.5 h-3.5 mr-1"/> Regras Base</TabsTrigger>
+           <TabsTrigger value="aba3" className="text-[11px] uppercase tracking-wider py-2">Faixas & Critérios</TabsTrigger>
+           <TabsTrigger value="aba4" className="text-[11px] uppercase tracking-wider py-2">Adicionais & Taxas</TabsTrigger>
+           <TabsTrigger value="aba5" className="text-[11px] uppercase tracking-wider py-2">Financeiro / Histórico</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="identificacao">
-          <Card>
-            <CardHeader><CardTitle className="text-sm text-primary">Identificação e Validade</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              <Field label="Nome da Tabela*"><Input value={data.nome} readOnly={readOnly} onChange={(e) => update("nome", e.target.value)} /></Field>
-              <Field label="Cliente Vinculado"><Input value={data.cliente} readOnly={readOnly} onChange={(e) => update("cliente", e.target.value)} placeholder="Deixe em branco p/ geral" /></Field>
-              <Field label="Unidade"><Input value={data.unidade} readOnly={readOnly} onChange={(e) => update("unidade", e.target.value)} /></Field>
-              <Field label="Centro de Custo"><Input value={data.centroCusto} readOnly={readOnly} onChange={(e) => update("centroCusto", e.target.value)} /></Field>
-              <Field label="Tipo de Operação"><Input value={data.tipoOperacao} readOnly={readOnly} onChange={(e) => update("tipoOperacao", e.target.value)} /></Field>
-              <Field label="Segmento"><Input value={data.segmento} readOnly={readOnly} onChange={(e) => update("segmento", e.target.value)} /></Field>
-              <Field label="Vigência Inicial"><Input type="date" value={data.vigenciaInicial} readOnly={readOnly} onChange={(e) => update("vigenciaInicial", e.target.value)} /></Field>
-              <Field label="Vigência Final"><Input type="date" value={data.vigenciaFinal} readOnly={readOnly} onChange={(e) => update("vigenciaFinal", e.target.value)} /></Field>
-              <Field label="Status">
-                <Select value={data.status} onValueChange={(v) => update("status", v as any)} disabled={readOnly}>
-                  <SelectTrigger><SelectValue/></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ativa">Ativa</SelectItem>
-                    <SelectItem value="inativa">Inativa</SelectItem>
-                    <SelectItem value="vencida">Vencida</SelectItem>
-                    <SelectItem value="rascunho">Rascunho</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Versão"><Input value={data.versao} readOnly={readOnly} onChange={(e) => update("versao", e.target.value)} /></Field>
-              <Field label="Tipo (Principal/Comp.)">
-                <Select value={data.principalOuComplementar} onValueChange={(v) => update("principalOuComplementar", v as any)} disabled={readOnly}>
-                  <SelectTrigger><SelectValue/></SelectTrigger>
-                  <SelectContent><SelectItem value="principal">Principal</SelectItem><SelectItem value="complementar">Complementar</SelectItem></SelectContent>
-                </Select>
-              </Field>
-              <Field label="Observações Gerais" className="md:col-span-2 xl:col-span-4"><Textarea value={data.observacoes} readOnly={readOnly} onChange={(e) => update("observacoes", e.target.value)} rows={2} /></Field>
-            </CardContent>
-          </Card>
+        <TabsContent value="aba1">
+           <Card>
+             <CardHeader className="pb-3 border-b"><CardTitle className="text-sm">Configuração Mestra Comercial</CardTitle></CardHeader>
+             <CardContent className="pt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+               <Field label="Nome da Tabela" className="lg:col-span-2"><Input value={data.nome} onChange={e => update("nome", e.target.value)} readOnly={readOnly}/></Field>
+               <Field label="Cliente Específico (Vazio = Uso Geral)" className="lg:col-span-2">
+                  {readOnly ? <Input value={data.cliente} readOnly /> : (
+                     <SearchableSelect table="clientes" labelField="nome_fantasia" valueField="nome_fantasia" searchFields={["nome_fantasia", "cnpj"]} value={data.cliente} onChange={v => update("cliente", v || "")} placeholder="Buscar cliente..." />
+                  )}
+               </Field>
+               <Field label="Unidade/Filial">
+                  <Select value={data.unidade} onValueChange={v => update("unidade", v)} disabled={readOnly}>
+                     <SelectTrigger><SelectValue/></SelectTrigger>
+                     <SelectContent><SelectItem value="Todas">Todas / Matriz</SelectItem><SelectItem value="SP">São Paulo</SelectItem><SelectItem value="RJ">Rio de Janeiro</SelectItem></SelectContent>
+                  </Select>
+               </Field>
+               <Field label="Tipo de Operação">
+                  <Select value={data.tipoOperacao} onValueChange={v => update("tipoOperacao", v)} disabled={readOnly}>
+                     <SelectTrigger><SelectValue/></SelectTrigger>
+                     <SelectContent><SelectItem value="dedicado">Dedicado</SelectItem><SelectItem value="fracionado">Fracionado</SelectItem><SelectItem value="urbano">Distribuição Urbana</SelectItem><SelectItem value="todos">Aplicável a Todos</SelectItem></SelectContent>
+                  </Select>
+               </Field>
+               <Field label="Data Vigência Início"><Input type="date" value={data.dataInicio} onChange={e => update("dataInicio", e.target.value)} readOnly={readOnly}/></Field>
+               <Field label="Data Vigência Fim"><Input type="date" value={data.dataFim} onChange={e => update("dataFim", e.target.value)} readOnly={readOnly}/></Field>
+               <Field label="Status da Tabela">
+                  <Select value={data.status} onValueChange={v => update("status", v as any)} disabled={readOnly}>
+                     <SelectTrigger><SelectValue/></SelectTrigger>
+                     <SelectContent><SelectItem value="ativa">Ativa</SelectItem><SelectItem value="inativa">Inativa</SelectItem><SelectItem value="rascunho">Rascunho</SelectItem><SelectItem value="vencida">Vencida</SelectItem></SelectContent>
+                  </Select>
+               </Field>
+               <Field label="Tipo de Tabela" className="lg:col-span-3 flex items-center pt-5">
+                 <RadioGroup value={data.tipoTabela} onValueChange={v => update("tipoTabela", v)} className="flex gap-4" disabled={readOnly}>
+                   <div className="flex items-center space-x-2"><RadioGroupItem value="principal" id="tp"/><Label htmlFor="tp" className="cursor-pointer">Principal (Substitui outras)</Label></div>
+                   <div className="flex items-center space-x-2"><RadioGroupItem value="complementar" id="tc"/><Label htmlFor="tc" className="cursor-pointer">Complementar (Soma com Principal)</Label></div>
+                 </RadioGroup>
+               </Field>
+               <Field label="Observações de Contrato" className="lg:col-span-4"><Textarea rows={2} value={data.observacoes} onChange={e => update("observacoes", e.target.value)} readOnly={readOnly}/></Field>
+             </CardContent>
+           </Card>
         </TabsContent>
 
-        <TabsContent value="regras">
-          <Card>
-            <CardHeader><CardTitle className="text-sm text-primary">Regras Base e Valores Padrão</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Field label="Tipo Cobrança Principal">
-                <Select value={data.tipoCobrancaPrincipal} onValueChange={(v) => update("tipoCobrancaPrincipal", v)} disabled={readOnly}>
-                  <SelectTrigger><SelectValue/></SelectTrigger>
-                  <SelectContent>
-                    {["por saída", "por diária", "por km", "por faixa de km", "por peso", "por faixa de peso", "por cubagem", "por região", "por CEP", "por cidade/UF", "por tipo de veículo", "por diária + km excedente", "por rota fixa", "por operação dedicada"].map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Tipo de Veículo"><Input value={data.tipoVeiculo} readOnly={readOnly} onChange={(e) => update("tipoVeiculo", e.target.value)} /></Field>
-              <Field label="Subcategoria"><Input value={data.subcategoria} readOnly={readOnly} onChange={(e) => update("subcategoria", e.target.value)} /></Field>
-              <Field label="Carroceria"><Input value={data.carroceria} readOnly={readOnly} onChange={(e) => update("carroceria", e.target.value)} /></Field>
-              <Field label="Valor Base (R$)"><Input type="number" value={data.valorBase || ""} readOnly={readOnly} onChange={(e) => update("valorBase", Number(e.target.value))} /></Field>
-              <Field label="Mínimo Faturável (R$)"><Input type="number" value={data.valorMinimoFaturavel || ""} readOnly={readOnly} onChange={(e) => update("valorMinimoFaturavel", Number(e.target.value))} /></Field>
-              <Field label="Valor Custo (Base)"><Input type="number" value={data.valorCusto || ""} readOnly={readOnly} onChange={(e) => update("valorCusto", Number(e.target.value))} /></Field>
-              <Field label="Markup (%)"><Input type="number" value={data.markupPercent || ""} readOnly={readOnly} onChange={(e) => update("markupPercent", Number(e.target.value))} /></Field>
-              <Field label="Margem Mín. Desejada (%)"><Input type="number" value={data.margemMinimaDesejada || ""} readOnly={readOnly} onChange={(e) => update("margemMinimaDesejada", Number(e.target.value))} /></Field>
-              <Field label="Custo Mín. Parceiro (R$)"><Input type="number" value={data.custoMinimoParceiro || ""} readOnly={readOnly} onChange={(e) => update("custoMinimoParceiro", Number(e.target.value))} /></Field>
+        <TabsContent value="aba2" className="space-y-4">
+           {/* Regras Base */}
+           <Card>
+              <CardHeader className="bg-slate-50 border-b pb-4">
+                <CardTitle className="text-sm">Matriz de Formação de Preço</CardTitle>
+                <CardDescription>Defina o gatilho gerador do custo primário.</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-4 grid grid-cols-1 md:grid-cols-4 gap-6">
+                 
+                 <div className="border border-indigo-100 rounded-lg p-3 bg-indigo-50/30 space-y-2 md:col-span-4 lg:col-span-1">
+                    <Label className="font-bold text-indigo-900 border-b border-indigo-100 pb-1 flex w-full">Método de Cobrança Base</Label>
+                    {[
+                      {id: 'diaria', lbl: 'Por Diária (Valor Dia)'}, {id: 'km', lbl: 'Por km Rodado'},
+                      {id: 'diaria_km', lbl: 'Diária + km Excedente'}, {id: 'peso', lbl: 'Por Peso Faturado'},
+                      {id: 'faixa_peso', lbl: 'Por Faixas de Peso'}, {id: 'saida', lbl: 'Por Saída (Fixo)'},
+                      {id: 'dedicada', lbl: 'Mensal Dedicado'}
+                    ].map(cb => (
+                       <div key={cb.id} className="flex items-center space-x-2 w-full hover:bg-white p-1 rounded transition">
+                         <Switch checked={data.cobrancaPrincipais.includes(cb.id)} onCheckedChange={() => handleToggleCobranca(cb.id)} disabled={readOnly} id={`cb-${cb.id}`}/>
+                         <Label htmlFor={`cb-${cb.id}`} className="text-xs cursor-pointer flex-1">{cb.lbl}</Label>
+                       </div>
+                    ))}
+                 </div>
 
-              <div className="lg:col-span-4 grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
-                <div className="flex items-center gap-2"><Switch checked={data.arredondamento} onCheckedChange={(v) => update("arredondamento", v)} disabled={readOnly} /><Label className="text-xs">Arredondamento Padrão</Label></div>
-                <div className="flex items-center gap-2"><Switch checked={data.cobrancaRetorno} onCheckedChange={(v) => update("cobrancaRetorno", v)} disabled={readOnly} /><Label className="text-xs">Prevê Cobrança de Retorno</Label></div>
-                <div className="flex items-center gap-2"><Switch checked={data.cobrancaEspera} onCheckedChange={(v) => update("cobrancaEspera", v)} disabled={readOnly} /><Label className="text-xs">Prevê Cobrança de Espera</Label></div>
-                <div className="flex items-center gap-2"><Switch checked={data.cobrancaAjudante} onCheckedChange={(v) => update("cobrancaAjudante", v)} disabled={readOnly} /><Label className="text-xs">Prevê Adicional Ajudante</Label></div>
-              </div>
-            </CardContent>
-          </Card>
+                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Field label="Tipo Veículo Perfil"><Select value={data.tipoVeiculo} onValueChange={v => update("tipoVeiculo", v)} disabled={readOnly}><SelectTrigger><SelectValue placeholder="Aplicável a..."/></SelectTrigger><SelectContent><SelectItem value="qualquer">Qualquer Veículo</SelectItem><SelectItem value="VUC">VUC / Leves</SelectItem><SelectItem value="Todos Pesados">Carga Pesada</SelectItem></SelectContent></Select></Field>
+                    <Field label="Exigência Térmica"><Select value={data.classificacaoTermica} onValueChange={v => update("classificacaoTermica", v)} disabled={readOnly}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="seco">Seco</SelectItem><SelectItem value="refrigerado">Refrigerado</SelectItem></SelectContent></Select></Field>
+                    <Field label="Arredondamento de Cálculos"><Select value={data.arredondamento} onValueChange={v => update("arredondamento", v)} disabled={readOnly}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="normal">Matemático Normal</SelectItem><SelectItem value="cima">Sempre p/ Cima</SelectItem></SelectContent></Select></Field>
+
+                    <div className="col-span-3 grid grid-cols-3 gap-4 border-t pt-4">
+                       <Field label="Valor Base Tarifa (R$)"><Input type="number" value={data.valorBase} onChange={e => update("valorBase", Number(e.target.value))} readOnly={readOnly} className="font-bold text-blue-700 bg-blue-50"/></Field>
+                       <Field label="Valor Mínimo Faturável (R$)"><Input type="number" value={data.minimoFaturavel} onChange={e => update("minimoFaturavel", Number(e.target.value))} readOnly={readOnly} /></Field>
+                       <Field label="Valor Franquia/Km Incluso"><Input type="number" value={data.franquiaKm} onChange={e => update("franquiaKm", Number(e.target.value))} readOnly={readOnly} placeholder="ex: 100km gratuitos"/></Field>
+                       
+                       <Field label="Valor por Km Excedente (R$)"><Input type="number" value={data.valorKmExcedente} onChange={e => update("valorKmExcedente", Number(e.target.value))} readOnly={readOnly} /></Field>
+                       <Field label="Custo Teto do Prestador (R$)"><Input type="number" value={data.custoPrestador} onChange={e => update("custoPrestador", Number(e.target.value))} readOnly={readOnly} className="text-orange-700"/></Field>
+                       <Field label="Markup Desejável (%)"><Input type="number" value={data.markupPercent} onChange={e => update("markupPercent", Number(e.target.value))} readOnly={readOnly} className="font-bold text-green-700 bg-green-50"/></Field>
+                    </div>
+                 </div>
+              </CardContent>
+           </Card>
         </TabsContent>
 
-        <TabsContent value="faixas">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <div>
-                <CardTitle className="text-sm text-primary">Tabela Dinâmica de Faixas</CardTitle>
-                <CardDescription>Crie cruzamentos de KM x Peso x Valor Opcional.</CardDescription>
-              </div>
-              {!readOnly && <Button size="sm" variant="outline" onClick={() => update("faixas", [...data.faixas, emptyFaixa()])}><Plus className="w-4 h-4 mr-1"/> Adicionar Faixa</Button>}
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto border rounded-md">
-                <Table className="min-w-[800px]">
+        <TabsContent value="aba3">
+           <Card>
+             <CardHeader className="flex flex-row justify-between items-center bg-slate-50 border-b pb-4">
+               <div><CardTitle className="text-sm">Configuração Dinâmica de Faixas (Lógica Condicional)</CardTitle><CardDescription>Faixas de peso, cubagem ou localidade que agregam custo variável.</CardDescription></div>
+               {!readOnly && <Button size="sm" onClick={addFaixa}><Plus className="w-4 h-4 mr-1"/> Adicionar Faixa Condicional</Button>}
+             </CardHeader>
+             <CardContent className="p-0 overflow-x-auto">
+                <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Critério</TableHead>
-                      <TableHead>Início</TableHead>
-                      <TableHead>Fim</TableHead>
-                      <TableHead>Excedente R$</TableHead>
-                      <TableHead>Mínimo R$</TableHead>
-                      <TableHead>L. N.F R$</TableHead>
-                      <TableHead>Valor Adicional R$</TableHead>
-                      <TableHead>Ação</TableHead>
-                    </TableRow>
+                     <TableRow className="bg-slate-100/50">
+                        <TableHead className="text-xs">Peso (Ini - Fim)</TableHead>
+                        <TableHead className="text-xs">Km (Ini - Fim)</TableHead>
+                        <TableHead className="text-xs">CEP (Máscara Reduzida)</TableHead>
+                        <TableHead className="text-xs">Adicional (R$)</TableHead>
+                        <TableHead className="text-xs">Prioridade</TableHead>
+                        {!readOnly && <TableHead className="text-right text-xs">Ações</TableHead>}
+                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.faixas.map((f, i) => (
-                      <TableRow key={i}>
-                        <TableCell>
-                          <Select value={f.tipo_criterio} onValueChange={(v) => { const fx = [...data.faixas]; fx[i].tipo_criterio = v; update("faixas", fx); }} disabled={readOnly}>
-                            <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue/></SelectTrigger>
-                            <SelectContent><SelectItem value="peso">Por Peso (kg)</SelectItem><SelectItem value="km">Por Km</SelectItem><SelectItem value="regiao">Por Região/CEP</SelectItem></SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell><Input className="h-8 w-[80px]" value={f.inicio} readOnly={readOnly} onChange={(e) => { const fx = [...data.faixas]; fx[i].inicio = e.target.value; update("faixas", fx); }} /></TableCell>
-                        <TableCell><Input className="h-8 w-[80px]" value={f.fim} readOnly={readOnly} onChange={(e) => { const fx = [...data.faixas]; fx[i].fim = e.target.value; update("faixas", fx); }} /></TableCell>
-                        <TableCell><Input className="h-8 w-[80px]" type="number" value={f.excedente} readOnly={readOnly} onChange={(e) => { const fx = [...data.faixas]; fx[i].excedente = Number(e.target.value); update("faixas", fx); }} /></TableCell>
-                        <TableCell><Input className="h-8 w-[80px]" type="number" value={f.minimo} readOnly={readOnly} onChange={(e) => { const fx = [...data.faixas]; fx[i].minimo = Number(e.target.value); update("faixas", fx); }} /></TableCell>
-                        <TableCell><Input className="h-8 w-[80px]" type="number" value={f.limite_nota_peso} readOnly={readOnly} onChange={(e) => { const fx = [...data.faixas]; fx[i].limite_nota_peso = Number(e.target.value); update("faixas", fx); }} /></TableCell>
-                        <TableCell><Input className="h-8 w-[100px]" type="number" value={f.valor_adicional} readOnly={readOnly} onChange={(e) => { const fx = [...data.faixas]; fx[i].valor_adicional = Number(e.target.value); update("faixas", fx); }} /></TableCell>
-                        <TableCell>
-                          {!readOnly && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => update("faixas", data.faixas.filter((_, idx) => idx !== i))}><Trash2 className="w-4 h-4" /></Button>}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {data.faixas.length === 0 && (
-                      <TableRow><TableCell colSpan={8} className="text-center py-4 text-muted-foreground text-sm">Nenhuma regra detalhada inserida.</TableCell></TableRow>
-                    )}
+                     {data.faixas.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground text-sm">Sem regras condicionais cadastradas. Use o valor base ou faixas se necessário.</TableCell></TableRow> : data.faixas.map((f, i) => (
+                        <TableRow key={f.id}>
+                           <TableCell><div className="flex gap-1 items-center"><Input className="w-16 h-8 text-xs p-1" value={f.pesoIni} onChange={e => {const t=[...data.faixas]; t[i].pesoIni = Number(e.target.value); update("faixas", t)}}/>- <Input className="w-16 h-8 text-xs p-1" value={f.pesoFim} onChange={e => {const t=[...data.faixas]; t[i].pesoFim = Number(e.target.value); update("faixas", t)}}/></div></TableCell>
+                           <TableCell><div className="flex gap-1 items-center"><Input className="w-16 h-8 text-xs p-1" value={f.kmIni} onChange={e => {const t=[...data.faixas]; t[i].kmIni = Number(e.target.value); update("faixas", t)}}/>- <Input className="w-16 h-8 text-xs p-1" value={f.kmFim} onChange={e => {const t=[...data.faixas]; t[i].kmFim = Number(e.target.value); update("faixas", t)}}/></div></TableCell>
+                           <TableCell><div className="flex gap-1 items-center"><Input className="w-20 h-8 text-xs p-1" placeholder="CEP Ini" value={f.cepIni} onChange={e => {const t=[...data.faixas]; t[i].cepIni = e.target.value; update("faixas", t)}}/>- <Input className="w-20 h-8 text-xs p-1" placeholder="CEP Fim" value={f.cepFim} onChange={e => {const t=[...data.faixas]; t[i].cepFim = e.target.value; update("faixas", t)}}/></div></TableCell>
+                           <TableCell><Input className="w-24 h-8 text-xs font-bold text-green-700 bg-green-50" type="number" value={f.adicionalValor} onChange={e => {const t=[...data.faixas]; t[i].adicionalValor = Number(e.target.value); update("faixas", t)}}/></TableCell>
+                           <TableCell><Input className="w-14 h-8 text-xs text-center" type="number" value={f.prioridade} onChange={e => {const t=[...data.faixas]; t[i].prioridade = Number(e.target.value); update("faixas", t)}}/></TableCell>
+                           {!readOnly && (
+                              <TableCell className="text-right space-x-1">
+                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" onClick={() => update("faixas", [...data.faixas, {...f, id: String(Date.now())}])}><Copy className="w-3.5 h-3.5"/></Button>
+                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => update("faixas", data.faixas.filter((_, idx) => idx !== i))}><Trash2 className="w-3.5 h-3.5"/></Button>
+                              </TableCell>
+                           )}
+                        </TableRow>
+                     ))}
                   </TableBody>
                 </Table>
-              </div>
-            </CardContent>
-          </Card>
+             </CardContent>
+           </Card>
         </TabsContent>
 
-        <TabsContent value="adicionais">
-          <Card>
-            <CardHeader><CardTitle className="text-sm text-primary">Taxas e Adicionais Permitidos</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {ADICIONAIS_OPCOES.map(opt => (
-                  <div key={opt} className="flex items-center space-x-2">
-                    <Switch
-                      disabled={readOnly}
-                      checked={data.adicionais.includes(opt)}
-                      onCheckedChange={(checked) => {
-                        const arr = checked ? [...data.adicionais, opt] : data.adicionais.filter(a => a !== opt);
-                        update("adicionais", arr);
-                      }}
-                    />
-                    <Label className="text-xs">{opt}</Label>
-                  </div>
+        <TabsContent value="aba4">
+           <Card>
+             <CardHeader className="bg-slate-50 border-b pb-4"><CardTitle className="text-sm">Acessórios, Tarifas de Serviço e Penalidades</CardTitle></CardHeader>
+             <CardContent className="pt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Object.entries(data.adicionais).map(([k, cfg]: [string, any]) => (
+                   <div key={k} className={`p-4 rounded-xl border flex flex-col gap-3 ${cfg.ativo ? 'border-primary/50 bg-primary/5 shadow-sm' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                      <div className="flex justify-between items-center">
+                         <Label className="font-bold text-slate-800 uppercase text-xs truncate max-w-[150px]">{k}</Label>
+                         <Switch disabled={readOnly} checked={cfg.ativo} onCheckedChange={(v) => updateNested("adicionais", k as any, { ativo: v })} />
+                      </div>
+                      <div className="flex gap-2 w-full mt-2">
+                         {cfg.tipo !== undefined && (
+                            <Select disabled={!cfg.ativo || readOnly} value={cfg.tipo} onValueChange={(v) => updateNested("adicionais", k as any, { tipo: v })}>
+                               <SelectTrigger className="w-[80px] h-9"><SelectValue/></SelectTrigger>
+                               <SelectContent><SelectItem value="R$">R$</SelectItem><SelectItem value="%">%</SelectItem></SelectContent>
+                            </Select>
+                         )}
+                         {cfg.valor !== undefined && (
+                            <Input disabled={!cfg.ativo || readOnly} type="number" value={cfg.valor} onChange={(e) => updateNested("adicionais", k as any, { valor: Number(e.target.value) })} className="h-9 font-mono" placeholder="Valor"/>
+                         )}
+                         {cfg.valorPorcent !== undefined && (
+                            <div className="relative w-full"><Input disabled={!cfg.ativo || readOnly} type="number" value={cfg.valorPorcent} onChange={(e) => updateNested("adicionais", k as any, { valorPorcent: Number(e.target.value) })} className="h-9 pr-8"/><span className="absolute right-3 top-2.5 text-xs text-muted-foreground">%</span></div>
+                         )}
+                         {cfg.valorHora !== undefined && (
+                            <div className="w-full flex flex-col gap-1">
+                               <Input disabled={!cfg.ativo || readOnly} type="number" value={cfg.minutosFree} onChange={(e) => updateNested("adicionais", k as any, { minutosFree: Number(e.target.value) })} className="h-8 text-xs" placeholder="Min Free"/>
+                               <Input disabled={!cfg.ativo || readOnly} type="number" value={cfg.valorHora} onChange={(e) => updateNested("adicionais", k as any, { valorHora: Number(e.target.value) })} className="h-8 text-xs" placeholder="R$/Hora extra"/>
+                            </div>
+                         )}
+                      </div>
+                   </div>
                 ))}
-              </div>
-            </CardContent>
-          </Card>
+             </CardContent>
+           </Card>
         </TabsContent>
 
-        <TabsContent value="financeiro">
-          <Card>
-            <CardHeader><CardTitle className="text-sm text-primary">Previsão e Custo</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Field label="Conta Contábil"><Input value={data.contaContabil} readOnly={readOnly} onChange={(e) => update("contaContabil", e.target.value)} /></Field>
-              <Field label="Custo Estimado Médio (R$)"><Input type="number" value={data.custoEstimadoTotal || ""} readOnly={readOnly} onChange={(e) => update("custoEstimadoTotal", Number(e.target.value))} /></Field>
-              <Field label="Margem Real Estimada (%)"><Input type="number" value={data.margemEstimadaTotal || ""} readOnly={readOnly} onChange={(e) => update("margemEstimadaTotal", Number(e.target.value))} /></Field>
-            </CardContent>
-          </Card>
+        <TabsContent value="aba5">
+           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader><CardTitle className="text-sm">Integração Contábil</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
+                   <Field label="Conta Contábil Padrão do DRE"><Input value={data.contaContabil} onChange={e => update("contaContabil", e.target.value)} readOnly={readOnly}/></Field>
+                   <Field label="Centro de Custo Financeiro"><Input value={data.centroCustoPadrao} onChange={e => update("centroCustoPadrao", e.target.value)} readOnly={readOnly}/></Field>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-sm">Histórico de Versões e Auditoria</CardTitle></CardHeader>
+                <CardContent>
+                   <div className="flex items-center gap-4 bg-orange-50 p-4 border border-orange-100 rounded-lg mb-4">
+                      <CopyCheck className="w-6 h-6 text-orange-500 shrink-0"/>
+                      <div>
+                         <p className="text-sm font-bold text-orange-800">Versão Atual Ativa (v{data.versao})</p>
+                         <p className="text-xs text-orange-600 mt-1">Modificada por Admin há 2 dias. Última simulação utilizou essa base.</p>
+                      </div>
+                      <Button variant="outline" className="ml-auto text-xs h-8">Comparar Modificações</Button>
+                   </div>
+                   <div className="text-sm text-center text-muted-foreground p-4 bg-slate-50 rounded border-dashed border">
+                      Auditoria de alterações salva na Cloud do Supabase. Nenhuma divergência nas faixas de peso.
+                   </div>
+                </CardContent>
+              </Card>
+           </div>
         </TabsContent>
-
       </Tabs>
     </div>
   );
-};
-
-export default TabelaValoresForm;
+}

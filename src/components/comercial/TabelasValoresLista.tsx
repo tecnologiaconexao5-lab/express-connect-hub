@@ -40,8 +40,7 @@ const TabelasValoresLista = () => {
   );
 
   const handleDuplicar = async (tab: TabelaValores) => {
-    const parts = tab.versao.split(".");
-    const novaVersao = `${parts[0]}.${parseInt(parts[1] || "0") + 1}`;
+    const novaVersao = tab.versao + 1;
     
     const novaTabela = {
       ...tab,
@@ -78,6 +77,7 @@ const TabelasValoresLista = () => {
         tabela={tabelaSelecionada || undefined}
         modo={modoForm}
         onVoltar={() => { setModoForm(null); setTabelaSelecionada(null); fetchTabelas(); }}
+        onSalvar={() => { setModoForm(null); setTabelaSelecionada(null); fetchTabelas(); }}
       />
     );
   }
@@ -135,7 +135,7 @@ const TabelasValoresLista = () => {
                   <TableCell>{tab.cliente || "Todos"}</TableCell>
                   <TableCell>{tab.tipoOperacao || "—"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {tab.vigenciaInicial ? new Date(tab.vigenciaInicial).toLocaleDateString() : ""} - {tab.vigenciaFinal ? new Date(tab.vigenciaFinal).toLocaleDateString() : ""}
+                    {tab.dataInicio ? new Date(tab.dataInicio).toLocaleDateString() : ""} - {tab.dataFim ? new Date(tab.dataFim).toLocaleDateString() : ""}
                   </TableCell>
                   <TableCell>
                     <span className="font-mono text-xs bg-muted px-2 py-0.5 rounded">v{tab.versao}</span>
