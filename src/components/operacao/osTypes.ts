@@ -138,6 +138,11 @@ export interface OrdemServico {
   statusFaturamento: "a faturar" | "faturada" | "paga";
   statusPagamento: "a pagar" | "pago";
 
+  emailDestinatario?: string;
+  whatsappDestinatario?: string;
+  notificarDestinatario?: boolean;
+  eventosTracker?: string;
+
   enderecos: OSEndereco[];
   historico: OSHistorico[];
 }

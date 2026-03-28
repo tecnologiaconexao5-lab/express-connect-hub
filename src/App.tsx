@@ -32,6 +32,7 @@ import IAAutomacoes from "@/pages/IAAutomacoes";
 import MonitorIntegracoes from "@/pages/MonitorIntegracoes";
 import CadastroPrestador from "@/pages/CadastroPrestador";
 import Comunicacao from "@/pages/Comunicacao";
+import Tracking from "@/pages/Tracking";
 
 const queryClient = new QueryClient();
 
@@ -44,6 +45,9 @@ const App = () => (
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/cadastro-prestador" element={<CadastroPrestador />} />
+          <Route path="/rastrear/:codigo" element={<Tracking />} />
+          <Route path="/t/:codigo" element={<Tracking />} />
+          <Route path="/rastrear" element={<Tracking />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />

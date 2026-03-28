@@ -15,6 +15,8 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { generateProfessionalPDF } from "@/lib/pdfGenerator";
 import { OrdemServico, OSEndereco, OSHistorico, STATUS_CORES, OSStatus } from "./osTypes";
+import { FavoritosDropdown, SaveFavoritoButton } from "@/components/enderecos/EnderecosFavoritos";
+import CompartilharRastreioModal from "./CompartilharRastreioModal";
 
 interface Props {
   os?: OrdemServico;
@@ -34,6 +36,7 @@ const emptyOS = (): OrdemServico => ({
   veiculoTipo: "", veiculoSubcategoria: "", veiculoCarroceria: "", veiculoTermica: "seco", isReserva: false, retornoObrigatorio: false,
   dataProgramada: "", janelaOperacional: "", previsaoInicio: "", previsaoTermino: "", tipoEscala: "", instrucoesOperacionais: "", observacaoTorre: "",
   tabelaAplicada: "", valorCliente: 0, custoPrestador: 0, pedagio: 0, ajudante: 0, adicionais: 0, descontos: 0, reembolsoPrevisto: 0, contaContabil: "", centroCustoFin: "", statusFaturamento: "a faturar", statusPagamento: "a pagar",
+  emailDestinatario: "", whatsappDestinatario: "", notificarDestinatario: true, eventosTracker: "principais",
   enderecos: [emptyEnd()], historico: [{ data: new Date().toISOString(), acao: "OS Criada", status_novo: "rascunho", usuario: "Usuário atual" }]
 });
 
@@ -91,9 +94,9 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     }
   };
 
-  const Field = ({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) => (
+  const Field = ({ label, children, className = "" }: { label: React.ReactNode; children: React.ReactNode; className?: string }) => (
     <div className={className}>
-      <Label className="text-xs font-medium text-muted-foreground mb-1 block">{label}</Label>
+      <Label className="text-xs font-medium text-muted-foreground mb-1 flex items-center justify-between pr-1">{label}</Label>
       {children}
     </div>
   );
@@ -171,6 +174,31 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                 <div className="flex items-center gap-2"><Switch checked={data.operacaoDedicada} onCheckedChange={(v) => update("operacaoDedicada", v)} disabled={readOnly} /><Label className="text-xs">Operação Dedicada</Label></div>
               </div>
               
+              <div className="lg:col-span-4 border-t pt-4 mt-2">
+                 <h4 className="text-sm font-semibold mb-3 text-primary">Comunicação e Rastreio ao Destinatário</h4>
+                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-orange-50/50 p-4 rounded-xl border border-orange-100">
+                    <div className="flex flex-col justify-center space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Switch checked={data.notificarDestinatario} onCheckedChange={(v) => update("notificarDestinatario", v)} disabled={readOnly} />
+                        <Label className="font-bold text-orange-900">Notificar Destinatário</Label>
+                      </div>
+                      <p className="text-[10px] text-orange-700 leading-tight">Envie status e links de rastreio pro cliente final.</p>
+                    </div>
+                    <Field label="WhatsApp do Destinatário"><Input value={data.whatsappDestinatario || ""} readOnly={readOnly} onChange={(e) => update("whatsappDestinatario", e.target.value)} placeholder="(11) 9..." disabled={!data.notificarDestinatario} /></Field>
+                    <Field label="E-mail do Destinatário"><Input value={data.emailDestinatario || ""} readOnly={readOnly} onChange={(e) => update("emailDestinatario", e.target.value)} placeholder="email@cliente.com" disabled={!data.notificarDestinatario}/></Field>
+                    <Field label="Quais Eventos a Notificar?">
+                       <Select value={data.eventosTracker || "principais"} onValueChange={(v) => update("eventosTracker", v)} disabled={!data.notificarDestinatario || readOnly}>
+                         <SelectTrigger className="bg-white"><SelectValue/></SelectTrigger>
+                         <SelectContent>
+                           <SelectItem value="todos">Notificar em todos</SelectItem>
+                           <SelectItem value="principais">Coleta, Rota e Entrega (Recomendado)</SelectItem>
+                           <SelectItem value="apenas_entrega">Apenas saiu para entrega</SelectItem>
+                         </SelectContent>
+                       </Select>
+                    </Field>
+                 </div>
+              </div>
+
               <Field label="Observações Gerais" className="lg:col-span-4 mt-2">
                 <Textarea rows={2} value={data.observacoesGerais} readOnly={readOnly} onChange={(e) => update("observacoesGerais", e.target.value)} />
               </Field>
@@ -197,6 +225,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                         <SelectItem value="falhou">Falha / Ocorrênc.</SelectItem>
                       </SelectContent>
                     </Select>
+                    {!readOnly && <SaveFavoritoButton endereco={{ endereco: end.endereco, cep: "00000-000", cidade: "Cidade", uf: "UF", contato: end.contato, telefone: end.telefone, instrucoes: end.instrucoes }} />}
                     {!readOnly && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => update("enderecos", data.enderecos.filter((_, i) => i !== idx))}><Trash2 className="w-4 h-4" /></Button>}
                  </div>
                </CardHeader>
@@ -208,7 +237,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                     </Select>
                  </Field>
                  <Field label="Nome do Local (Empresa/Filial)"><Input value={end.nomeLocal} readOnly={readOnly} onChange={(e) => { const t = [...data.enderecos]; t[idx].nomeLocal = e.target.value; update("enderecos", t); }} /></Field>
-                 <Field label="Endereço Completo (ViaCEP)" className="lg:col-span-2"><Input value={end.endereco} readOnly={readOnly} onChange={(e) => { const t = [...data.enderecos]; t[idx].endereco = e.target.value; update("enderecos", t); }} /></Field>
+                 <Field label={<>Endereço Completo (ViaCEP) {!readOnly && <FavoritosDropdown onSelect={(fav) => { const t = [...data.enderecos]; t[idx].endereco = fav.endereco + ', ' + (fav.cidade || '') + '/' + (fav.uf || ''); t[idx].nomeLocal = fav.nome || ''; t[idx].contato = fav.contato || ''; t[idx].telefone = fav.telefone || ''; update("enderecos", t); }} />}</>} className="lg:col-span-2"><Input value={end.endereco} readOnly={readOnly} onChange={(e) => { const t = [...data.enderecos]; t[idx].endereco = e.target.value; update("enderecos", t); }} /></Field>
                  <Field label="Contato no Local"><Input value={end.contato} readOnly={readOnly} onChange={(e) => { const t = [...data.enderecos]; t[idx].contato = e.target.value; update("enderecos", t); }} /></Field>
                  <Field label="Telefone de Contato"><Input value={end.telefone} readOnly={readOnly} onChange={(e) => { const t = [...data.enderecos]; t[idx].telefone = e.target.value; update("enderecos", t); }} /></Field>
                  <Field label="Inicio (Janela)"><Input type="time" value={end.janelaInicio} readOnly={readOnly} onChange={(e) => { const t = [...data.enderecos]; t[idx].janelaInicio = e.target.value; update("enderecos", t); }} /></Field>
@@ -374,7 +403,10 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                </CardContent>
              </Card>
              <Card>
-               <CardHeader><CardTitle className="text-sm">Timeline e Tracking (Realtime)</CardTitle></CardHeader>
+               <CardHeader className="flex flex-row items-center justify-between">
+                 <CardTitle className="text-sm">Timeline e Tracking (Realtime)</CardTitle>
+                 <CompartilharRastreioModal codigoRastreio={data.numero} />
+               </CardHeader>
                <CardContent className="h-[250px] overflow-y-auto">
                  <div className="relative border-l border-border ml-3 space-y-4">
                    {[...data.historico].reverse().map((h, i) => (

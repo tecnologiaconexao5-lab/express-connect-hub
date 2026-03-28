@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Package, PlusCircle, FileText, DollarSign, LogOut, CheckCircle, Search, Download } from "lucide-react";
+import { Package, PlusCircle, FileText, DollarSign, LogOut, CheckCircle, Search, Download, MapPin } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { getUser, logout } from "@/lib/auth";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { FavoritosDropdown, SaveFavoritoButton, EnderecoCompleto } from "@/components/enderecos/EnderecosFavoritos";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -135,8 +136,14 @@ export default function PortalCliente() {
                  </CardHeader>
                  <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1"><label className="text-xs font-semibold">CEP Origem (Coleta)</label><Input placeholder="00000-000" /></div>
-                      <div className="space-y-1"><label className="text-xs font-semibold">CEP Destino (Entrega)</label><Input placeholder="00000-000" /></div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between"><label className="text-xs font-semibold">CEP Origem (Coleta)</label><FavoritosDropdown onSelect={(e) => console.log(e)}/></div>
+                        <Input placeholder="00000-000" />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between"><label className="text-xs font-semibold">CEP Destino (Entrega)</label><FavoritosDropdown onSelect={(e) => console.log(e)}/></div>
+                        <Input placeholder="00000-000" />
+                      </div>
                       <div className="col-span-2 space-y-1"><label className="text-xs font-semibold">Mercadoria e Valor Aprox.</label><Input placeholder="Ex: Peças automotivas, R$ 10.000,00" /></div>
                       <div className="space-y-1"><label className="text-xs font-semibold">Peso (Kg)</label><Input type="number" placeholder="0" /></div>
                       <div className="space-y-1"><label className="text-xs font-semibold">Volumes</label><Input type="number" placeholder="0" /></div>

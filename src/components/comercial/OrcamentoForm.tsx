@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Orcamento, EnderecoOrcamento, STATUS_CONFIG, OrcamentoStatus } from "./types";
 import { gerarPdfOrcamento } from "./orcamentoPdf";
 import { generateProfessionalPDF } from "@/lib/pdfGenerator";
+import { FavoritosDropdown, SaveFavoritoButton } from "@/components/enderecos/EnderecosFavoritos";
 import { toast } from "sonner";
 
 interface Props {
@@ -76,9 +77,9 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  const Field = ({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) => (
+  const Field = ({ label, children, className = "" }: { label: React.ReactNode; children: React.ReactNode; className?: string }) => (
     <div className={className}>
-      <Label className="text-xs font-medium text-muted-foreground mb-1 block">{label}</Label>
+      <Label className="text-xs font-medium text-muted-foreground mb-1 flex items-center justify-between pr-1">{label}</Label>
       {children}
     </div>
   );
@@ -203,9 +204,12 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                       <MapPin className="w-4 h-4 text-primary" />
                       Ponto {end.sequencia} — {end.tipo === "coleta" ? "Coleta" : end.tipo === "entrega" ? "Entrega" : "Retorno"}
                     </CardTitle>
-                    {!readOnly && data.enderecos.length > 1 && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeEndereco(idx)}><Trash2 className="w-3.5 h-3.5" /></Button>
-                    )}
+                    <div className="flex gap-2">
+                       {!readOnly && <SaveFavoritoButton endereco={end} />}
+                       {!readOnly && data.enderecos.length > 1 && (
+                         <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeEndereco(idx)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                       )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 p-4 pt-0">
@@ -219,7 +223,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                       </SelectContent>
                     </Select>
                   </Field>
-                  <Field label="CEP" className="lg:col-span-1"><Input value={end.cep} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], cep: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
+                  <Field label={<>CEP {!readOnly && <FavoritosDropdown onSelect={(fav) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], cep: fav.cep, endereco: fav.endereco, cidade: fav.cidade, uf: fav.uf, contato: fav.contato || '', telefone: fav.telefone || '', instrucoes: fav.instrucoes || '' }; setData((p) => ({ ...p, enderecos: es })); }} />}</>} className="lg:col-span-1"><Input value={end.cep} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], cep: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
                   <Field label="Endereço" className="lg:col-span-2"><Input value={end.endereco} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], endereco: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
                   <Field label="Cidade"><Input value={end.cidade} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], cidade: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
                   <Field label="UF"><Input value={end.uf} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], uf: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
