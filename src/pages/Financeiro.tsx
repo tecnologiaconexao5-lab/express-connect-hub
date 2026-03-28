@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Download, UploadCloud, PieChart, CheckCircle2, MoreHorizontal, FileText, Target, UserMinus, ShieldCheck, CreditCard, ArrowRightLeft, Plus, Search } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Download, UploadCloud, PieChart, CheckCircle2, MoreHorizontal, FileText, Target, UserMinus, ShieldCheck, CreditCard, ArrowRightLeft, Plus, Search, LayoutDashboard, Calculator, BookOpen, Landmark, Users, Package, Clock } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
+import DashboardFinanceiroEnterprise from "@/components/financeiro/DashboardFinanceiroEnterprise";
+import DREGerencial from "@/components/financeiro/DREGerencial";
+import FluxoCaixaEnterprise from "@/components/financeiro/FluxoCaixaEnterprise";
+import PlanoContas from "@/components/financeiro/PlanoContas";
 import SegurosFinanceiro from "@/components/financeiro/SegurosFinanceiro";
 import ContabilidadeFinanceiro from "@/components/financeiro/ContabilidadeFinanceiro";
 import PagamentoCNAB from "@/components/financeiro/PagamentoCNAB";
@@ -105,19 +109,27 @@ export default function Financeiro() {
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full mb-4">
-           <TabsTrigger value="receber" className="data-[state=active]:bg-muted"><ArrowDownRight className="w-4 h-4 mr-2"/> Contas a Receber</TabsTrigger>
-           <TabsTrigger value="pagar" className="data-[state=active]:bg-muted"><ArrowUpRight className="w-4 h-4 mr-2"/> Contas a Pagar</TabsTrigger>
-           <TabsTrigger value="fluxo" className="data-[state=active]:bg-muted"><TrendingUp className="w-4 h-4 mr-2"/> Fluxo de Caixa</TabsTrigger>
-           <TabsTrigger value="lotes" className="data-[state=active]:bg-muted"><CreditCard className="w-4 h-4 mr-2"/> Pagamentos (CNAB)</TabsTrigger>
-           <TabsTrigger value="pendencias" className="data-[state=active]:bg-muted"><ShieldCheck className="w-4 h-4 mr-2 text-red-500"/> Pendenc. Cadastro</TabsTrigger>
-           
-           <TabsTrigger value="inadimplencia" className="data-[state=active]:bg-muted"><UserMinus className="w-4 h-4 mr-2"/> Inadimplência</TabsTrigger>
-           <TabsTrigger value="conciliacao" className="data-[state=active]:bg-muted"><ArrowRightLeft className="w-4 h-4 mr-2"/> Conciliação</TabsTrigger>
-           <TabsTrigger value="margem" className="data-[state=active]:bg-muted"><Target className="w-4 h-4 mr-2"/> Margem (DRE)</TabsTrigger>
-           
-           <TabsTrigger value="seguros" className="data-[state=active]:bg-muted"><DollarSign className="w-4 h-4 mr-2"/> Seguros</TabsTrigger>
-           <TabsTrigger value="contabilidade" className="data-[state=active]:bg-muted"><DollarSign className="w-4 h-4 mr-2"/> Contabilidade</TabsTrigger>
+            <TabsTrigger value="dashboard" className="data-[state=active]:bg-muted"><LayoutDashboard className="w-4 h-4 mr-2"/> Dashboard</TabsTrigger>
+            <TabsTrigger value="receber" className="data-[state=active]:bg-muted"><ArrowDownRight className="w-4 h-4 mr-2"/> Receber</TabsTrigger>
+            <TabsTrigger value="inadimplencia" className="data-[state=active]:bg-muted"><UserMinus className="w-4 h-4 mr-2"/> Inadimplência</TabsTrigger>
+            <TabsTrigger value="pagar" className="data-[state=active]:bg-muted"><ArrowUpRight className="w-4 h-4 mr-2"/> Pagar</TabsTrigger>
+            <TabsTrigger value="fluxo" className="data-[state=active]:bg-muted"><TrendingUp className="w-4 h-4 mr-2"/> Fluxo de Caixa</TabsTrigger>
+            <TabsTrigger value="dre" className="data-[state=active]:bg-muted"><Calculator className="w-4 h-4 mr-2"/> DRE</TabsTrigger>
+            <TabsTrigger value="plano-contas" className="data-[state=active]:bg-muted"><BookOpen className="w-4 h-4 mr-2"/> Plano de Contas</TabsTrigger>
+            <TabsTrigger value="conciliacao" className="data-[state=active]:bg-muted"><ArrowRightLeft className="w-4 h-4 mr-2"/> Conciliação</TabsTrigger>
+            <TabsTrigger value="lotes" className="data-[state=active]:bg-muted"><CreditCard className="w-4 h-4 mr-2"/> CNAB</TabsTrigger>
+            <TabsTrigger value="centro-resultado" className="data-[state=active]:bg-muted"><Landmark className="w-4 h-4 mr-2"/> Centro Resultado</TabsTrigger>
+            <TabsTrigger value="provisoes" className="data-[state=active]:bg-muted"><Clock className="w-4 h-4 mr-2"/> Provisões</TabsTrigger>
+            <TabsTrigger value="pendencias" className="data-[state=active]:bg-muted"><ShieldCheck className="w-4 h-4 mr-2 text-red-500"/> Pendências</TabsTrigger>
+            <TabsTrigger value="margem" className="data-[state=active]:bg-muted"><Target className="w-4 h-4 mr-2"/> Margem</TabsTrigger>
+            <TabsTrigger value="seguros" className="data-[state=active]:bg-muted"><DollarSign className="w-4 h-4 mr-2"/> Seguros</TabsTrigger>
+            <TabsTrigger value="contabilidade" className="data-[state=active]:bg-muted"><FileText className="w-4 h-4 mr-2"/> Contabilidade</TabsTrigger>
         </TabsList>
+
+        {/* --- DASHBOARD FINANCEIRO ENTERPRISE --- */}
+        <TabsContent value="dashboard" className="pt-4">
+          <DashboardFinanceiroEnterprise />
+        </TabsContent>
 
         {/* --- CONTAS A RECEBER --- */}
         <TabsContent value="receber" className="space-y-4 pt-4">
@@ -195,53 +207,57 @@ export default function Financeiro() {
            </Card>
         </TabsContent>
 
-        {/* --- FLUXO DE CAIXA --- */}
-        <TabsContent value="fluxo" className="space-y-4 pt-4">
-           <Card className="bg-orange-50/50 border-orange-100">
-             <CardContent className="p-6">
-                <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold text-orange-900 uppercase">Saldo Projetado Em Caixa</h3>
-                    <p className="text-4xl font-bold text-orange-600 mt-2">{fmtFin(45800.00)}</p>
-                  </div>
-                  <div className="flex gap-4">
-                     <div>
-                       <p className="text-sm text-muted-foreground">Entradas do Mês</p>
-                       <p className="text-xl font-semibold text-green-600">+{fmtFin(24500.00)}</p>
-                     </div>
-                     <div>
-                       <p className="text-sm text-muted-foreground">Saídas do Mês</p>
-                       <p className="text-xl font-semibold text-red-600">-{fmtFin(8200.00)}</p>
-                     </div>
-                  </div>
-                </div>
-             </CardContent>
-           </Card>
+        {/* --- FLUXO DE CAIXA ENTERPRISE --- */}
+        <TabsContent value="fluxo" className="pt-4">
+          <FluxoCaixaEnterprise />
+        </TabsContent>
 
-           <Card>
-             <CardHeader className="flex flex-row items-center justify-between py-4">
-               <CardTitle className="text-sm">Lançamentos de Caixa (Auto + Manuais)</CardTitle>
-               <Button variant="outline" size="sm"><Plus className="w-4 h-4 mr-1"/> Lançamento Manual</Button>
-             </CardHeader>
-             <CardContent className="p-0">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Data</TableHead><TableHead>Descrição</TableHead><TableHead>Categoria</TableHead><TableHead>Tipo</TableHead><TableHead className="text-right">Valor R$</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {lancamentos.map((l, i) => (
-                      <TableRow key={i}>
-                        <TableCell>{new Date(l.data).toLocaleDateString()}</TableCell>
-                        <TableCell className="font-semibold text-sm">{l.descricao}</TableCell>
-                        <TableCell>{l.categoria}</TableCell>
-                        <TableCell>
-                           {l.tipo === "entrada" ? <span className="text-green-600 flex items-center gap-1 text-xs font-bold uppercase"><ArrowDownRight className="w-3 h-3"/> Entrada</span> : <span className="text-red-600 flex items-center gap-1 text-xs font-bold uppercase"><ArrowUpRight className="w-3 h-3"/> Saída</span>}
-                        </TableCell>
-                        <TableCell className="text-right font-bold">{l.tipo === "entrada" ? <span className="text-green-600">+{fmtFin(l.valor)}</span> : <span className="text-red-600">-{fmtFin(l.valor)}</span>}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-             </CardContent>
-           </Card>
+        {/* --- DRE GERENCIAL --- */}
+        <TabsContent value="dre" className="pt-4">
+          <DREGerencial />
+        </TabsContent>
+
+        {/* --- PLANO DE CONTAS --- */}
+        <TabsContent value="plano-contas" className="pt-4">
+          <PlanoContas />
+        </TabsContent>
+
+        {/* --- CENTRO DE RESULTADO --- */}
+        <TabsContent value="centro-resultado" className="space-y-4 pt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Landmark className="w-5 h-5" />
+                Centro de Resultado
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-12 text-muted-foreground">
+                <Landmark className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>Módulo em desenvolvimento</p>
+                <p className="text-sm">Permite análise de rentabilidade por centro de resultado</p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* --- PROVISÕES --- */}
+        <TabsContent value="provisoes" className="space-y-4 pt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="w-5 h-5" />
+                Provisões
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-12 text-muted-foreground">
+                <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>Módulo em desenvolvimento</p>
+                <p className="text-sm">Controle de provisões (13º, férias, contingências)</p>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* --- DRE SIMPLIFICADO --- */}

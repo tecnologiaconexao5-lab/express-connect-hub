@@ -9,6 +9,7 @@ export interface SidebarSubItem {
   title: string;
   path: string;
   icon?: LucideIcon;
+  children?: SidebarSubItem[];
 }
 
 export interface SidebarItem {
@@ -84,13 +85,22 @@ export const sidebarItems: SidebarItem[] = [
     ],
   },
   {
-    title: "Financeiro",
+    title: "Financeiro Enterprise",
     icon: DollarSign,
     path: "/financeiro",
     children: [
-      { title: "Extrato/Caixa", path: "/financeiro?tab=fluxo" },
-      { title: "A Receber", path: "/financeiro?tab=receber" },
-      { title: "A Pagar (Prestador)", path: "/financeiro?tab=pagar" },
+      { title: "Dashboard Financeiro", path: "/financeiro?tab=dashboard" },
+      { title: "Contas a Receber", path: "/financeiro?tab=receber" },
+      { title: "Inadimplência", path: "/financeiro?tab=inadimplencia" },
+      { title: "Contas a Pagar", path: "/financeiro?tab=pagar" },
+      { title: "Fornecedores", path: "/financeiro?tab=pagar-fornecedores" },
+      { title: "Fluxo de Caixa", path: "/financeiro?tab=fluxo" },
+      { title: "DRE Gerencial", path: "/financeiro?tab=dre" },
+      { title: "Plano de Contas", path: "/financeiro?tab=plano-contas" },
+      { title: "Conciliação Bancária", path: "/financeiro?tab=conciliacao" },
+      { title: "Pagamento em Lote (CNAB)", path: "/financeiro?tab=lotes" },
+      { title: "Centro de Resultado", path: "/financeiro?tab=centro-resultado" },
+      { title: "Provisões", path: "/financeiro?tab=provisoes" },
       { title: "Seguros Auto", path: "/financeiro?tab=seguros" },
       { title: "Contabilidade", path: "/financeiro?tab=contabilidade" },
     ],
@@ -150,13 +160,16 @@ export const sidebarItems: SidebarItem[] = [
     ],
   },
   {
-    title: "Reports & BI",
+    title: "Relatórios Enterprise",
     icon: BarChart3,
     path: "/relatorios",
     children: [
-      { title: "Margem Presumida", path: "/relatorios?tab=margem" },
-      { title: "Volume Expedido", path: "/relatorios?tab=volume" },
+      { title: "Dashboard Relatórios", path: "/relatorios?tab=dashboard" },
       { title: "Extrato Operacional", path: "/relatorios?tab=extrato" },
+      { title: "Faturamento por Cliente", path: "/relatorios?tab=faturamento" },
+      { title: "Margem por Operação", path: "/relatorios?tab=margem" },
+      { title: "Prestadores", path: "/relatorios?tab=prestadores" },
+      { title: "Volume Expedido", path: "/relatorios?tab=volume" },
       { title: "Exportador Custom", path: "/relatorios?tab=exportador" },
     ],
   },
