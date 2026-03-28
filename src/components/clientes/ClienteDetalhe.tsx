@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Plus, CheckCircle, Save, Calendar, Copy, MapPin } from "lucide-react";
+import { ArrowLeft, Plus, CheckCircle, Save, Calendar, Copy, MapPin, Trash2, Edit, AlertTriangle, FileText, Download, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,9 +9,48 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Cliente } from "./types";
+import { EnderecoCompleto } from "@/components/ui/EnderecoCompleto";
+
+interface Filial {
+  id: string;
+  nome: string;
+  endereco: string;
+  responsavel: string;
+  telefone: string;
+  status: string;
+}
+
+interface CentroCusto {
+  id: string;
+  codigo: string;
+  nome: string;
+  filialId: string;
+  status: string;
+}
+
+interface Departamento {
+  id: string;
+  nome: string;
+  responsavel: string;
+  email: string;
+}
+
+interface Contrato {
+  id: string;
+  numero: string;
+  tipo: string;
+  objeto: string;
+  vigenciaInicio: string;
+  vigenciaFim: string;
+  valor: number;
+  status: string;
+  urlPdf?: string;
+}
 
 interface Props {
   clienteId?: string;
@@ -31,6 +70,18 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
   const [c, setC] = useState<Partial<Cliente>>(defaultCliente);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [filiais, setFiliais] = useState<Filial[]>([]);
+  const [centrosCusto, setCentrosCusto] = useState<CentroCusto[]>([]);
+  const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
+  const [contratos, setContratos] = useState<Contrato[]>([]);
+  const [modalFilialOpen, setModalFilialOpen] = useState(false);
+  const [modalCCOpen, setModalCCOpen] = useState(false);
+  const [modalDeptoOpen, setModalDeptoOpen] = useState(false);
+  const [modalContratoOpen, setModalContratoOpen] = useState(false);
+  const [novaFilial, setNovaFilial] = useState<Partial<Filial>>({});
+  const [novoCC, setNovoCC] = useState<Partial<CentroCusto>>({});
+  const [novoDepto, setNovoDepto] = useState<Partial<Departamento>>({});
+  const [novoContrato, setNovoContrato] = useState<Partial<Contrato>>({});
 
   useEffect(() => {
     if (clienteId) {
@@ -195,15 +246,114 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
         </TabsContent>
 
         <TabsContent value="estrutura">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base text-primary">Estrutura do Cliente</CardTitle>
-              <CardDescription>Gestão hierárquica e controle departamental</CardDescription>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground py-10 text-center border rounded-lg border-dashed">
-              [Módulo de Filiais, Unidades e Departamentos em desenvolvimento]
-            </CardContent>
-          </Card>
+          <div className="space-y-6">
+            {/* Filiais */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base text-primary">Filiais do Cliente</CardTitle>
+                  <CardDescription>Unidades, filiais e pontos de cobrança</CardDescription>
+                </div>
+                <Button size="sm" onClick={() => setModalFilialOpen(true)}><Plus className="w-4 h-4 mr-1"/> Nova Filial</Button>
+              </CardHeader>
+              <CardContent>
+                {filiais.length === 0 ? (
+                  <div className="text-center py-8 border rounded-lg border-dashed text-muted-foreground">
+                    Nenhuma filial cadastrada
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Endereço</TableHead><TableHead>Responsável</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Ações</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {filiais.map(f => (
+                        <TableRow key={f.id}>
+                          <TableCell className="font-medium">{f.nome}</TableCell>
+                          <TableCell>{f.endereco}</TableCell>
+                          <TableCell>{f.responsavel}</TableCell>
+                          <TableCell><Badge variant={f.status === 'ativo' ? 'default' : 'secondary'}>{f.status}</Badge></TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="icon" className="h-8 w-8"><Edit className="w-4 h-4"/></Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive"><Trash2 className="w-4 h-4"/></Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Centros de Custo */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base text-primary">Centros de Custo</CardTitle>
+                  <CardDescription>Códigos de custo por filial</CardDescription>
+                </div>
+                <Button size="sm" onClick={() => setModalCCOpen(true)}><Plus className="w-4 h-4 mr-1"/> Novo Centro de Custo</Button>
+              </CardHeader>
+              <CardContent>
+                {centrosCusto.length === 0 ? (
+                  <div className="text-center py-8 border rounded-lg border-dashed text-muted-foreground">
+                    Nenhum centro de custo cadastrado
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Código</TableHead><TableHead>Nome</TableHead><TableHead>Filial</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Ações</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {centrosCusto.map(cc => (
+                        <TableRow key={cc.id}>
+                          <TableCell className="font-mono">{cc.codigo}</TableCell>
+                          <TableCell>{cc.nome}</TableCell>
+                          <TableCell>{filiais.find(f => f.id === cc.filialId)?.nome || '-'}</TableCell>
+                          <TableCell><Badge variant={cc.status === 'ativo' ? 'default' : 'secondary'}>{cc.status}</Badge></TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="icon" className="h-8 w-8"><Edit className="w-4 h-4"/></Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive"><Trash2 className="w-4 h-4"/></Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Departamentos */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base text-primary">Departamentos</CardTitle>
+                  <CardDescription>Áreas e responsáveis internos</CardDescription>
+                </div>
+                <Button size="sm" onClick={() => setModalDeptoOpen(true)}><Plus className="w-4 h-4 mr-1"/> Novo Departamento</Button>
+              </CardHeader>
+              <CardContent>
+                {departamentos.length === 0 ? (
+                  <div className="text-center py-8 border rounded-lg border-dashed text-muted-foreground">
+                    Nenhum departamento cadastrado
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Responsável</TableHead><TableHead>E-mail</TableHead><TableHead className="text-right">Ações</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {departamentos.map(d => (
+                        <TableRow key={d.id}>
+                          <TableCell className="font-medium">{d.nome}</TableCell>
+                          <TableCell>{d.responsavel}</TableCell>
+                          <TableCell>{d.email}</TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="icon" className="h-8 w-8"><Edit className="w-4 h-4"/></Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive"><Trash2 className="w-4 h-4"/></Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="comercial">
@@ -235,21 +385,182 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
 
         <TabsContent value="contratos">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base text-primary">Contratos e Histórico Comercial</CardTitle>
-              <CardDescription>Acompanhe os contratos vigentes vinculados a este cliente</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base text-primary">Contratos do Cliente</CardTitle>
+                <CardDescription>Contratos comerciais vinculados</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled><Calendar className="w-4 h-4 mr-1"/> IA — em breve</Button>
+                <Button size="sm" onClick={() => setModalContratoOpen(true)}><Plus className="w-4 h-4 mr-1"/> Novo Contrato</Button>
+              </div>
             </CardHeader>
             <CardContent>
-               <div className="text-center py-10 border rounded-lg bg-muted/10 border-dashed">
-                <Calendar className="w-8 h-8 mx-auto text-muted-foreground opacity-50 mb-3" />
-                <p className="text-sm font-medium">Nenhum contrato ativo</p>
-                <p className="text-xs text-muted-foreground mt-1 mb-4">Você poderá vincular contratos do módulo Jurídico aqui.</p>
-              </div>
+              {contratos.length === 0 ? (
+                <div className="text-center py-10 border rounded-lg bg-muted/10 border-dashed">
+                  <Calendar className="w-8 h-8 mx-auto text-muted-foreground opacity-50 mb-3" />
+                  <p className="text-sm font-medium">Nenhum contrato ativo</p>
+                  <p className="text-xs text-muted-foreground mt-1">Clique em "Novo Contrato" para adicionar.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {contratos.map(contrato => {
+                    const hoje = new Date();
+                    const fim = new Date(contrato.vigenciaFim);
+                    const diasRestantes = Math.ceil((fim.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+                    const vencido = diasRestantes < 0;
+                    const vencendo = diasRestantes >= 0 && diasRestantes <= 30;
+                    
+                    return (
+                      <div key={contrato.id} className={`p-4 border rounded-lg ${vencido ? 'border-red-200 bg-red-50' : vencendo ? 'border-yellow-200 bg-yellow-50' : 'border-slate-200'}`}>
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-3">
+                            <div className={`w-10 h-10 rounded flex items-center justify-center ${vencido ? 'bg-red-100' : vencendo ? 'bg-yellow-100' : 'bg-green-100'}`}>
+                              <FileText className={`w-5 h-5 ${vencido ? 'text-red-600' : vencendo ? 'text-yellow-600' : 'text-green-600'}`} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold">{contrato.numero}</p>
+                                <Badge variant={contrato.status === 'ativo' ? 'default' : 'secondary'}>{contrato.status}</Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground">{contrato.tipo} - {contrato.objeto}</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Vigência: {new Date(contrato.vigenciaInicio).toLocaleDateString('pt-BR')} até {new Date(contrato.vigenciaFim).toLocaleDateString('pt-BR')}
+                              </p>
+                              {vencido && <p className="text-xs text-red-600 font-medium mt-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> Contrato vencido</p>}
+                              {vencendo && !vencido && <p className="text-xs text-yellow-600 font-medium mt-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> Vencendo em {diasRestantes} dias</p>}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <p className="font-bold text-lg">R$ {contrato.valor.toLocaleString('pt-BR')}</p>
+                            <div className="flex gap-1">
+                              <Button variant="ghost" size="icon" className="h-8 w-8"><Eye className="w-4 h-4"/></Button>
+                              {contrato.urlPdf && <Button variant="ghost" size="icon" className="h-8 w-8"><Download className="w-4 h-4"/></Button>}
+                              <Button variant="ghost" size="icon" className="h-8 w-8"><Edit className="w-4 h-4"/></Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
         
       </Tabs>
+
+      {/* Modal Nova Filial */}
+      <Dialog open={modalFilialOpen} onOpenChange={setModalFilialOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Nova Filial</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Nome da Filial</Label><Input value={novaFilial.nome || ''} onChange={e => setNovaFilial({...novaFilial, nome: e.target.value})} /></div>
+              <div><Label>Responsável</Label><Input value={novaFilial.responsavel || ''} onChange={e => setNovaFilial({...novaFilial, responsavel: e.target.value})} /></div>
+              <div><Label>Telefone</Label><Input value={novaFilial.telefone || ''} onChange={e => setNovaFilial({...novaFilial, telefone: e.target.value})} /></div>
+              <div><Label>Status</Label>
+                <Select value={novaFilial.status || 'ativo'} onValueChange={v => setNovaFilial({...novaFilial, status: v})}>
+                  <SelectTrigger><SelectValue/></SelectTrigger>
+                  <SelectContent><SelectItem value="ativo">Ativo</SelectItem><SelectItem value="inativo">Inativo</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div><Label>Endereço</Label><Input value={novaFilial.endereco || ''} onChange={e => setNovaFilial({...novaFilial, endereco: e.target.value})} /></div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setModalFilialOpen(false)}>Cancelar</Button>
+            <Button onClick={() => { setFiliais([...filiais, { ...novaFilial, id: String(Date.now()) } as Filial]); setModalFilialOpen(false); toast.success("Filial adicionada!"); }}>Salvar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Novo Centro de Custo */}
+      <Dialog open={modalCCOpen} onOpenChange={setModalCCOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Novo Centro de Custo</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Código</Label><Input value={novoCC.codigo || ''} onChange={e => setNovoCC({...novoCC, codigo: e.target.value})} /></div>
+              <div><Label>Nome</Label><Input value={novoCC.nome || ''} onChange={e => setNovoCC({...novoCC, nome: e.target.value})} /></div>
+              <div><Label>Filial</Label>
+                <Select value={novoCC.filialId || ''} onValueChange={v => setNovoCC({...novoCC, filialId: v})}>
+                  <SelectTrigger><SelectValue placeholder="Selecione"/></SelectTrigger>
+                  <SelectContent>{filiais.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div><Label>Status</Label>
+                <Select value={novoCC.status || 'ativo'} onValueChange={v => setNovoCC({...novoCC, status: v})}>
+                  <SelectTrigger><SelectValue/></SelectTrigger>
+                  <SelectContent><SelectItem value="ativo">Ativo</SelectItem><SelectItem value="inativo">Inativo</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setModalCCOpen(false)}>Cancelar</Button>
+            <Button onClick={() => { setCentrosCusto([...centrosCusto, { ...novoCC, id: String(Date.now()) } as CentroCusto]); setModalCCOpen(false); toast.success("Centro de custo adicionado!"); }}>Salvar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Novo Departamento */}
+      <Dialog open={modalDeptoOpen} onOpenChange={setModalDeptoOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Novo Departamento</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div><Label>Nome</Label><Input value={novoDepto.nome || ''} onChange={e => setNovoDepto({...novoDepto, nome: e.target.value})} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Responsável</Label><Input value={novoDepto.responsavel || ''} onChange={e => setNovoDepto({...novoDepto, responsavel: e.target.value})} /></div>
+              <div><Label>E-mail</Label><Input type="email" value={novoDepto.email || ''} onChange={e => setNovoDepto({...novoDepto, email: e.target.value})} /></div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setModalDeptoOpen(false)}>Cancelar</Button>
+            <Button onClick={() => { setDepartamentos([...departamentos, { ...novoDepto, id: String(Date.now()) } as Departamento]); setModalDeptoOpen(false); toast.success("Departamento adicionado!"); }}>Salvar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Novo Contrato */}
+      <Dialog open={modalContratoOpen} onOpenChange={setModalContratoOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Novo Contrato</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div><Label>Número</Label><Input value={novoContrato.numero || ''} onChange={e => setNovoContrato({...novoContrato, numero: e.target.value})} /></div>
+              <div><Label>Tipo</Label>
+                <Select value={novoContrato.tipo || ''} onValueChange={v => setNovoContrato({...novoContrato, tipo: v})}>
+                  <SelectTrigger><SelectValue placeholder="Selecione"/></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Serviços">Serviços</SelectItem>
+                    <SelectItem value="Frete">Frete</SelectItem>
+                    <SelectItem value="Tarifação">Tarifação</SelectItem>
+                    <SelectItem value="Mensalista">Mensalista</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label>Valor (R$)</Label><Input type="number" value={novoContrato.valor || ''} onChange={e => setNovoContrato({...novoContrato, valor: Number(e.target.value)})} /></div>
+            </div>
+            <div><Label>Objeto</Label><Input value={novoContrato.objeto || ''} onChange={e => setNovoContrato({...novoContrato, objeto: e.target.value})} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Vigência Início</Label><Input type="date" value={novoContrato.vigenciaInicio || ''} onChange={e => setNovoContrato({...novoContrato, vigenciaInicio: e.target.value})} /></div>
+              <div><Label>Vigência Fim</Label><Input type="date" value={novoContrato.vigenciaFim || ''} onChange={e => setNovoContrato({...novoContrato, vigenciaFim: e.target.value})} /></div>
+            </div>
+            <div><Label>Status</Label>
+              <Select value={novoContrato.status || 'ativo'} onValueChange={v => setNovoContrato({...novoContrato, status: v})}>
+                <SelectTrigger><SelectValue/></SelectTrigger>
+                <SelectContent><SelectItem value="ativo">Ativo</SelectItem><SelectItem value="encerrado">Encerrado</SelectItem><SelectItem value="renovacao">Em renovação</SelectItem></SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setModalContratoOpen(false)}>Cancelar</Button>
+            <Button onClick={() => { setContratos([...contratos, { ...novoContrato, id: String(Date.now()) } as Contrato]); setModalContratoOpen(false); toast.success("Contrato adicionado!"); }}>Salvar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

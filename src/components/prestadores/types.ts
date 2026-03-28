@@ -1,4 +1,4 @@
-export type TipoParceiro = "autonomo" | "agregado" | "fixo" | "esporadico" | "terceiro";
+export type TipoParceiro = "autonomo" | "agregado" | "fixo" | "esporadico" | "terceiro" | "clt";
 export type StatusPrestador = "ativo" | "analise" | "inativo" | "bloqueado";
 export type StatusDocumento = "valido" | "vencendo" | "vencido" | "pendente";
 export type TipoVeiculo = "moto" | "utilitario_leve" | "fiorino" | "kangoo" | "hr" | "van" | "vuc" | "3_4" | "toco" | "truck" | "carreta" | "carreta_ls" | "bitrem" | "rodotrem" | "cavalo_mecanico" | "bau_urbano" | "dedicado" | "refrigerado_leve" | "outro";
@@ -137,6 +137,7 @@ export const TIPO_PARCEIRO_LABEL: Record<TipoParceiro, string> = {
   fixo: "Parceiro Fixo",
   esporadico: "Parceiro Esporádico",
   terceiro: "Parceiro Terceiro",
+  clt: "CLT",
 };
 
 export const TIPO_PARCEIRO_COR: Record<TipoParceiro, string> = {
@@ -145,6 +146,7 @@ export const TIPO_PARCEIRO_COR: Record<TipoParceiro, string> = {
   fixo: "bg-green-500 text-white",
   esporadico: "bg-orange-500 text-white",
   terceiro: "bg-gray-500 text-white",
+  clt: "bg-teal-500 text-white",
 };
 
 export const STATUS_LABEL: Record<StatusPrestador, string> = {
