@@ -132,4 +132,101 @@ CREATE INDEX IF NOT EXISTS idx_analise_prestador ON documento_analises(prestador
 CREATE INDEX IF NOT EXISTS idx_analise_status_ia ON documento_analises(status_ia);
 CREATE INDEX IF NOT EXISTS idx_analise_tipo ON documento_analises(tipo_doc);
 
+-- RECRUTAMENTO INTELIGENTE
+CREATE TABLE IF NOT EXISTS candidatos (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  nome_completo text NOT NULL,
+  cpf text,
+  telefone text,
+  whatsapp text,
+  email text,
+  cidade text,
+  regiao text,
+  tipo_veiculo text,
+  tipo_carroceria text,
+  placa text,
+  experiencia_anos integer,
+  como_conheceu text,
+  mensagem_livre text,
+  canal_captacao text DEFAULT 'link_direto',
+  status text DEFAULT 'interessado',
+  score_perfil numeric DEFAULT 0,
+  prioridade numeric DEFAULT 0,
+  ultima_interacao timestamp with time zone,
+  prestador_id uuid REFERENCES prestadores(id),
+  observacoes text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS candidato_documentos (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  candidato_id uuid REFERENCES candidatos(id) ON DELETE CASCADE,
+  tipo text NOT NULL,
+  arquivo_url text,
+  status text DEFAULT 'pendente',
+  validade date,
+  dados_extraidos jsonb,
+  analise_ia_id uuid REFERENCES documento_analises(id),
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS candidato_interacoes (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  candidato_id uuid REFERENCES candidatos(id) ON DELETE CASCADE,
+  tipo text NOT NULL,
+  canal text DEFAULT 'sistema',
+  mensagem text,
+  resposta text,
+  realizada_por text,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS homologacoes (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  candidato_id uuid REFERENCES candidatos(id) ON DELETE CASCADE,
+  prestador_id uuid REFERENCES prestadores(id),
+  status text DEFAULT 'pendente',
+  checklist jsonb DEFAULT '{}',
+  documentos_aprovados boolean DEFAULT false,
+  dados_bancarios_conferidos boolean DEFAULT false,
+  veiculo_compativel boolean DEFAULT false,
+  contrato_gerado boolean DEFAULT false,
+  app_instalado boolean DEFAULT false,
+  treinamento_concluido boolean DEFAULT false,
+  aprovado_por uuid REFERENCES usuarios(id),
+  data_aprovacao timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS reservas_banco (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  candidato_id uuid REFERENCES candidatos(id) ON DELETE CASCADE,
+  tipo_veiculo text,
+  regiao text,
+  score_adequacao numeric DEFAULT 0,
+  status text DEFAULT 'disponivel',
+  ultima_proposta timestamp with time zone,
+  total_propostas integer DEFAULT 0,
+  aceitas integer DEFAULT 0,
+  rejeitadas integer DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS recrutamento_config (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  chave text UNIQUE,
+  valor jsonb,
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_candidatos_status ON candidatos(status);
+CREATE INDEX IF NOT EXISTS idx_candidatos_regiao ON candidatos(regiao);
+CREATE INDEX IF NOT EXISTS idx_candidatos_tipo_veiculo ON candidatos(tipo_veiculo);
+CREATE INDEX IF NOT EXISTS idx_candidatos_score ON candidatos(score_perfil DESC);
+CREATE INDEX IF NOT EXISTS idx_candidato_documentos_candidato ON candidato_documentos(candidato_id);
+CREATE INDEX IF NOT EXISTS idx_candidato_interacoes_candidato ON candidato_interacoes(candidato_id);
+CREATE INDEX IF NOT EXISTS idx_homologacoes_candidato ON homologacoes(candidato_id);
+CREATE INDEX IF NOT EXISTS idx_reservas_banco_status ON reservas_banco(status);
+
 -- Concluído.

@@ -30,6 +30,7 @@ import Biblioteca from "@/pages/Biblioteca";
 import Governanca from "@/pages/Governanca";
 import IAAutomacoes from "@/pages/IAAutomacoes";
 import MonitorIntegracoes from "@/pages/MonitorIntegracoes";
+import CadastroPrestador from "@/pages/CadastroPrestador";
 
 const queryClient = new QueryClient();
 
@@ -41,6 +42,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/cadastro-prestador" element={<CadastroPrestador />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />

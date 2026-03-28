@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { UserPlus, Filter, Database, CheckCircle, Mail, History, Copy, Eye, Plus, ThumbsDown, ThumbsUp } from "lucide-react";
+import { UserPlus, Filter, Database, CheckCircle, Mail, History, Copy, Eye, Plus, ThumbsDown, ThumbsUp, FileText } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
+import { BancoTalentos } from "@/components/recrutamento/BancoTalentos";
+import { TriagemIA } from "@/components/recrutamento/TriagemIA";
+import { AcompanhamentoDocs } from "@/components/recrutamento/AcompanhamentoDocs";
+import { Homologacao } from "@/components/recrutamento/Homologacao";
+import { BancoReservas } from "@/components/recrutamento/BancoReservas";
 
 export default function Recrutamento() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -28,8 +33,10 @@ export default function Recrutamento() {
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full">
            <TabsTrigger value="captacao" className="px-5"><UserPlus className="w-4 h-4 mr-2"/> Captação</TabsTrigger>
-           <TabsTrigger value="triagem" className="px-5"><Filter className="w-4 h-4 mr-2"/> Triagem</TabsTrigger>
-           <TabsTrigger value="banco" className="px-5"><Database className="w-4 h-4 mr-2"/> Banco de Talentos</TabsTrigger>
+           <TabsTrigger value="triagem" className="px-5"><Filter className="w-4 h-4 mr-2"/> Triagem IA</TabsTrigger>
+           <TabsTrigger value="documentacao" className="px-5"><FileText className="w-4 h-4 mr-2"/> Documentação</TabsTrigger>
+           <TabsTrigger value="banco" className="px-5"><Database className="w-4 h-4 mr-2"/> Banco Talentos</TabsTrigger>
+           <TabsTrigger value="reservas" className="px-5"><Database className="w-4 h-4 mr-2"/> Banco Reservas</TabsTrigger>
            <TabsTrigger value="homologacao" className="px-5"><CheckCircle className="w-4 h-4 mr-2"/> Homologação</TabsTrigger>
            <TabsTrigger value="convocacao" className="px-5"><Mail className="w-4 h-4 mr-2"/> Convocação</TabsTrigger>
            <TabsTrigger value="historico" className="px-5"><History className="w-4 h-4 mr-2"/> Histórico</TabsTrigger>
@@ -63,43 +70,22 @@ export default function Recrutamento() {
 
         {/* --- TRIAGEM --- */}
         <TabsContent value="triagem" className="pt-4">
-           <Card>
-              <CardHeader><CardTitle>Funil: Aguardando Primeira Análise</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                 <Table>
-                   <TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Veículo Base</TableHead><TableHead>Região Preferencial</TableHead><TableHead>Data Cadastro</TableHead><TableHead>Status Análise</TableHead><TableHead className="text-right">Decisão</TableHead></TableRow></TableHeader>
-                   <TableBody>
-                     <TableRow>
-                       <TableCell className="font-bold">Márcio Silva Lemos</TableCell><TableCell>Truck (Câmara Fria)</TableCell><TableCell>Interior SP</TableCell><TableCell>25/03/2026</TableCell>
-                       <TableCell><Badge variant="outline" className="text-yellow-700 bg-yellow-50 border-yellow-200">Novo Cadastro Público</Badge></TableCell>
-                       <TableCell className="text-right flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600"><Eye className="w-4 h-4"/></Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 hover:bg-green-50"><ThumbsUp className="w-4 h-4"/></Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:bg-red-50"><ThumbsDown className="w-4 h-4"/></Button>
-                       </TableCell>
-                     </TableRow>
-                   </TableBody>
-                 </Table>
-              </CardContent>
-           </Card>
+           <TriagemIA />
         </TabsContent>
 
         {/* --- BANCO DE TALENTOS --- */}
         <TabsContent value="banco" className="pt-4">
-           <Card>
-              <CardHeader><CardTitle>Banco de Prestadores Reservas</CardTitle><CardDescription>Candidatos aprovados tecnicamente mas que aguardam demanda (não inseridos ainda no Modulo Cadastros).</CardDescription></CardHeader>
-              <CardContent className="p-0">
-                 <Table>
-                   <TableHeader><TableRow><TableHead>Candidato Aprovado</TableHead><TableHead>Veículo Ofertado</TableHead><TableHead>Pretensão de Rota</TableHead><TableHead>Score RH</TableHead><TableHead className="text-right">Ação</TableHead></TableRow></TableHeader>
-                   <TableBody>
-                     <TableRow>
-                       <TableCell className="font-bold">Felipe Santos Transporte ME</TableCell><TableCell>Fiorino (Seca)</TableCell><TableCell>São Paulo / Grande SP</TableCell><TableCell className="font-bold text-orange-500">★★★★☆</TableCell>
-                       <TableCell className="text-right"><Button size="sm" variant="outline" className="h-8 border-green-500 text-green-700 hover:bg-green-50">Transferir p/ Homologação</Button></TableCell>
-                     </TableRow>
-                   </TableBody>
-                 </Table>
-              </CardContent>
-           </Card>
+           <BancoTalentos />
+        </TabsContent>
+
+        {/* --- DOCUMENTAÇÃO --- */}
+        <TabsContent value="documentacao" className="pt-4">
+           <AcompanhamentoDocs />
+        </TabsContent>
+
+        {/* --- RESERVAS --- */}
+        <TabsContent value="reservas" className="pt-4">
+           <BancoReservas />
         </TabsContent>
 
         {/* --- HOMOLOGAÇÃO --- */}
