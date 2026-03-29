@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { supabase } from "@/lib/supabase";
+import MapboxMap from "@/components/MapboxMap";
+import { useTheme } from "@/hooks/useTheme";
 
 interface OSRecord {
   id: string;
@@ -17,13 +19,8 @@ interface OSRecord {
   previsaoTermino: string;
 }
 
-const mapStyle = {
-  backgroundColor: "#1e293b", // slate-800
-  backgroundImage: "radial-gradient(#334155 1px, transparent 1px)",
-  backgroundSize: "20px 20px"
-};
-
 const TorreControle = () => {
+  const { theme } = useTheme();
   const [osAtivas, setOsAtivas] = useState<OSRecord[]>([]);
   const [ocorrencias, setOcorrencias] = useState<any[]>([]);
   const [stats, setStats] = useState({
@@ -107,26 +104,13 @@ const TorreControle = () => {
                </Badge>
             </div>
 
-            <div className="flex-1 w-full h-full relative" style={mapStyle}>
-              {/* Mock Floating Vehicles */}
-              <div className="absolute top-[30%] left-[40%] animate-pulse">
-                <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center shadow-lg shadow-green-500/50 border-2 border-white">
-                  <Truck className="w-4 h-4 text-white" />
-                </div>
-                <div className="bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded mt-1 whitespace-nowrap text-center shadow">OS-1042</div>
-              </div>
-              <div className="absolute top-[60%] left-[70%] animate-pulse" style={{ animationDelay: '1s' }}>
-                <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center shadow-lg shadow-red-500/50 border-2 border-white">
-                  <AlertTriangle className="w-4 h-4 text-white" />
-                </div>
-                <div className="bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded mt-1 whitespace-nowrap text-center shadow">OS-1045</div>
-              </div>
-              <div className="absolute top-[20%] left-[20%] animate-pulse" style={{ animationDelay: '2s' }}>
-                <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg shadow-yellow-500/50 border-2 border-white">
-                  <Truck className="w-4 h-4 text-white" />
-                </div>
-                <div className="bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded mt-1 whitespace-nowrap text-center shadow">OS-1090</div>
-              </div>
+            <div className="flex-1 w-full h-full relative">
+              <MapboxMap 
+                style={theme === "dark" ? "dark" : "light"}
+                showControls={true}
+                showClustering={true}
+                title="Torre de Controle - Rastreamento"
+              />
             </div>
           </Card>
         </div>

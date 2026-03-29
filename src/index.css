@@ -54,15 +54,29 @@
     --sidebar-border: 216 40% 18%;
     --sidebar-ring: 24 95% 53%;
   }
-}
 
-@layer base {
   * {
     @apply border-border;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  .dark {
+    --sidebar-bg: 222 47% 8%;
+    --sidebar-fg: 215 20% 65%;
+    --sidebar-hover: 217 38% 15%;
+    --sidebar-active: 24 95% 53%;
+    --sidebar-active-fg: 0 0% 100%;
+    --topbar-bg: 217 33% 18%;
+    --topbar-fg: 215 20% 65%;
+    --background: 222 47% 11%;
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
+    --border: 217 33% 25%;
   }
 }
 
@@ -76,5 +90,13 @@
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background-color: hsl(var(--muted-foreground) / 0.3);
     border-radius: 9999px;
+  }
+
+  .card-premium {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+  }
+  .card-premium:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
   }
 }

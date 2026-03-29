@@ -1,7 +1,13 @@
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { 
+  Clock, Hourglass, FileText, UserCheck, Truck, Package, 
+  MapPin, Home, AlertTriangle, CheckCircle, RefreshCcw, 
+  Share2, XCircle, TrendingUp, TrendingDown, Minus
+} from "lucide-react";
 import { statusOperacional, operacoesPorRegiao, osPorDia, ocorrenciasPorMotivo, ultimasOrdens, ultimasOcorrencias, parceirosAguardando, CORES_GRAFICOS } from "./mockData";
 
 const statusBadgeColor = (s: string) => {
@@ -14,22 +20,103 @@ const statusBadgeColor = (s: string) => {
   return "bg-gray-400 text-white";
 };
 
+const statusIcons: Record<string, React.ElementType> = {
+  "Rascunho": Clock,
+  "Aguardando Aprovação": Hourglass,
+  "Programada": FileText,
+  "Aguardando Parceiro": UserCheck,
+  "Aguardando Veículo": Truck,
+  "Em Coleta": Package,
+  "Em Rota": MapPin,
+  "Em Entrega": Home,
+  "Com Ocorrência": AlertTriangle,
+  "Finalizada": CheckCircle,
+  "Reentrega": RefreshCcw,
+  "Devolução": Share2,
+  "Cancelada": XCircle,
+};
+
+const statusColors: Record<string, string> = {
+  "Rascunho": "text-gray-500 bg-gray-100 border-gray-200",
+  "Aguardando Aprovação": "text-yellow-600 bg-yellow-100 border-yellow-300",
+  "Aguardando Programação": "text-orange-500 bg-orange-100 border-orange-300",
+  "Em Programação": "text-orange-600 bg-orange-100 border-orange-300",
+  "Programada": "text-blue-600 bg-blue-100 border-blue-300",
+  "Aguardando Parceiro": "text-purple-600 bg-purple-100 border-purple-300",
+  "Aguardando Veículo": "text-indigo-600 bg-indigo-100 border-indigo-300",
+  "Aguardando Coleta": "text-cyan-600 bg-cyan-100 border-cyan-300",
+  "Em Coleta": "text-teal-600 bg-teal-100 border-teal-300",
+  "Carregando": "text-emerald-600 bg-emerald-100 border-emerald-300",
+  "Saiu para Rota": "text-green-600 bg-green-100 border-green-300",
+  "Em Operação": "text-green-700 bg-green-100 border-green-300",
+  "Em Entrega": "text-lime-600 bg-lime-100 border-lime-300",
+  "Com Ocorrência": "text-red-600 bg-red-100 border-red-300",
+  "Aguardando Baixa": "text-amber-600 bg-amber-100 border-amber-300",
+  "Finalizada": "text-green-800 bg-green-200 border-green-400",
+  "Reentrega": "text-rose-600 bg-rose-100 border-rose-300",
+  "Devolução": "text-red-700 bg-red-100 border-red-300",
+  "Retorno à Base": "text-slate-600 bg-slate-100 border-slate-300",
+};
+
+const getTendencia = (nome: string) => {
+  const tendencias: Record<string, number> = {
+    "Rascunho": -2,
+    "Aguardando Aprovação": 5,
+    "Aguardando Programação": -3,
+    "Programada": 8,
+    "Aguardando Parceiro": -1,
+    "Aguardando Veículo": 2,
+    "Em Coleta": 4,
+    "Em Rota": 12,
+    "Em Entrega": 6,
+    "Com Ocorrência": -4,
+    "Finalizada": 15,
+    "Reentrega": 1,
+    "Devolução": -1,
+  };
+  return tendencias[nome] || 0;
+};
+
+const StatusCard = ({ nome, qtd, cor }: { nome: string; qtd: number; cor: string }) => {
+  const navigate = useNavigate();
+  const Icon = statusIcons[nome] || Clock;
+  const colorClass = statusColors[nome] || "text-gray-600 bg-gray-100 border-gray-200";
+  const tendencia = getTendencia(nome);
+  
+  return (
+    <Card 
+      className={`cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-l-4 ${colorClass.split(" ")[1]} border-l-4`}
+      onClick={() => navigate(`/operacao/os?status=${encodeURIComponent(nome)}`)}
+    >
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between">
+          <div className={`p-2.5 rounded-xl ${colorClass.split(" ")[1]} border`}>
+            <Icon className={`w-5 h-5 ${colorClass.split(" ")[0]}`} />
+          </div>
+          <div className={`flex items-center gap-0.5 text-xs font-medium ${
+            tendencia > 0 ? "text-green-600" : tendencia < 0 ? "text-red-500" : "text-muted-foreground"
+          }`}>
+            {tendencia > 0 ? <TrendingUp className="w-3 h-3" /> : tendencia < 0 ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+            {Math.abs(tendencia)}
+          </div>
+        </div>
+        <div className="mt-3">
+          <p className="text-2xl font-bold">{qtd}</p>
+          <p className="text-xs text-muted-foreground font-medium">{nome}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 const topStatus = [...statusOperacional].filter(s => s.nome !== "Finalizada").sort((a, b) => b.qtd - a.qtd).slice(0, 8);
 
 const TabOperacional = () => (
   <div className="space-y-6">
-    {/* Status cards */}
+    {/* Status cards com ícones */}
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
       {statusOperacional.map((s) => (
-        <Card key={s.nome} className="hover:shadow-md transition-shadow">
-          <CardContent className="p-3 flex items-center gap-3">
-            <div className={`w-3 h-3 rounded-full ${s.cor} shrink-0`} />
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground truncate">{s.nome}</p>
-              <p className="text-lg font-bold">{s.qtd}</p>
-            </div>
-          </CardContent>
-        </Card>
+        <StatusCard key={s.nome} nome={s.nome} qtd={s.qtd} cor={s.cor} />
       ))}
     </div>
 

@@ -1,42 +1,66 @@
 import { useState } from "react";
-import { Route, Map as MapIcon, Zap, MapPin, Truck, RefreshCw, Layers } from "lucide-react";
+import { Route, Map as MapIcon, Zap, MapPin, Truck, RefreshCw, Layers, Plus } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import MapboxMap from "@/components/MapboxMap";
+import { useTheme } from "@/hooks/useTheme";
+
+interface RoutePoint {
+  id: string;
+  numero: string;
+  latitude: number;
+  longitude: number;
+  cliente: string;
+  tipo: "origem" | "destino";
+  tempo?: string;
+}
+
+const defaultRoutePoints: RoutePoint[] = [
+  { id: "cd", numero: "CD", latitude: -23.4628, longitude: -46.5331, cliente: "DOCA Matriz - Guarulhos", tipo: "origem" },
+  { id: "1", numero: "OS-10450-4411", latitude: -23.5505, longitude: -46.6333, cliente: "Indústria ABC Paulista", tipo: "destino", tempo: "~10 min" },
+  { id: "2", numero: "OS-202610-8802", latitude: -23.2222, longitude: -45.9999, cliente: "Embraer S.A (Matriz)", tipo: "destino", tempo: "~45 min" },
+  { id: "3", numero: "OS-202610-8805", latitude: -22.9068, longitude: -43.1729, cliente: "Mercado Livre (Galpão Z)", tipo: "destino", tempo: "~12 min" },
+];
 
 const RoteirizacaoLista = () => {
-   return (
+  const { theme } = useTheme();
+  const [routePoints, setRoutePoints] = useState<RoutePoint[]>(defaultRoutePoints);
+
+  const mapLocations = routePoints.map(p => ({
+    id: p.id,
+    numero: p.numero,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    status: p.tipo === "origem" ? "em_rota" as const : "em_rota" as const,
+    cliente: p.cliente,
+  }));
+
+  return (
      <div className="space-y-6">
        <div className="flex flex-col md:flex-row gap-6 h-[600px]">
           
           <div className="w-full md:w-2/3 flex flex-col gap-4 h-full relative">
-             <div className="flex justify-between items-center bg-white p-3 border rounded shadow-sm z-10">
+             <div className="flex justify-between items-center bg-card p-3 border rounded shadow-sm z-10">
                 <div className="flex items-center gap-2">
-                   <h3 className="font-bold text-slate-800 flex items-center gap-2"><MapIcon className="w-5 h-5 text-purple-600"/> Mapa de Sequenciamento</h3>
-                   <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 ml-2">Google Maps API pendente em Integrações</Badge>
+                   <h3 className="font-bold flex items-center gap-2"><MapIcon className="w-5 h-5 text-purple-600"/> Mapa de Sequenciamento</h3>
+                   <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 ml-2">Mapbox</Badge>
                 </div>
                 <div className="flex gap-2">
-                   <Button variant="outline" size="sm" className="h-8 shadow"><Layers className="w-3 h-3 mr-1"/> Trafégo e Raio Múltiplo</Button>
+                   <Button variant="outline" size="sm" className="h-8 shadow gap-1"><Plus className="w-3 h-3"/> Adicionar Ponto</Button>
+                   <Button variant="outline" size="sm" className="h-8 shadow"><Layers className="w-3 h-3 mr-1"/> Camadas</Button>
                 </div>
              </div>
              
-             <div className="flex-1 bg-slate-900 rounded-lg overflow-hidden relative shadow flex items-center justify-center border border-slate-700">
-                <div className="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-400 via-slate-800 to-black"></div>
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 p-8 text-center space-y-4">
-                   <MapPin className="w-16 h-16 text-slate-600 mb-2 animate-bounce opacity-30"/>
-                   <h4 className="text-xl font-bold text-white/80">Malha Dinâmica (Work in Progress)</h4>
-                   <p className="max-w-md text-sm">O mapa de visualização de pontos quentes, traças poligonais e roteirização dependem da inclusão da chave do Google Maps Platform nas Configurações do Sistema.</p>
-                   <Button className="mt-4 bg-purple-600 hover:bg-purple-700 font-bold border-none shadow-lg shadow-purple-900/40"><Zap className="w-4 h-4 mr-2"/> Entender Integração TMS x Google</Button>
-                </div>
-                
-                {/* Mocked Route Line Overlay */}
-                <svg className="absolute inset-0 w-full h-full opacity-30 pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                   <path d="M10,90 Q30,50 50,70 T90,10" fill="none" stroke="#a855f7" strokeWidth="0.5" strokeDasharray="2 1" />
-                   <circle cx="10" cy="90" r="1.5" fill="#a855f7" />
-                   <circle cx="50" cy="70" r="1.5" fill="#a855f7" />
-                   <circle cx="90" cy="10" r="1.5" fill="#a855f7" />
-                </svg>
+             <div className="flex-1 rounded-lg overflow-hidden relative shadow flex items-center justify-center border border-border">
+                <MapboxMap 
+                  locations={mapLocations}
+                  style={theme === "dark" ? "dark" : "light"}
+                  showControls={true}
+                  title="Roteirização - Sequência de Entregas"
+                  height="100%"
+                />
              </div>
           </div>
 
