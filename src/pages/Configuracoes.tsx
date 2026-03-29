@@ -155,14 +155,14 @@ export default function Configuracoes() {
     setTimeout(() => { setSaving(false); toast.success("Configurações salvas."); }, 1000);
   };
 
-  const togglePermissao = (usuarioId: string, modulo: string, permissao: Permissao) => {
+  const togglePermissao = (usuarioId: string, modulo: string, permissao: string) => {
     setUsuarios(prev => prev.map(u => {
       if (u.id !== usuarioId) return u;
       return {
         ...u,
         permissoes: u.permissoes.map(p => {
           if (p.modulo !== modulo) return p;
-          return { ...p, [permissao]: !p[permissao as keyof typeof p] };
+          return { ...p, [permissao]: !p[permissao as keyof ModuloPermissao] };
         }),
       };
     }));
@@ -369,7 +369,7 @@ export default function Configuracoes() {
                                 {moduloInfo?.temAprovar ? (
                                   <Checkbox 
                                     checked={p.aprobar} 
-                                    onCheckedChange={() => togglePermissao(usuarioEditando, p.modulo, "aprobar")} 
+                                    onCheckedChange={() => togglePermissao(usuarioEditando, p.modulo, "aprobar" as Permissao)} 
                                   />
                                 ) : (
                                   <span className="text-muted-foreground">—</span>
