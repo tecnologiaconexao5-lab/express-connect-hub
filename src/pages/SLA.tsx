@@ -1,52 +1,16 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Award, TrendingUp, TrendingDown, Clock, AlertTriangle, Truck, MapPin, CheckCircle, ShieldAlert, Star, Medal, ChevronUp, ChevronDown, Filter, Calendar } from "lucide-react";
+import { Award, TrendingUp, TrendingDown, Clock, AlertTriangle, Truck, MapPin, CheckCircle, ShieldAlert } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function SLA() {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = searchParams.get("tab") || "cliente";
   const handleTabChange = (val: string) => setSearchParams({ tab: val });
-
-  interface PrestadorRanking {
-    id: number;
-    nome: string;
-    tipoVeiculo: string;
-    regiao: string;
-    osRealizadas: number;
-    osEscala: number;
-    taxaAceite: number;
-    pontualidade: number;
-    ocurrencias: number;
-    devolucoes: number;
-    score: number;
-    notaMedia: number;
-    status: string;
-  }
-
-  const prestadoresRanking: PrestadorRanking[] = [
-    { id: 1, nome: "João Transporte", tipoVeiculo: "Fiorino", regiao: "São Paulo - Leste", osRealizadas: 156, osEscala: 160, taxaAceite: 97.5, pontualidade: 98.2, ocurrencias: 2, devolucoes: 1, score: 94, notaMedia: 4.9, status: "Destaque" },
-    { id: 2, nome: "Maria Logistics", tipoVeiculo: "HR/Van", regiao: "Campinas", osRealizadas: 89, osEscala: 95, taxaAceite: 93.6, pontualidade: 95.5, ocurrencias: 5, devolucoes: 2, score: 87, notaMedia: 4.5, status: "Ativo" },
-    { id: 3, nome: "Transportes ABC", tipoVeiculo: "Carreta LS", regiao: "São Paulo - Oeste", osRealizadas: 45, osEscala: 50, taxaAceite: 90.0, pontualidade: 88.0, ocurrencias: 8, devolucoes: 3, score: 72, notaMedia: 3.8, status: "Atenção" },
-    { id: 4, nome: "Carlos Agregados", tipoVeiculo: "3/4 Refrigerado", regiao: "Guarulhos", osRealizadas: 28, osEscala: 35, taxaAceite: 80.0, pontualidade: 82.0, ocurrencias: 5, devolucoes: 2, score: 68, notaMedia: 3.2, status: "Crítico" },
-    { id: 5, nome: "LogX Rápida", tipoVeiculo: "VUC", regiao: "ABC Paulista", osRealizadas: 112, osEscala: 120, taxaAceite: 93.3, pontualidade: 92.0, ocurrencias: 3, devolucoes: 1, score: 89, notaMedia: 4.6, status: "Ativo" },
-  ];
-
-  const historicoMensal = [
-    { mes: "Out/25", os: 142, pontualidade: 94.5, score: 88 },
-    { mes: "Nov/25", os: 148, pontualidade: 95.2, score: 89 },
-    { mes: "Dez/25", os: 135, pontualidade: 93.8, score: 86 },
-    { mes: "Jan/26", os: 150, pontualidade: 96.1, score: 91 },
-    { mes: "Fev/26", os: 155, pontualidade: 97.5, score: 93 },
-    { mes: "Mar/26", os: 156, pontualidade: 98.2, score: 94 },
-  ];
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto">
@@ -65,7 +29,6 @@ export default function SLA() {
            <TabsTrigger value="nps" className="px-5"><Award className="w-4 h-4 mr-2"/> SLA por Cliente</TabsTrigger>
            <TabsTrigger value="entrega" className="px-5"><MapPin className="w-4 h-4 mr-2"/> SLA por Operação</TabsTrigger>
            <TabsTrigger value="performance" className="px-5"><Truck className="w-4 h-4 mr-2"/> Perf. Prestador</TabsTrigger>
-           <TabsTrigger value="ranking" className="px-5"><Medal className="w-4 h-4 mr-2"/> Ranking Prestadores</TabsTrigger>
         </TabsList>
 
         {/* --- DASHBOARD SLA --- */}
@@ -222,117 +185,13 @@ export default function SLA() {
                        <TableCell className="text-center font-black text-orange-500">3.8</TableCell>
                        <TableCell className="text-center"><Badge variant="secondary" className="bg-yellow-500 text-white border-none">Atenção</Badge></TableCell>
                      </TableRow>
-                   </TableBody>
-               </Table>
-              </CardContent>
-            </Card>
-         </TabsContent>
-
-        {/* --- RANKING PRESTADORES --- */}
-        <TabsContent value="ranking" className="pt-4 space-y-4">
-          <div className="flex justify-between items-center gap-4 mb-4">
-            <div className="flex gap-2 items-center">
-              <Calendar className="w-4 h-4 text-muted-foreground"/>
-              <Select defaultValue="30d">
-                <SelectTrigger className="w-40"><SelectValue/></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="7d">Últimos 7 dias</SelectItem>
-                  <SelectItem value="30d">Últimos 30 dias</SelectItem>
-                  <SelectItem value="90d">Últimos 90 dias</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select defaultValue="todos">
-                <SelectTrigger className="w-36"><SelectValue placeholder="Tipo veículo"/></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="fiorino">Fiorino</SelectItem>
-                  <SelectItem value="hr">HR/Van</SelectItem>
-                  <SelectItem value="carreta">Carreta</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button variant="outline" className="gap-2"><Filter className="w-4 h-4"/> Mais Filtros</Button>
-          </div>
-
-          {/* PODIUM TOP 3 */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            {prestadoresRanking.slice(0,3).map((p, idx) => (
-              <Card key={p.id} className={`relative overflow-hidden ${idx === 0 ? 'border-yellow-400 border-2 bg-yellow-50' : idx === 1 ? 'border-gray-400 border-2 bg-gray-50' : 'border-orange-400 border-2 bg-orange-50'}`}>
-                <CardContent className="p-4 text-center">
-                  <div className="flex justify-center mb-2">{idx === 0 ? <Medal className="w-10 h-10 text-yellow-500"/> : idx === 1 ? <Medal className="w-10 h-10 text-gray-400"/> : <Medal className="w-10 h-10 text-orange-400"/>}</div>
-                  <p className="text-xs text-muted-foreground uppercase font-bold">#{idx+1} {idx === 0 ? 'CAMPEÃO' : idx === 1 ? 'VICE' : '3º LUGAR'}</p>
-                  <p className="font-bold text-lg mt-1">{p.nome}</p>
-                  <p className="text-xs text-muted-foreground">{p.tipoVeiculo}</p>
-                  <div className="mt-3 flex justify-center gap-1">{Array(5).fill(0).map((_,i) => <Star key={i} className={`w-4 h-4 ${i < Math.floor(p.notaMedia) ? 'text-yellow-500 fill-yellow-500' : 'text-gray-300'}`}/>)}</div>
-                  <p className="text-2xl font-black mt-2 text-primary">{p.score}</p>
-                  <p className="text-xs text-muted-foreground">pts</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {/* TOP 5 DESTAQUES */}
-          <div className="grid grid-cols-5 gap-3 mb-4">
-            <Card className="bg-blue-50 border-blue-200"><CardContent className="p-3 text-center"><p className="text-[10px] uppercase font-bold text-blue-600">Maior Volume</p><p className="font-bold text-sm truncate">João Transporte</p><p className="text-xs text-blue-500">156 OS</p></CardContent></Card>
-            <Card className="bg-green-50 border-green-200"><CardContent className="p-3 text-center"><p className="text-[10px] uppercase font-bold text-green-600">Mais Pontual</p><p className="font-bold text-sm truncate">João Transporte</p><p className="text-xs text-green-500">98.2%</p></CardContent></Card>
-            <Card className="bg-purple-50 border-purple-200"><CardContent className="p-3 text-center"><p className="text-[10px] uppercase font-bold text-purple-600">Mais Rentável</p><p className="font-bold text-sm truncate">LogX Rápida</p><p className="text-xs text-purple-500">R$/km</p></CardContent></Card>
-            <Card className="bg-emerald-50 border-emerald-200"><CardContent className="p-3 text-center"><p className="text-[10px] uppercase font-bold text-emerald-600">Mais Confiável</p><p className="font-bold text-sm truncate">João Transporte</p><p className="text-xs text-emerald-500">1.3% occ</p></CardContent></Card>
-            <Card className="bg-orange-50 border-orange-200"><CardContent className="p-3 text-center"><p className="text-[10px] uppercase font-bold text-orange-600">Melhor Avaliado</p><p className="font-bold text-sm truncate">João Transporte</p><p className="text-xs text-orange-500">4.9 ★</p></CardContent></Card>
-          </div>
-
-          {/* TABELA RANKING COMPLETO */}
-          <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-sm">Ranking Completo</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader><TableRow><TableHead className="w-12">Pos</TableHead><TableHead>Prestador</TableHead><TableHead>Tipo</TableHead><TableHead>Região</TableHead><TableHead className="text-center">OS Realiz.</TableHead><TableHead className="text-center">OS Escala</TableHead><TableHead className="text-center">Taxa Aceite</TableHead><TableHead className="text-center">Pontualidade</TableHead><TableHead className="text-center">Ocorr.</TableHead><TableHead className="text-center">Devol.</TableHead><TableHead className="text-center">Score</TableHead><TableHead className="text-center">Nota</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {prestadoresRanking.map((p, idx) => (
-                    <TableRow key={p.id} className={idx < 3 ? 'bg-yellow-50/30' : ''}>
-                      <TableCell className="font-bold">{idx+1}</TableCell>
-                      <TableCell className="font-medium">{p.nome}</TableCell>
-                      <TableCell><Badge variant="outline" className="text-xs">{p.tipoVeiculo}</Badge></TableCell>
-                      <TableCell className="text-xs">{p.regiao}</TableCell>
-                      <TableCell className="text-center">{p.osRealizadas}</TableCell>
-                      <TableCell className="text-center">{p.osEscala}</TableCell>
-                      <TableCell className={`text-center font-medium ${p.taxaAceite >= 95 ? 'text-green-600' : p.taxaAceite >= 85 ? 'text-yellow-600' : 'text-red-600'}`}>{p.taxaAceite.toFixed(1)}%</TableCell>
-                      <TableCell className={`text-center font-medium ${p.pontualidade >= 95 ? 'text-green-600' : p.pontualidade >= 85 ? 'text-yellow-600' : 'text-red-600'}`}>{p.pontualidade.toFixed(1)}%</TableCell>
-                      <TableCell className={`text-center ${p.ocurrencias <= 3 ? 'text-green-600' : p.ocurrencias <= 6 ? 'text-yellow-600' : 'text-red-600'}`}>{p.ocurrencias}</TableCell>
-                      <TableCell className="text-center">{p.devolucoes}</TableCell>
-                      <TableCell className="text-center font-black text-primary">{p.score}</TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1">{Array(5).fill(0).map((_,i) => <Star key={i} className={`w-3 h-3 ${i < Math.floor(p.notaMedia) ? 'text-yellow-500 fill-yellow-500' : 'text-gray-300'}`}/>)}</div>
-                      </TableCell>
-                      <TableCell><Badge className={p.status === 'Destaque' ? 'bg-yellow-100 text-yellow-800' : p.status === 'Ativo' ? 'bg-green-100 text-green-800' : p.status === 'Atenção' ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800'}>{p.status}</Badge></TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {/* HISTÓRICO */}
-          <Card>
-            <CardHeader><CardTitle className="text-sm">Evolução do Score - João Transporte (Top 1)</CardTitle></CardHeader>
-            <CardContent>
-              <div className="flex items-end justify-between gap-2 h-32 px-4">
-                {historicoMensal.map((h, i) => (
-                  <div key={i} className="flex flex-col items-center flex-1">
-                    <div className="w-full bg-blue-100 rounded-t-sm relative flex items-end justify-center h-24">
-                      <div className="w-full bg-blue-500 rounded-t-sm transition-all" style={{ height: `${h.score}%` }}></div>
-                    </div>
-                    <span className="text-[10px] font-bold text-slate-500 mt-1">{h.mes}</span>
-                    <span className="text-[10px] font-black text-primary">{h.score}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  </TableBody>
+                </Table>
+             </CardContent>
+           </Card>
         </TabsContent>
 
       </Tabs>
-   </div>
+    </div>
   );
 }
