@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { UserPlus, Filter, Database, Clock, LineChart } from "lucide-react";
+import { UserPlus, Filter, Database, Clock, LineChart, Briefcase } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { Captacao } from "@/components/recrutamento/Captacao";
@@ -8,6 +8,7 @@ import { BancoTalentos } from "@/components/recrutamento/BancoTalentos";
 import { TriagemIA } from "@/components/recrutamento/TriagemIA";
 import { LembretesAuto } from "@/components/recrutamento/LembretesAuto";
 import { RecrutamentoAnalytics } from "@/components/recrutamento/RecrutamentoAnalytics";
+import { MuralVagas } from "@/components/recrutamento/MuralVagas";
 
 export default function Recrutamento() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -29,6 +30,7 @@ export default function Recrutamento() {
         <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full">
            <TabsTrigger value="captacao" className="px-5"><UserPlus className="w-4 h-4 mr-2"/> Captação</TabsTrigger>
            <TabsTrigger value="banco" className="px-5"><Database className="w-4 h-4 mr-2"/> Célula de Talentos</TabsTrigger>
+           <TabsTrigger value="vagas" className="px-5"><Briefcase className="w-4 h-4 mr-2"/> Mural de Vagas</TabsTrigger>
            <TabsTrigger value="triagem" className="px-5"><Filter className="w-4 h-4 mr-2"/> Triagem IA</TabsTrigger>
            <TabsTrigger value="lembretes" className="px-5"><Clock className="w-4 h-4 mr-2"/> Automações (Wapp)</TabsTrigger>
            <TabsTrigger value="analytics" className="px-5"><LineChart className="w-4 h-4 mr-2"/> Analytics da Jornada</TabsTrigger>
@@ -36,6 +38,7 @@ export default function Recrutamento() {
 
         <TabsContent value="captacao" className="pt-4"><Captacao /></TabsContent>
         <TabsContent value="banco" className="pt-4"><BancoTalentos /></TabsContent>
+        <TabsContent value="vagas" className="pt-4"><MuralVagas /></TabsContent>
         <TabsContent value="triagem" className="pt-4"><TriagemIA /></TabsContent>
         <TabsContent value="lembretes" className="pt-4"><LembretesAuto /></TabsContent>
         <TabsContent value="analytics" className="pt-4"><RecrutamentoAnalytics /></TabsContent>
