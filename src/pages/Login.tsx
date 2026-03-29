@@ -11,17 +11,6 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Enter" && email && password) {
-      handleSubmit(e as unknown as React.FormEvent);
-    }
-  };
-
-  useEffect(() => {
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [email, password, handleSubmit]);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);

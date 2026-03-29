@@ -35,6 +35,7 @@ import CadastroPrestador from "@/pages/CadastroPrestador";
 import Comunicacao from "@/pages/Comunicacao";
 import Tracking from "@/pages/Tracking";
 import Combustiveis from "@/pages/Combustiveis";
+import Roteirizador from "@/components/Roteirizador";
 
 const queryClient = new QueryClient();
 
@@ -55,6 +56,7 @@ const App = () => (
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/torre-controle" element={<TorreControle />} />
+            <Route path="/roteirizador" element={<Roteirizador />} />
             <Route path="/comercial" element={<Comercial />} />
             <Route path="/operacao" element={<Operacao />} />
             <Route path="/cadastros" element={<Cadastros />} />
