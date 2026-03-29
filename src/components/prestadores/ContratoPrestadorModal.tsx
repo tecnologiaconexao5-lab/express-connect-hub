@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -7,22 +7,21 @@ import { toast } from "sonner";
 import { FileSignature, Download, Loader2, Edit3, Save } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import jsPDF from "jspdf";
+import { useLogo } from "@/hooks/useLogo";
 
 const EMPRESA_NOME = "Conexão Express Transportes LTDA";
 const EMPRESA_CNPJ = "42.796.040/0001-31";
 
-export default function ContratoPrestadorModal({
-  open,
-  onOpenChange,
-  prestador
-}: {
-  open: boolean,
-  onOpenChange: (open: boolean) => void,
-  prestador: any
-}) {
-  const [loading, setLoading] = useState(false);
-  const [modelos] = useState([
-    { id: "1", nome: "Contrato Padrão Autônomo (ANTT)", tipo: "autonomo", conteudo: `CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE TRANSPORTE AUTÔNOMO DE CARGAS
+interface Modelo {
+  id: string;
+  nome: string;
+  tipo: string;
+  conteudo: string;
+  isDefault: boolean;
+}
+
+const MODELOS_DEFAULT: Modelo[] = [
+  { id: "1", nome: "Contrato Padrão Autônomo (ANTT)", tipo: "autonomo", isDefault: true, conteudo: `CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE TRANSPORTE AUTÔNOMO DE CARGAS
 
 CONTRATANTE: {{empresa_nome}}
 CNPJ: {{empresa_cnpj}}
@@ -53,8 +52,8 @@ O presente contrato tem como objeto a prestação de serviços de transporte de 
 
 _______________________________________          _______________________________________
 {{empresa_nome}}                              {{prestador_nome}}
-CNPJ: {{empresa_cnpj}}                       CPF: {{prestador_cnpj}}`, isDefault: true },
-    { id: "2", nome: "Contrato Frota Agregada Mensal", tipo: "agregado", conteudo: `CONTRATO DE AGREGAMENTO COMERCIAL
+CNPJ: {{empresa_cnpj}}                       CPF: {{prestador_cpf}}` },
+  { id: "2", nome: "Contrato Frota Agregada Mensal", tipo: "agregado", isDefault: false, conteudo: `CONTRATO DE AGREGAMENTO COMERCIAL
 
 CONTRATANTE: {{empresa_nome}}
 CNPJ: {{empresa_cnpj}}
@@ -70,8 +69,8 @@ DATA: {{data_atual}}
 O Contratado declara ter conhecimento integral das normas internas da Contratante e se compromete a seguir rigorosamente os procedimentos operacionais estabelecidos.
 
 _______________________________________          _______________________________________
-{{empresa_nome}}                              {{prestador_nome}}`, isDefault: false },
-    { id: "3", nome: "Termo de Parceria Eventual", tipo: "esporadico", conteudo: `TERMO DE COMPROMISSO EVENTUAL
+{{empresa_nome}}                              {{prestador_nome}}` },
+  { id: "3", nome: "Termo de Parceria Eventual", tipo: "esporadico", isDefault: false, conteudo: `TERMO DE COMPROMISSO EVENTUAL
 
 CONTRATANTE: {{empresa_nome}}
 CNPJ: {{empresa_cnpj}}
@@ -86,8 +85,8 @@ DATA: {{data_atual}}
 O parceiro acima identificado declara interesse em realizar operações de transporte de forma esporádica, mediante as condições comerciais acordadas em cada operação.
 
 _______________________________________          _______________________________________
-{{empresa_nome}}                              {{prestador_nome}}`, isDefault: false },
-    { id: "4", nome: "Contrato CLT", tipo: "clt", conteudo: `CONTRATO DE TRABALHO – CLT
+{{empresa_nome}}                              {{prestador_nome}}` },
+  { id: "4", nome: "Contrato CLT", tipo: "clt", isDefault: false, conteudo: `CONTRATO DE TRABALHO – CLT
 
 EMPREGADOR: {{empresa_nome}}
 CNPJ: {{empresa_cnpj}}
@@ -108,12 +107,36 @@ _______________________________________
 
 {{prestador_nome}}
 _______________________________________
-EMPREGADO`, isDefault: false }
-  ]);
-  
+EMPREGADO` }
+];
+
+export default function ContratoPrestadorModal({
+  open,
+  onOpenChange,
+  prestador
+}: {
+  open: boolean,
+  onOpenChange: (open: boolean) => void,
+  prestador: any
+}) {
+  const [loading, setLoading] = useState(false);
+  const [modelos, setModelos] = useState<Modelo[]>(MODELOS_DEFAULT);
   const [selectedModelo, setSelectedModelo] = useState("");
   const [content, setContent] = useState("");
   const [editMode, setEditMode] = useState(false);
+  const { config, getLogo, getNomeFantasia, shouldShowLogo } = useLogo();
+
+  useEffect(() => {
+    const stored = localStorage.getItem('contratos_modelos');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        setModelos([...MODELOS_DEFAULT, ...parsed.filter((m: Modelo) => !MODELOS_DEFAULT.find(d => d.id === m.id))]);
+      } catch (e) {
+        console.error('Erro ao carregar modelos:', e);
+      }
+    }
+  }, []);
 
   const modelosFiltrados = modelos.filter(m => m.tipo === prestador?.tipoParceiro || !prestador?.tipoParceiro);
 
@@ -153,7 +176,7 @@ EMPREGADO`, isDefault: false }
     parsed = parsed.replace(/{{veiculo_tipo}}/g, veiculo.tipoVeiculo);
     parsed = parsed.replace(/{{valor_diaria}}/g, prestador?.valorDiaria ? `R$ ${prestador.valorDiaria}` : "A DEFINIR");
     parsed = parsed.replace(/{{valor_km}}/g, prestador?.valorKm ? `R$ ${prestador.valorKm}` : "A DEFINIR");
-    parsed = parsed.replace(/{{empresa_nome}}/g, EMPRESA_NOME);
+    parsed = parsed.replace(/{{empresa_nome}}/g, getNomeFantasia());
     parsed = parsed.replace(/{{empresa_cnpj}}/g, EMPRESA_CNPJ);
     parsed = parsed.replace(/{{data_atual}}/g, new Date().toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' }));
 
@@ -166,69 +189,112 @@ EMPREGADO`, isDefault: false }
     try {
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 20;
       const maxWidth = pageWidth - 2 * margin;
       let y = 20;
-      
-      // Header
+
+      const logoUrl = shouldShowLogo('contratosPdf') ? await getLogo() : '';
+      const hex = config.corPrimaria;
+      const primaryColor = {
+        r: parseInt(hex.slice(1, 3), 16),
+        g: parseInt(hex.slice(3, 5), 16),
+        b: parseInt(hex.slice(5, 7), 16)
+      };
+
+      if (logoUrl) {
+        try {
+          doc.addImage(logoUrl, 'PNG', margin, 5, 40, 20);
+        } catch (e) {
+          console.error('Erro ao adicionar logo:', e);
+        }
+      }
+
+      doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);
+      doc.rect(0, 0, pageWidth, 8, 'F');
+
       doc.setFontSize(16);
       doc.setFont("helvetica", "bold");
-      doc.text(EMPRESA_NOME, pageWidth / 2, y, { align: "center" });
-      y += 10;
+      doc.setTextColor(30, 30, 30);
       
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.text(`CNPJ: ${EMPRESA_CNPJ}`, pageWidth / 2, y, { align: "center" });
-      y += 15;
-      
-      // Title
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
+      const titleX = logoUrl ? 70 : pageWidth / 2;
       const titulo = modelos.find(m => m.id === selectedModelo)?.nome || "CONTRATO";
-      doc.text(titulo.toUpperCase(), pageWidth / 2, y, { align: "center" });
-      y += 15;
+      doc.text(titulo.toUpperCase(), titleX, 30, { align: logoUrl ? "left" : "center" });
       
-      // Content
+      y = 45;
+
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 100, 100);
+      doc.text(`${getNomeFantasia()} - CNPJ: ${EMPRESA_CNPJ}`, pageWidth / 2, y, { align: "center" });
+      
+      y += 10;
+      doc.setDrawColor(primaryColor.r, primaryColor.g, primaryColor.b);
+      doc.setLineWidth(1);
+      doc.line(margin, y, pageWidth - margin, y);
+      
+      y += 15;
+
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(50, 50, 50);
       const lines = doc.splitTextToSize(content, maxWidth);
       
       for (const line of lines) {
-        if (y > 270) {
+        if (y > pageHeight - 40) {
           doc.addPage();
-          y = 20;
+          
+          if (logoUrl) {
+            try {
+              doc.addImage(logoUrl, 'PNG', margin, 5, 40, 20);
+            } catch (e) {}
+          }
+          
+          doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);
+          doc.rect(0, 0, pageWidth, 8, 'F');
+          y = 30;
         }
         doc.text(line, margin, y);
         y += 6;
       }
-      
-      // Footer
+
       y += 20;
-      if (y > 250) {
+      if (y > pageHeight - 50) {
         doc.addPage();
-        y = 20;
+        y = 30;
       }
-      
+
       doc.setFontSize(8);
-      doc.text(`Documento gerado em ${new Date().toLocaleDateString("pt-BR")}`, margin, y);
-      
-      // Save
+      doc.setTextColor(150, 150, 150);
+      doc.text(`Documento gerado em ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}`, pageWidth / 2, pageHeight - 15, { align: "center" });
+      doc.text(`Página 1 de 1`, pageWidth - margin, pageHeight - 15, { align: "right" });
+
       const pdfBlob = doc.output("blob");
       const pdfUrl = URL.createObjectURL(pdfBlob);
       
-      // Download
       const link = document.createElement("a");
       link.href = pdfUrl;
       link.download = `Contrato_${prestador?.nomeCompleto?.replace(/\s/g, '_')}.pdf`;
       link.click();
-      
-      // Mock save to supabase
+
       const { error } = await supabase.from('prestadores').update({
         status: 'aprovado',
         observacoesTorre: (prestador?.observacoesTorre || '') + `\n[SISTEMA] Contrato ${modelos.find(m => m.id === selectedModelo)?.nome} gerado e ativo em ${new Date().toLocaleDateString()}.`
       }).eq('id', prestador.id);
       
       if(error) console.error(error);
+
+      const gerados = JSON.parse(localStorage.getItem('contratos_gerados') || '[]');
+      const novoGerado = {
+        id: Date.now().toString(),
+        modeloId: selectedModelo,
+        modeloNome: modelos.find(m => m.id === selectedModelo)?.nome || '',
+        prestadorNome: prestador?.nomeCompleto,
+        data: new Date().toLocaleDateString("pt-BR"),
+        status: "Aguardando",
+        usuario: "Sistema"
+      };
+      localStorage.setItem('contratos_gerados', JSON.stringify([novoGerado, ...gerados]));
       
       toast.success("Contrato gerado em PDF e salvo com sucesso!");
       onOpenChange(false);
@@ -265,31 +331,31 @@ EMPREGADO`, isDefault: false }
            </div>
 
            {content && (
-              <div className="flex-1 flex flex-col border rounded-md overflow-hidden bg-slate-50 relative">
-                 <div className="flex justify-between items-center p-2 border-b bg-white">
-                    <span className="text-xs font-bold text-slate-500 uppercase">Preview Inteligente do Documento</span>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditMode(!editMode)}>
-                       {editMode ? <><Save className="w-3.5 h-3.5"/> Prender Edição</> : <><Edit3 className="w-3.5 h-3.5"/> Editar antes de gerar</>}
-                    </Button>
-                 </div>
-                 {editMode ? (
-                   <Textarea 
-                     className="flex-1 border-0 rounded-none resize-none bg-white p-4 font-mono text-sm leading-relaxed outline-none focus-visible:ring-0" 
-                     value={content} 
-                     onChange={e => setContent(e.target.value)}
-                   />
-                 ) : (
-                   <div className="flex-1 p-6 overflow-y-auto font-serif text-sm bg-white m-2 shadow-sm whitespace-pre-wrap leading-relaxed">
-                      {content}
-                   </div>
-                 )}
-              </div>
-           )}
-           {!content && (
-              <div className="flex-1 border-2 border-dashed rounded-md flex items-center justify-center text-slate-400 p-8 text-center text-sm">
-                 Selecione um modelo no topo para iniciar a mesclagem automática com os dados cadastrais.
-              </div>
-           )}
+               <div className="flex-1 flex flex-col border rounded-md overflow-hidden bg-slate-50 relative">
+                  <div className="flex justify-between items-center p-2 border-b bg-white">
+                     <span className="text-xs font-bold text-slate-500 uppercase">Preview Inteligente do Documento</span>
+                     <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setEditMode(!editMode)}>
+                        {editMode ? <><Save className="w-3.5 h-3.5"/> Prender Edição</> : <><Edit3 className="w-3.5 h-3.5"/> Editar antes de gerar</>}
+                     </Button>
+                  </div>
+                  {editMode ? (
+                    <Textarea 
+                      className="flex-1 border-0 rounded-none resize-none bg-white p-4 font-mono text-sm leading-relaxed outline-none focus-visible:ring-0" 
+                      value={content} 
+                      onChange={e => setContent(e.target.value)}
+                    />
+                  ) : (
+                    <div className="flex-1 p-6 overflow-y-auto font-serif text-sm bg-white m-2 shadow-sm whitespace-pre-wrap leading-relaxed">
+                       {content}
+                    </div>
+                  )}
+               </div>
+            )}
+            {!content && (
+               <div className="flex-1 border-2 border-dashed rounded-md flex items-center justify-center text-slate-400 p-8 text-center text-sm">
+                  Selecione um modelo no topo para iniciar a mesclagem automática com os dados cadastrais.
+               </div>
+            )}
         </div>
         
         <DialogFooter className="shrink-0 pt-4 border-t">

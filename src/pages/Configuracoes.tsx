@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Settings, Building2, Users, Table as TableIcon, Link as LinkIcon, Bell, Save, AppWindow, CheckCircle2, Copy, Shield, User, ChevronDown } from "lucide-react";
+import { Settings, Building2, Users, Table as TableIcon, Link as LinkIcon, Bell, Save, AppWindow, CheckCircle2, Copy, Shield, User, ChevronDown, Upload, Image, Palette } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useLogo } from "@/hooks/useLogo";
 
 type Permissao = "ver" | "criar" | "editar" | "excluir" | "aprovar";
 
@@ -144,15 +145,65 @@ export default function Configuracoes() {
   const [saving, setSaving] = useState(false);
   const [usuarios, setUsuarios] = useState<Usuario[]>(usuariosIniciais);
   const [usuarioEditando, setUsuarioEditando] = useState<string | null>(null);
+  const { config: identidadeVisual, saveConfig } = useLogo();
 
   const [empresa, setEmpresa] = useState({
     razaoSocial: "Conexão Express Transportes LTDA",
     cnpj: "12.345.678/0001-90", ender: "Av Paulista, 1000 - SP", logo: "", numOS: 1045, numOrc: 420
   });
 
+  const [logoPreview, setLogoPreview] = useState(identidadeVisual.logoUrl);
+  const [logoDarkPreview, setLogoDarkPreview] = useState(identidadeVisual.logoDarkUrl);
+
   const onSave = () => {
     setSaving(true);
     setTimeout(() => { setSaving(false); toast.success("Configurações salvas."); }, 1000);
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>, isDark: boolean = false) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Arquivo muito grande. Máximo 2MB.");
+      return;
+    }
+
+    if (!file.type.match(/image\/(png|svg\+xml|jpg|jpeg)/)) {
+      toast.error("Formato inválido. Use PNG, SVG ou JPG.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const base64 = ev.target?.result as string;
+      if (isDark) {
+        setLogoDarkPreview(base64);
+        saveConfig({ logoDarkUrl: base64 });
+      } else {
+        setLogoPreview(base64);
+        saveConfig({ logoUrl: base64 });
+      }
+      toast.success("Logo carregado com sucesso!");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCorChange = (cor: 'corPrimaria' | 'corSecundaria', value: string) => {
+    saveConfig({ [cor]: value });
+  };
+
+  const handleNomeFantasiaChange = (value: string) => {
+    saveConfig({ nomeFantasia: value });
+  };
+
+  const toggleLogoUso = (uso: keyof typeof identidadeVisual.logoUsos) => {
+    saveConfig({
+      logoUsos: {
+        ...identidadeVisual.logoUsos,
+        [uso]: !identidadeVisual.logoUsos[uso]
+      }
+    });
   };
 
   const togglePermissao = (usuarioId: string, modulo: string, permissao: string) => {
@@ -218,6 +269,7 @@ export default function Configuracoes() {
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full">
            <TabsTrigger value="empresa" className="px-5"><Building2 className="w-4 h-4 mr-2"/> Dados Empresa</TabsTrigger>
+           <TabsTrigger value="identidade" className="px-5"><Palette className="w-4 h-4 mr-2"/> Identidade Visual</TabsTrigger>
            <TabsTrigger value="usuarios" className="px-5"><Users className="w-4 h-4 mr-2"/> Usuários e Perfis</TabsTrigger>
            <TabsTrigger value="tabela" className="px-5"><TableIcon className="w-4 h-4 mr-2"/> Tab. de Valores</TabsTrigger>
            <TabsTrigger value="integracoes" className="px-5"><LinkIcon className="w-4 h-4 mr-2"/> Integrações</TabsTrigger>
@@ -240,6 +292,185 @@ export default function Configuracoes() {
                     <div className="space-y-1"><Label>Próximo Número Orçamento</Label><Input type="number" value={empresa.numOrc} onChange={(e)=>setEmpresa({...empresa, numOrc:Number(e.target.value)})} /></div>
                   </div>
                 </div>
+             </CardContent>
+           </Card>
+        </TabsContent>
+
+        {/* --- IDENTIDADE VISUAL --- */}
+        <TabsContent value="identidade" className="pt-4 space-y-6">
+           <Card>
+             <CardHeader>
+               <CardTitle className="text-lg flex items-center gap-2">
+                 <Palette className="w-5 h-5 text-primary" />
+                 Identidade Visual da Empresa
+               </CardTitle>
+               <CardDescription>Configure o logo, cores e nome fantasia que aparecerão nos documentos e no sistema.</CardDescription>
+             </CardHeader>
+             <CardContent className="space-y-6">
+               
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="space-y-4">
+                   <Label className="text-sm font-semibold">Logo Principal (PNG/SVG, máx 2MB)</Label>
+                   <div className="border-2 border-dashed rounded-lg p-4 text-center hover:bg-slate-50 transition">
+                     {logoPreview ? (
+                       <div className="relative">
+                         <img src={logoPreview} alt="Logo Preview" className="max-h-32 mx-auto object-contain" />
+                         <Button variant="outline" size="sm" className="mt-2" onClick={() => { setLogoPreview(''); saveConfig({ logoUrl: '' }); }}>
+                           Remover
+                         </Button>
+                       </div>
+                     ) : (
+                       <>
+                         <Image className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                         <Input 
+                           type="file" 
+                           accept="image/png,image/svg+xml,image/jpeg" 
+                           className="hidden" 
+                           id="logo-upload"
+                           onChange={(e) => handleLogoUpload(e, false)}
+                         />
+                         <Label htmlFor="logo-upload" className="cursor-pointer text-sm text-primary hover:underline">
+                           Clique para fazer upload
+                         </Label>
+                       </>
+                     )}
+                   </div>
+                 </div>
+
+                 <div className="space-y-4">
+                   <Label className="text-sm font-semibold">Logo Versão Escura (para fundo escuro)</Label>
+                   <div className="border-2 border-dashed rounded-lg p-4 text-center hover:bg-slate-50 transition bg-slate-900">
+                     {logoDarkPreview ? (
+                       <div className="relative">
+                         <img src={logoDarkPreview} alt="Logo Dark Preview" className="max-h-32 mx-auto object-contain" />
+                         <Button variant="outline" size="sm" className="mt-2" onClick={() => { setLogoDarkPreview(''); saveConfig({ logoDarkUrl: '' }); }}>
+                           Remover
+                         </Button>
+                       </div>
+                     ) : (
+                       <>
+                         <Image className="w-10 h-10 mx-auto text-slate-600 mb-2" />
+                         <Input 
+                           type="file" 
+                           accept="image/png,image/svg+xml,image/jpeg" 
+                           className="hidden" 
+                           id="logo-dark-upload"
+                           onChange={(e) => handleLogoUpload(e, true)}
+                         />
+                         <Label htmlFor="logo-dark-upload" className="cursor-pointer text-sm text-slate-300 hover:underline">
+                           Clique para fazer upload
+                         </Label>
+                       </>
+                     )}
+                   </div>
+                 </div>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                 <div className="space-y-2">
+                   <Label>Cor Primária</Label>
+                   <div className="flex gap-2">
+                     <Input 
+                       type="color" 
+                       value={identidadeVisual.corPrimaria} 
+                       onChange={(e) => handleCorChange('corPrimaria', e.target.value)}
+                       className="w-12 h-10 p-1 cursor-pointer"
+                     />
+                     <Input 
+                       value={identidadeVisual.corPrimaria} 
+                       onChange={(e) => handleCorChange('corPrimaria', e.target.value)}
+                       className="flex-1"
+                     />
+                   </div>
+                 </div>
+                 <div className="space-y-2">
+                   <Label>Cor Secundária</Label>
+                   <div className="flex gap-2">
+                     <Input 
+                       type="color" 
+                       value={identidadeVisual.corSecundaria} 
+                       onChange={(e) => handleCorChange('corSecundaria', e.target.value)}
+                       className="w-12 h-10 p-1 cursor-pointer"
+                     />
+                     <Input 
+                       value={identidadeVisual.corSecundaria} 
+                       onChange={(e) => handleCorChange('corSecundaria', e.target.value)}
+                       className="flex-1"
+                     />
+                   </div>
+                 </div>
+                 <div className="space-y-2">
+                   <Label>Nome Fantasia</Label>
+                   <Input 
+                     value={identidadeVisual.nomeFantasia} 
+                     onChange={(e) => handleNomeFantasiaChange(e.target.value)}
+                     placeholder="Nome que aparece nos documentos"
+                   />
+                 </div>
+               </div>
+
+             </CardContent>
+           </Card>
+
+           <Card>
+             <CardHeader>
+               <CardTitle className="text-lg">Uso do Logo</CardTitle>
+               <CardDescription>Selecione onde o logo da empresa deve aparecer.</CardDescription>
+             </CardHeader>
+             <CardContent>
+               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                 {[
+                   { key: 'telaLogin', label: 'Tela de login' },
+                   { key: 'sidebar', label: 'Sidebar do sistema' },
+                   { key: 'relatoriosPdf', label: 'Relatórios PDF' },
+                   { key: 'contratosPdf', label: 'Contratos PDF' },
+                   { key: 'recibosPdf', label: 'Recibos PDF' },
+                   { key: 'orcamentosPdf', label: 'Orçamentos PDF' },
+                   { key: 'paginaRastreio', label: 'Página de rastreio pública' },
+                   { key: 'emailsAutomaticos', label: 'Emails automáticos' },
+                 ].map((uso) => (
+                   <div key={uso.key} className="flex items-center gap-2 p-3 border rounded-lg">
+                     <Checkbox 
+                       id={uso.key}
+                       checked={identidadeVisual.logoUsos[uso.key as keyof typeof identidadeVisual.logoUsos]}
+                       onCheckedChange={() => toggleLogoUso(uso.key as keyof typeof identidadeVisual.logoUsos)}
+                     />
+                     <Label htmlFor={uso.key} className="text-sm cursor-pointer">
+                       {uso.label}
+                     </Label>
+                   </div>
+                 ))}
+               </div>
+             </CardContent>
+           </Card>
+
+           <Card>
+             <CardHeader>
+               <CardTitle className="text-lg">Preview</CardTitle>
+             </CardHeader>
+             <CardContent>
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                 <div className="p-4 border rounded-lg" style={{ backgroundColor: identidadeVisual.corSecundaria }}>
+                   <p className="text-xs text-white/70 mb-2">Sidebar / Fundo Escuro</p>
+                   {logoDarkPreview ? (
+                     <img src={logoDarkPreview} alt="Logo" className="h-12 object-contain" />
+                   ) : (
+                     <p className="text-white font-bold">{identidadeVisual.nomeFantasia}</p>
+                   )}
+                 </div>
+                 <div className="p-4 border rounded-lg bg-white">
+                   <p className="text-xs text-muted-foreground mb-2">Documentos / Fundo Claro</p>
+                   {logoPreview ? (
+                     <img src={logoPreview} alt="Logo" className="h-12 object-contain" />
+                   ) : (
+                     <p className="text-slate-900 font-bold">{identidadeVisual.nomeFantasia}</p>
+                   )}
+                 </div>
+                 <div className="p-4 border rounded-lg" style={{ backgroundColor: identidadeVisual.corPrimaria }}>
+                   <p className="text-xs text-white/70 mb-2">Destaque / Botões</p>
+                   <Button style={{ backgroundColor: identidadeVisual.corPrimaria }}>Botão Primário</Button>
+                 </div>
+               </div>
              </CardContent>
            </Card>
         </TabsContent>

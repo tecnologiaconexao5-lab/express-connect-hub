@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, Download, Filter, Truck, Users, DollarSign, TrendingUp, BarChart3, Calendar, Printer, Building2, ChevronDown } from "lucide-react";
+import { FileText, Download, Filter, Truck, Users, DollarSign, TrendingUp, BarChart3, Calendar, Printer, Building2, ChevronDown, CreditCard, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter, ZAxis } from "recharts";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { useLogo } from "@/hooks/useLogo";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -71,6 +72,32 @@ const mockPrestadores: Prestador[] = [
   { id: 1, nome: "João Transporte", cpfCnpj: "123.456.789-00", tipo: "Motorista", totalOperacoes: 156, valorPago: 89000, score: 4.8, ocorrencias: 2 },
   { id: 2, nome: "Maria Logistics", cpfCnpj: "234.567.890-00", tipo: "Transportadora", totalOperacoes: 89, valorPago: 67000, score: 4.5, ocorrencias: 5 },
   { id: 3, nome: "Transportes ABC", cpfCnpj: "34.567.890/0001-99", tipo: "Transportadora", totalOperacoes: 45, valorPago: 42000, score: 4.2, ocorrencias: 8 },
+];
+
+interface PagamentoPrestador {
+  id: number;
+  prestador: string;
+  os: string;
+  competencia: string;
+  valorBruto: number;
+  inss: number;
+  irrf: number;
+  outrosDescontos: number;
+  valorLiquido: number;
+  formaPagamento: string;
+  status: string;
+  banco: string;
+  pix: string;
+}
+
+const mockPagamentosPrestadores: PagamentoPrestador[] = [
+  { id: 1, prestador: "João Transporte", os: "OS-420", competencia: "03/2026", valorBruto: 1800, inss: 198, irrf: 0, outrosDescontos: 0, valorLiquido: 1602, formaPagamento: "PIX", status: "Pago", banco: "", pix: "joao@pix.com" },
+  { id: 2, prestador: "João Transporte", os: "OS-425", competencia: "03/2026", valorBruto: 550, inss: 60.5, irrf: 0, outrosDescontos: 0, valorLiquido: 489.5, formaPagamento: "PIX", status: "Pago", banco: "", pix: "joao@pix.com" },
+  { id: 3, prestador: "Maria Logistics", os: "OS-421", competencia: "03/2026", valorBruto: 1200, inss: 132, irrf: 0, outrosDescontos: 0, valorLiquido: 1068, formaPagamento: "Transferência", status: "Pago", banco: "Bradesco", pix: "" },
+  { id: 4, prestador: "Maria Logistics", os: "OS-424", competencia: "03/2026", valorBruto: 2100, inss: 231, irrf: 52.5, outrosDescontos: 0, valorLiquido: 1816.5, formaPagamento: "Transferência", status: "Pago", banco: "Bradesco", pix: "" },
+  { id: 5, prestador: "Transportes ABC", os: "OS-422", competencia: "03/2026", valorBruto: 700, inss: 77, irrf: 0, outrosDescontos: 0, valorLiquido: 623, formaPagamento: "PIX", status: "Pendente", banco: "", pix: "transporte@pix.com" },
+  { id: 6, prestador: "Transportes ABC", os: "OS-426", competencia: "03/2026", valorBruto: 900, inss: 99, irrf: 0, outrosDescontos: 50, valorLiquido: 751, formaPagamento: "PIX", status: "Pago", banco: "", pix: "transporte@pix.com" },
+  { id: 7, prestador: "João Transporte", os: "OS-427", competencia: "03/2026", valorBruto: 1400, inss: 154, irrf: 0, outrosDescontos: 0, valorLiquido: 1246, formaPagamento: "PIX", status: "Pago", banco: "", pix: "joao@pix.com" },
 ];
 
 const generateExtratoPDF = (data: OS[], filtros: any) => {
