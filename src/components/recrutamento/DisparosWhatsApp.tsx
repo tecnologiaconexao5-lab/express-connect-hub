@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MessageSquare, Send, Users, ClipboardCopy, CheckCircle2, History, AlertCircle } from "lucide-react";
+import { MessageSquare, Send, Users, ClipboardCopy, CheckCircle2, History, AlertCircle, User, Search, Truck, MapPin } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ export function DisparosWhatsApp() {
         <TabsList className="bg-muted/50 mb-6 w-full justify-start border-b rounded-none pb-px">
           <TabsTrigger value="manual" className="px-6 data-[state=active]:bg-white data-[state=active]:border-b-2 data-[state=active]:border-green-600 rounded-t-md"><MessageSquare className="w-4 h-4 mr-2"/> Modo Manual (Avulso)</TabsTrigger>
           <TabsTrigger value="banco" className="px-6 data-[state=active]:bg-white data-[state=active]:border-b-2 data-[state=active]:border-green-600 rounded-t-md"><Users className="w-4 h-4 mr-2"/> Disparo em Base (Célula)</TabsTrigger>
+          <TabsTrigger value="individual" className="px-6 data-[state=active]:bg-white data-[state=active]:border-b-2 data-[state=active]:border-green-600 rounded-t-md"><User className="w-4 h-4 mr-2"/> Individual (Perfil)</TabsTrigger>
           <TabsTrigger value="log" className="px-6 data-[state=active]:bg-white data-[state=active]:border-b-2 data-[state=active]:border-green-600 rounded-t-md"><History className="w-4 h-4 mr-2"/> Status / Relatórios</TabsTrigger>
         </TabsList>
 
@@ -159,7 +160,55 @@ export function DisparosWhatsApp() {
           </Card>
         </TabsContent>
 
-        {/* MODO 3: RELATÓRIOS / LOGS */}
+        {/* MODO 3: INDIVIDUAL */}
+        <TabsContent value="individual">
+          <Card className="shadow-sm border-0">
+             <CardHeader className="pb-2 border-b bg-slate-50/50">
+               <div className="flex gap-4">
+                 <div className="relative flex-1">
+                   <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
+                   <Input placeholder="Buscar profissional por nome, telefone ou veículo" className="pl-9 bg-white" />
+                 </div>
+                 <Button className="bg-slate-800">Localizar Perfil</Button>
+               </div>
+             </CardHeader>
+             <CardContent className="pt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="border rounded-lg p-4 bg-slate-50 relative overflow-hidden group hover:border-green-300 transition-colors">
+                  <div className="flex gap-4 items-start">
+                    <div className="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center font-bold text-slate-500">JB</div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-slate-800">João Batista (Parceiro)</h3>
+                      <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><Truck className="w-3.5 h-3.5"/> Carreta LS / Baú | <MapPin className="w-3.5 h-3.5"/> SP (Guarulhos)</p>
+                      <Badge className="mt-2 bg-emerald-100 text-emerald-800 border-none">Disponível</Badge>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-dashed">
+                    <Button size="sm" className="w-full bg-green-600 hover:bg-green-700 text-white gap-2 font-bold shadow-sm">
+                      <Send className="w-3.5 h-3.5" /> Enviar Mensagem Direta
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="border rounded-lg p-4 bg-slate-50 relative overflow-hidden group hover:border-green-300 transition-colors">
+                  <div className="flex gap-4 items-start">
+                    <div className="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center font-bold text-slate-500">ML</div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-slate-800">Maria Lima (Parceira)</h3>
+                      <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><Truck className="w-3.5 h-3.5"/> Fiorino / Utilitário | <MapPin className="w-3.5 h-3.5"/> RJ (Capital)</p>
+                      <Badge className="mt-2 bg-slate-200 text-slate-600 border-none">Em Viagem</Badge>
+                    </div>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-dashed">
+                    <Button size="sm" className="w-full bg-green-600 hover:bg-green-700 text-white gap-2 font-bold shadow-sm">
+                      <Send className="w-3.5 h-3.5" /> Enviar Mensagem Direta
+                    </Button>
+                  </div>
+                </div>
+             </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* MODO: RELATÓRIOS / LOGS */}
         <TabsContent value="log">
           <Card className="shadow-sm border-0">
              <CardHeader className="pb-2">
