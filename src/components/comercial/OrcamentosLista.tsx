@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Search, Plus, Filter, FileText, Eye, Edit, Copy, CheckCircle, XCircle, FileDown } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { mockOrcamentos } from "./mockOrcamentos";
 import { Orcamento, OrcamentoStatus, STATUS_CONFIG } from "./types";
 import OrcamentoForm from "./OrcamentoForm";
-import { useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { gerarPdfOrcamento } from "./orcamentoPdf";
@@ -32,10 +32,17 @@ const OrcamentosLista = () => {
   const [motivoReprovacao, setMotivoReprovacao] = useState("");
 
   const responsaveis = [...new Set(orcamentos.map((o) => o.responsavel))];
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     fetchOrcamentos();
-  }, []);
+    
+    if (searchParams.get("action") === "novo") {
+      setModoForm("novo");
+      searchParams.delete("action");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams]);
 
   const fetchOrcamentos = async () => {
     try {

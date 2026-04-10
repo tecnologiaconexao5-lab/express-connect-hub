@@ -16,11 +16,11 @@ const DashboardTopbar = () => {
         switch (e.key) {
           case "1":
             e.preventDefault();
-            navigate("/comercial/orcamentos/novo");
+            navigate("/comercial?tab=orcamentos&action=novo");
             break;
           case "2":
             e.preventDefault();
-            navigate("/operacao/os/nova");
+            navigate("/operacao?tab=os&action=novo");
             break;
           case "3":
             e.preventDefault();
@@ -38,8 +38,8 @@ const DashboardTopbar = () => {
   }, [navigate]);
 
   const shortcuts = [
-    { key: "1", label: "Novo Orçamento", action: () => navigate("/comercial/orcamentos/novo") },
-    { key: "2", label: "Nova OS", action: () => navigate("/operacao/os/nova") },
+    { key: "1", label: "Novo Orçamento", action: () => navigate("/comercial?tab=orcamentos&action=novo") },
+    { key: "2", label: "Nova OS", action: () => navigate("/operacao?tab=os&action=novo") },
     { key: "3", label: "Novo Cliente", action: () => navigate("/cadastros/clientes/novo") },
     { key: "4", label: "Novo Prestador", action: () => navigate("/cadastros/prestadores/novo") },
   ];
@@ -83,7 +83,7 @@ const DashboardTopbar = () => {
         <div className="flex items-center gap-2">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => navigate("/comercial/orcamentos/novo")}>
+              <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => navigate("/comercial?tab=orcamentos&action=novo")}>
                 <Plus className="w-3.5 h-3.5" />
                 <FileText className="w-3.5 h-3.5" />
                 Orçamento
@@ -96,7 +96,7 @@ const DashboardTopbar = () => {
           
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => navigate("/operacao/os/nova")}>
+              <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => navigate("/operacao?tab=os&action=novo")}>
                 <Plus className="w-3.5 h-3.5" />
                 <Truck className="w-3.5 h-3.5" />
                 OS

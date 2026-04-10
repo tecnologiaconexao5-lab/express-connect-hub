@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,10 +17,16 @@ const OrdensServicoLista = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [modoForm, setModoForm] = useState<"ver" | "editar" | "novo" | null>(null);
   const [osSelecionada, setOsSelecionada] = useState<OrdemServico | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     fetchOrdens();
-  }, []);
+    if (searchParams.get("action") === "novo") {
+      setModoForm("novo");
+      searchParams.delete("action");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams]);
 
   const fetchOrdens = async () => {
     try {

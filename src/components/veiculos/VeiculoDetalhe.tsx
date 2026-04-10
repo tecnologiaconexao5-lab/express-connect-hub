@@ -45,8 +45,13 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
       if (error) throw error;
       if (data) setV(data as Partial<Veiculo>);
     } catch (error) {
-      console.error(error);
-      toast.error("Erro ao carregar veiculo.");
+      console.error("Erro ao buscar no Supabase, tentando localStorage:", error);
+      const localData = localStorage.getItem("veiculos_fallback");
+      if (localData) {
+        const parsed = JSON.parse(localData);
+        const found = parsed.find((vec: any) => vec.id === veiculoId);
+        if (found) setV(found);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -66,6 +71,7 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
       setIsSaving(true);
       const isUpdate = !!v.id;
       const dataToSave = { ...v, placa: v.placa.toUpperCase() };
+      if (!isUpdate) dataToSave.id = String(Date.now());
       
       let query;
       if (isUpdate) query = supabase.from("veiculos").update(dataToSave).eq("id", v.id);
@@ -77,8 +83,21 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
       toast.success(isNew ? "Veículo cadastrado!" : "Veículo atualizado!");
       onBack();
     } catch (error) {
-      console.error(error);
-      toast.error("Erro ao persistir veículo no Supabase.");
+      console.error("Supabase failed, saving to local storage fallback:", error);
+      const isUpdate = !!v.id;
+      const dataToSave = { ...v, placa: v.placa.toUpperCase() };
+      if (!isUpdate) dataToSave.id = String(Date.now());
+
+      const localData = localStorage.getItem("veiculos_fallback");
+      let parsed = localData ? JSON.parse(localData) : [];
+      if (isUpdate) {
+        parsed = parsed.map((vec: any) => vec.id === v.id ? dataToSave : vec);
+      } else {
+        parsed.unshift(dataToSave);
+      }
+      localStorage.setItem("veiculos_fallback", JSON.stringify(parsed));
+      toast.success(isNew ? "Veículo cadastrado localmente!" : "Veículo atualizado localmente!");
+      onBack();
     } finally {
       setIsSaving(false);
     }

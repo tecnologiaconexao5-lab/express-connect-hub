@@ -129,9 +129,9 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         </div>
         <div className="flex items-center gap-2">
           {p.id && (
-            <Button variant="outline" size="sm" className="gap-1.5 focus:ring-2" onClick={() => setModalContratoOpen(true)}>
+            <Button variant="outline" size="sm" className="gap-1.5 focus:ring-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200" onClick={() => setModalContratoOpen(true)}>
               <FileSignature className="w-4 h-4" />
-              Gerar Contrato
+              Modelos de Contrato
             </Button>
           )}
           <Button size="sm" onClick={handleSave} disabled={isLoading}>

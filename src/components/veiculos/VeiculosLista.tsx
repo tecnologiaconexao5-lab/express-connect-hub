@@ -29,8 +29,13 @@ const VeiculosLista = ({ onSelect, onNew }: Props) => {
       if (error) throw error;
       setVeiculos((data as Veiculo[]) || []);
     } catch (error) {
-      console.error(error);
-      toast.error("Erro ao carregar veículos do Supabase.");
+      console.error("Erro ao buscar veículos no Supabase, usando localStorage:", error);
+      const localData = localStorage.getItem("veiculos_fallback");
+      if (localData) {
+        setVeiculos(JSON.parse(localData));
+      } else {
+        setVeiculos([]);
+      }
     } finally {
       setIsLoading(false);
     }

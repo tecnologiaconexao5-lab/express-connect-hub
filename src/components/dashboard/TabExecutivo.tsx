@@ -8,15 +8,15 @@ const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", curren
 const fmtN = (v: number) => v.toLocaleString("pt-BR");
 
 const KpiCard = ({ title, value, icon: Icon, accent = false }: { title: string; value: string; icon: any; accent?: boolean }) => (
-  <Card className={accent ? "border-primary/30 bg-primary/5" : ""}>
-    <CardContent className="p-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{title}</p>
-          <p className="text-2xl font-bold mt-1">{value}</p>
+  <Card className={`relative overflow-hidden transition-all hover:shadow-md ${accent ? "border-primary bg-gradient-to-br from-primary/10 to-primary/5 border-2 shadow-sm" : "border-border/50 bg-card/60 backdrop-blur-sm"}`}>
+    <CardContent className="p-6">
+      <div className="flex items-start justify-between">
+        <div className="space-y-2">
+          <p className={`text-xs font-semibold uppercase tracking-wider ${accent ? "text-primary" : "text-muted-foreground"}`}>{title}</p>
+          <p className="text-3xl font-bold tracking-tight text-foreground">{value}</p>
         </div>
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${accent ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-          <Icon className="w-5 h-5" />
+        <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-inner ${accent ? "bg-primary text-primary-foreground" : "bg-muted/80 text-foreground"}`}>
+          <Icon className="w-6 h-6" />
         </div>
       </div>
     </CardContent>
@@ -24,14 +24,16 @@ const KpiCard = ({ title, value, icon: Icon, accent = false }: { title: string; 
 );
 
 const KpiSmall = ({ title, value, icon: Icon }: { title: string; value: string; icon: any }) => (
-  <Card>
-    <CardContent className="p-4 flex items-center gap-3">
-      <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center">
-        <Icon className="w-4 h-4 text-muted-foreground" />
-      </div>
-      <div>
-        <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{title}</p>
-        <p className="text-lg font-semibold">{value}</p>
+  <Card className="border-border/40 bg-card/40 hover:bg-card/60 transition-colors backdrop-blur-sm shadow-sm">
+    <CardContent className="p-4 flex flex-col justify-center gap-2">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center ring-1 ring-primary/20">
+          <Icon className="w-4 h-4 text-primary" />
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{title}</p>
+          <p className="text-xl font-bold text-foreground leading-none mt-1">{value}</p>
+        </div>
       </div>
     </CardContent>
   </Card>

@@ -203,6 +203,46 @@ export default function Financeiro() {
                   <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
                   <Input placeholder="Buscar fatura ou cliente..." value={buscaReceber} onChange={(e) => setBuscaReceber(e.target.value)} className="pl-9" />
                 </div>
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm"><Plus className="w-4 h-4 mr-2"/> Nova Receita (Faturar)</Button>
+             </CardHeader>
+             <CardContent className="p-0">
+               <Table>
+                 <TableHeader><TableRow><TableHead>Fatura</TableHead><TableHead>Cliente</TableHead><TableHead>OS Vinculada</TableHead><TableHead>Competência</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                 <TableBody>
+                   {filtrarDoc(receber, buscaReceber).map((r: any, i: number) => (
+                     <TableRow key={i}>
+                       <TableCell className="font-semibold">{r.fatura}</TableCell>
+                       <TableCell>{r.cliente}</TableCell>
+                       <TableCell><Badge variant="outline">{r.os_vinculadas}</Badge></TableCell>
+                       <TableCell>{r.competencia}</TableCell>
+                       <TableCell>{new Date(r.vencimento).toLocaleDateString()}</TableCell>
+                       <TableCell className="text-right font-medium">{fmtFin(r.valor)}</TableCell>
+                       <TableCell>
+                         <Badge variant="outline" className={r.status === "a vencer" ? "bg-blue-50 text-blue-700 border-blue-200" : r.status === "vencida" ? "bg-red-50 text-red-700 border-red-200" : r.status === "paga" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-700 border-gray-200"}>{r.status.toUpperCase()}</Badge>
+                       </TableCell>
+                     </TableRow>
+                   ))}
+                 </TableBody>
+               </Table>
+             </CardContent>
+           </Card>
+        </TabsContent>
+
+        {/* --- CONTAS A PAGAR --- */}
+        <TabsContent value="pagar" className="space-y-4 pt-4">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+             <StatCard title="Total a Pagar" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status !== "paga" && i.status !== "cancelada" ? i.valor : 0), 0))} icon={DollarSign} color="#ea580c" />
+             <StatCard title="Atrasado" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status === "vencida" ? i.valor : 0), 0))} icon={ArrowDownRight} color="#dc2626" />
+             <StatCard title="A Vencer (7 Dias)" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status === "a vencer" ? i.valor : 0), 0))} icon={ArrowDownRight} color="#eab308" />
+             <StatCard title="Pago no Mês" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status === "paga" ? i.valor : 0), 0))} icon={DollarSign} color="#16a34a" />
+           </div>
+
+           <Card>
+             <CardHeader className="py-4 flex flex-row items-center gap-4 justify-between">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
+                  <Input placeholder="Buscar documento ou fornecedor..." value={buscaPagar} onChange={(e) => setBuscaPagar(e.target.value)} className="pl-9" />
+                </div>
                 <Dialog>
                   <DialogTrigger asChild>
                         <Button className="bg-orange-600 hover:bg-orange-700 text-white font-semibold shadow-sm"><Plus className="w-4 h-4 mr-2"/> Nova Despesa (Contas a Pagar)</Button>
@@ -215,7 +255,7 @@ export default function Financeiro() {
                              <div className="space-y-1">
                                <Label className="text-xs">Origem do Pagamento / Fornecedor</Label>
                                <Select>
-                                 <SelectTrigger><SelectValue placeholder="Selecione o favorecido..." /></SelectTrigger>
+                                 <SelectTrigger><SelectValue placeholder="Selecione a origem..." /></SelectTrigger>
                                  <SelectContent>
                                    <SelectItem value="prestador">Prestador Cadastrado</SelectItem>
                                    <SelectItem value="fornecedor">Fornecedor Geral</SelectItem>
@@ -225,8 +265,18 @@ export default function Financeiro() {
                                </Select>
                              </div>
                              <div className="space-y-1">
-                               <Label className="text-xs">Buscar Favorecido</Label>
-                               <Input placeholder="Digite o nome, cnpj ou cpf..." disabled={false} />
+                               <Label className="text-xs">Buscar Favorecido (Obrigatório)</Label>
+                               <Select>
+                                 <SelectTrigger><SelectValue placeholder="Selecione ou crie um favorecido..." /></SelectTrigger>
+                                 <SelectContent>
+                                   <SelectItem value="novo" className="text-primary font-bold"><Plus className="w-4 h-4 inline mr-1"/> Criar Novo Cadastro de Favorecido</SelectItem>
+                                   <SelectItem value="joao">João Transporte (Prestador)</SelectItem>
+                                   <SelectItem value="energia">Companhia de Energia (Fornecedor)</SelectItem>
+                                   <SelectItem value="maria">Maria Freitas - ME (Prestador)</SelectItem>
+                                   <SelectItem value="imob">Imobiliária Alfa (Locação)</SelectItem>
+                                 </SelectContent>
+                               </Select>
+                               <p className="text-[10px] text-muted-foreground mt-1">O favorecido deve constar nos cadastros do sistema.</p>
                              </div>
                              <div className="space-y-1">
                                <Label className="text-xs">Categoria / Plano de Contas</Label>
@@ -336,29 +386,29 @@ export default function Financeiro() {
                         </DialogFooter>
                       </DialogContent>
                    </Dialog>
-                 </CardHeader>
-                 <CardContent className="p-0">
-                   <Table>
-                     <TableHeader><TableRow><TableHead>Documento</TableHead><TableHead>Fornecedor</TableHead><TableHead>Categoria</TableHead><TableHead>Competência</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                     <TableBody>
-                       {filtrarDoc(pagarOutros, buscaPagar).map((p: any, i: number) => (
-                         <TableRow key={i}>
-                           <TableCell className="font-semibold">{p.doc}</TableCell>
-                           <TableCell>{p.fornecedor}</TableCell>
-                           <TableCell><Badge variant="outline">{p.categoria}</Badge></TableCell>
-                           <TableCell>{p.competencia}</TableCell>
-                           <TableCell>{new Date(p.vencimento).toLocaleDateString()}</TableCell>
-                           <TableCell className="text-right font-medium">{fmtFin(p.valor)}</TableCell>
-                           <TableCell>
-                             <Badge variant="outline" className={p.status === "a vencer" ? "bg-blue-50 text-blue-700 border-blue-200" : p.status === "vencida" ? "bg-red-50 text-red-700 border-red-200" : p.status === "paga" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-700 border-gray-200"}>{p.status.toUpperCase()}</Badge>
-                           </TableCell>
-                         </TableRow>
-                       ))}
-                     </TableBody>
-                   </Table>
-                 </CardContent>
-               </Card>
-             </TabsContent>
+             </CardHeader>
+             <CardContent className="p-0">
+               <Table>
+                 <TableHeader><TableRow><TableHead>Documento</TableHead><TableHead>Fornecedor</TableHead><TableHead>Categoria / Tipo</TableHead><TableHead>Competência</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                 <TableBody>
+                   {filtrarDoc([...pagarOutros, ...pagarPrestadores], buscaPagar).map((p: any, i: number) => (
+                     <TableRow key={i}>
+                       <TableCell className="font-semibold">{p.doc}</TableCell>
+                       <TableCell>{p.fornecedor}</TableCell>
+                       <TableCell><Badge variant="outline">{p.categoria || p.tipo}</Badge></TableCell>
+                       <TableCell>{p.competencia}</TableCell>
+                       <TableCell>{new Date(p.vencimento).toLocaleDateString()}</TableCell>
+                       <TableCell className="text-right font-medium">{fmtFin(p.valor)}</TableCell>
+                       <TableCell>
+                         <Badge variant="outline" className={p.status === "a vencer" ? "bg-blue-50 text-blue-700 border-blue-200" : p.status === "vencida" ? "bg-red-50 text-red-700 border-red-200" : p.status === "paga" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-700 border-gray-200"}>{p.status.toUpperCase()}</Badge>
+                       </TableCell>
+                     </TableRow>
+                   ))}
+                 </TableBody>
+               </Table>
+             </CardContent>
+           </Card>
+        </TabsContent>
 
         {/* --- CONTAS & CAIXAS (NOVO) --- */}
         <TabsContent value="contas-caixas" className="pt-4">

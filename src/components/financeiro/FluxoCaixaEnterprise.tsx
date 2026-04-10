@@ -272,7 +272,7 @@ export default function FluxoCaixaEnterprise() {
             <TableBody>
               {mockFluxo30Dias.slice(0, 15).map((d, i) => (
                 <TableRow key={i} className={d.realizado ? "" : "opacity-70"}>
-                  <TableCell className="text-xs">{d.data}</TableCell>
+                  <TableCell className="text-xs">{new Date(d.data).toLocaleDateString("pt-BR")}</TableCell>
                   <TableCell className="text-xs text-green-600 font-mono">{fmtFin(d.entrada)}</TableCell>
                   <TableCell className="text-xs text-red-600 font-mono">{fmtFin(d.saida)}</TableCell>
                   <TableCell className="text-xs font-mono font-medium">{fmtFin(d.entrada - d.saida)}</TableCell>
