@@ -1,35 +1,40 @@
-import { DollarSign, CreditCard, ArrowDownCircle, ArrowUpCircle, TrendingUp, Percent, Landmark, PiggyBank } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { DollarSign, CreditCard, ArrowDownCircle, ArrowUpCircle, TrendingUp, Percent, Landmark, PiggyBank, ArrowRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { kpisFinanceiro, receitaDespesaLucro, faturamentoPorCliente, previstoRealizado, despesasPorCategoria, CORES_GRAFICOS } from "./mockData";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
-const KpiCard = ({ title, value, icon: Icon, color }: { title: string; value: string; icon: any; color?: string }) => (
-  <Card>
-    <CardContent className="p-4 flex items-center gap-3">
-      <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${color || "bg-muted"}`}>
-        <Icon className="w-4 h-4 text-white" />
-      </div>
-      <div>
-        <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{title}</p>
-        <p className="text-base font-bold">{value}</p>
-      </div>
-    </CardContent>
-  </Card>
-);
+const KpiCard = ({ title, value, icon: Icon, color, to }: { title: string; value: string; icon: any; color?: string; to?: string }) => {
+  const navigate = useNavigate();
+  return (
+    <Card className="cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 bg-card dark:bg-slate-800 border-border dark:border-slate-700" onClick={() => to && navigate(to)}>
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${color}`}>
+          <Icon className="w-4 h-4 text-white" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] text-muted-foreground dark:text-gray-400 uppercase tracking-wide">{title}</p>
+          <p className="text-base font-bold text-foreground dark:text-white truncate">{value}</p>
+        </div>
+        {to && <ArrowRight className="w-4 h-4 text-muted-foreground dark:text-gray-500" />}
+      </CardContent>
+    </Card>
+  );
+};
 
 const TabFinanceiro = () => (
   <div className="space-y-6">
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <KpiCard title="A faturar" value={fmt(kpisFinanceiro.aFaturar)} icon={DollarSign} color="bg-amber-500" />
-      <KpiCard title="Faturado" value={fmt(kpisFinanceiro.faturado)} icon={CreditCard} color="bg-blue-500" />
-      <KpiCard title="A receber" value={fmt(kpisFinanceiro.aReceber)} icon={ArrowDownCircle} color="bg-orange-500" />
-      <KpiCard title="Recebido" value={fmt(kpisFinanceiro.recebido)} icon={ArrowUpCircle} color="bg-green-500" />
-      <KpiCard title="A pagar" value={fmt(kpisFinanceiro.aPagar)} icon={ArrowUpCircle} color="bg-red-500" />
-      <KpiCard title="Pago" value={fmt(kpisFinanceiro.pago)} icon={Landmark} color="bg-emerald-600" />
-      <KpiCard title="Margem média" value={`${kpisFinanceiro.margemMedia}%`} icon={Percent} color="bg-purple-500" />
-      <KpiCard title="Provisão do período" value={fmt(kpisFinanceiro.provisao)} icon={PiggyBank} color="bg-indigo-500" />
+      <KpiCard title="A faturar" value={fmt(kpisFinanceiro.aFaturar)} icon={DollarSign} color="bg-amber-500" to="/financeiro" />
+      <KpiCard title="Faturado" value={fmt(kpisFinanceiro.faturado)} icon={CreditCard} color="bg-blue-500" to="/financeiro" />
+      <KpiCard title="A receber" value={fmt(kpisFinanceiro.aReceber)} icon={ArrowDownCircle} color="bg-orange-500" to="/financeiro" />
+      <KpiCard title="Recebido" value={fmt(kpisFinanceiro.recebido)} icon={ArrowUpCircle} color="bg-green-500" to="/financeiro" />
+      <KpiCard title="A pagar" value={fmt(kpisFinanceiro.aPagar)} icon={ArrowUpCircle} color="bg-red-500" to="/financeiro" />
+      <KpiCard title="Pago" value={fmt(kpisFinanceiro.pago)} icon={Landmark} color="bg-emerald-600" to="/financeiro" />
+      <KpiCard title="Margem média" value={`${kpisFinanceiro.margemMedia}%`} icon={Percent} color="bg-purple-500" to="/financeiro" />
+      <KpiCard title="Provisão do período" value={fmt(kpisFinanceiro.provisao)} icon={PiggyBank} color="bg-indigo-500" to="/financeiro" />
     </div>
 
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

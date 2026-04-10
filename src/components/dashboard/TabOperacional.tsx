@@ -105,8 +105,8 @@ const StatusCard = ({ nome, qtd, cor }: { nome: string; qtd: number; cor: string
 
   return (
     <Card 
-      className="cursor-pointer hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 bg-white border border-gray-100 shadow-sm"
-      onClick={() => navigate(`/operacao/os?status=${encodeURIComponent(nome)}`)}
+      className="cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 bg-card dark:bg-slate-800 border-border dark:border-slate-700 shadow-sm"
+      onClick={() => navigate(`/operacao?tab=os&status=${encodeURIComponent(nome)}`)}
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
@@ -114,17 +114,17 @@ const StatusCard = ({ nome, qtd, cor }: { nome: string; qtd: number; cor: string
             <Icon className="w-5 h-5 text-white" />
           </div>
           <div className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full ${
-            tendencia > 0 ? "bg-green-50 text-green-600" : tendencia < 0 ? "bg-red-50 text-red-600" : "bg-gray-50 text-gray-500"
+            tendencia > 0 ? "bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400" : tendencia < 0 ? "bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400" : "bg-gray-50 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
           }`}>
             {tendencia > 0 ? <TrendingUp className="w-3 h-3" /> : tendencia < 0 ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
             <span>{Math.abs(tendencia)}%</span>
           </div>
         </div>
         <div className="mb-3">
-          <p className="text-3xl font-bold text-gray-900">{qtd}</p>
-          <p className="text-xs font-medium text-gray-500 mt-0.5">{nome}</p>
+          <p className="text-3xl font-bold text-foreground dark:text-white">{qtd}</p>
+          <p className="text-xs font-medium text-muted-foreground dark:text-gray-400 mt-0.5">{nome}</p>
         </div>
-        <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+        <div className="h-1.5 w-full bg-muted dark:bg-slate-700 rounded-full overflow-hidden">
           <div 
             className={`h-full rounded-full ${getStatusBarColor(nome)}`} 
             style={{ width: `${Math.min((qtd / 50) * 100, 100)}%` }}

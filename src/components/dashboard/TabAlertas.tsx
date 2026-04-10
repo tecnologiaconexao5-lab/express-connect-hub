@@ -32,24 +32,24 @@ interface HistoryAlert {
 }
 
 const alertasCriticosInicial: AlertItem[] = [
-  { id: "ac1", texto: "OS-4818 com ocorrência aberta há 4h", detalhe: "Endereço não localizado — Shopee", tipo: "os", link: "/operacao/os?status=ocorrencia" },
+  { id: "ac1", texto: "OS-4818 com ocorrência aberta há 4h", detalhe: "Endereço não localizado — Shopee", tipo: "os", link: "/operacao?tab=os&status=Com Ocorrência" },
   { id: "ac2", texto: "Integração CT-e com erro desde 08:00", detalhe: "Timeout na SEFAZ-SP", tipo: "integracao", link: "/monitor-api" },
   { id: "ac3", texto: "Prestador RápidoFrete bloqueado com 3 OS ativas", detalhe: "Documentação vencida", tipo: "documento", link: "/cadastros/prestadores" },
 ];
 
 const alertasAtencaoInicial: AlertItem[] = [
-  { id: "aa1", texto: "2 orçamentos vencem hoje", detalhe: "Magazine Luiza (ORC-421), Renner (ORC-418)", tipo: "orcamento", link: "/comercial/orcamentos" },
+  { id: "aa1", texto: "2 orçamentos vencem hoje", detalhe: "Magazine Luiza (ORC-421), Renner (ORC-418)", tipo: "orcamento", link: "/comercial" },
   { id: "aa2", texto: "5 documentos vencem em 7 dias", detalhe: "CNH de 3 parceiros, CRLV de 2 veículos", tipo: "documento", link: "/cadastros/prestadores" },
-  { id: "aa3", texto: "OS-4814 sem parceiro há mais de 2h", detalhe: "Renner — RS→SC", tipo: "os", link: "/operacao/os?status=sem-parceiro" },
+  { id: "aa3", texto: "OS-4814 sem parceiro há mais de 2h", detalhe: "Renner — RS→SC", tipo: "os", link: "/operacao?tab=os&status=Aguardando Parceiro" },
   { id: "aa4", texto: "Contrato Americanas vence em 28 dias", detalhe: "Contrato #CT-089", tipo: "contrato", link: "/contratos" },
-  { id: "aa5", texto: "Tabela de valores vencida para 2 clientes", detalhe: "Casas Bahia, Riachuelo", tipo: "outros", link: "/comercial/tabela-valores" },
+  { id: "aa5", texto: "Tabela de valores vencida para 2 clientes", detalhe: "Casas Bahia, Riachuelo", tipo: "outros", link: "/comercial" },
   { id: "aa6", texto: "Veículo ABC-1234 com doc vencendo", detalhe: "CRLV vence em 5 dias", tipo: "documento", link: "/frota" },
 ];
 
 const alertasInformativosInicial: AlertItem[] = [
-  { id: "ai1", texto: "12 OS sem comprovante de entrega", detalhe: "Últimas 48h", tipo: "os", link: "/operacao/os?status=sem-pod" },
+  { id: "ai1", texto: "12 OS sem comprovante de entrega", detalhe: "Últimas 48h", tipo: "os", link: "/operacao?tab=pod" },
   { id: "ai2", texto: "Prestador Sul Express com pendência documental", detalhe: "Seguro RCTR-C vencido", tipo: "documento", link: "/cadastros/prestadores" },
-  { id: "ai3", texto: "3 clientes sem tabela de valores ativa", detalhe: "C&A, Riachuelo, Ponto", tipo: "orcamento", link: "/comercial/tabela-valores" },
+  { id: "ai3", texto: "3 clientes sem tabela de valores ativa", detalhe: "C&A, Riachuelo, Ponto", tipo: "orcamento", link: "/comercial" },
 ];
 
 const historicoInicial: HistoryAlert[] = [
@@ -65,12 +65,12 @@ const AlertBlock = ({ title, icon: Icon, items, borderColor, bgColor, iconColor,
   borderColor: string; bgColor: string; iconColor: string; badgeColor: string;
   onAlertClick: (item: AlertItem) => void;
 }) => (
-  <Card className={`border-l-4 ${borderColor}`}>
+  <Card className={`border-l-4 ${borderColor} bg-card dark:bg-slate-800`}>
     <CardHeader className="pb-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon className={`w-5 h-5 ${iconColor}`} />
-          <CardTitle className="text-base">{title}</CardTitle>
+          <CardTitle className="text-base text-foreground dark:text-white">{title}</CardTitle>
         </div>
         <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${badgeColor}`}>{items.length}</span>
       </div>
@@ -79,15 +79,15 @@ const AlertBlock = ({ title, icon: Icon, items, borderColor, bgColor, iconColor,
       {items.map((a) => (
         <div 
           key={a.id} 
-          className={`rounded-lg p-3 ${bgColor} hover:opacity-80 cursor-pointer transition flex items-start justify-between group`}
+          className={`rounded-lg p-3 ${bgColor} dark:bg-slate-700/50 hover:opacity-80 cursor-pointer transition flex items-start justify-between group`}
           onClick={() => onAlertClick(a)}
         >
           <div className="flex-1">
-            <p className="text-sm font-medium flex items-center gap-2">
+            <p className="text-sm font-medium flex items-center gap-2 text-foreground dark:text-white">
               {a.texto}
               {a.link && <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">{a.detalhe}</p>
+            <p className="text-xs text-muted-foreground dark:text-gray-400 mt-0.5">{a.detalhe}</p>
           </div>
         </div>
       ))}

@@ -1,33 +1,38 @@
-import { FileText, CheckCircle2, XCircle, DollarSign, TrendingUp, Percent } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { FileText, CheckCircle2, XCircle, DollarSign, TrendingUp, Percent, ArrowRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { kpisComercial, funilComercial, valorPorCliente, conversoesSemana, motivosPerda, CORES_GRAFICOS } from "./mockData";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
-const KpiCard = ({ title, value, icon: Icon }: { title: string; value: string; icon: any }) => (
-  <Card>
-    <CardContent className="p-4 flex items-center gap-3">
-      <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
-        <Icon className="w-4 h-4 text-muted-foreground" />
-      </div>
-      <div>
-        <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{title}</p>
-        <p className="text-lg font-bold">{value}</p>
-      </div>
-    </CardContent>
-  </Card>
-);
+const KpiCard = ({ title, value, icon: Icon, to }: { title: string; value: string; icon: any; to?: string }) => {
+  const navigate = useNavigate();
+  return (
+    <Card className="cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 bg-card dark:bg-slate-800 border-border dark:border-slate-700" onClick={() => to && navigate(to)}>
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
+          <Icon className="w-4 h-4 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] text-muted-foreground dark:text-gray-400 uppercase tracking-wide">{title}</p>
+          <p className="text-lg font-bold text-foreground dark:text-white truncate">{value}</p>
+        </div>
+        {to && <ArrowRight className="w-4 h-4 text-muted-foreground dark:text-gray-500" />}
+      </CardContent>
+    </Card>
+  );
+};
 
 const TabComercial = () => (
   <div className="space-y-6">
     <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-      <KpiCard title="Orçamentos emitidos" value={String(kpisComercial.orcamentosEmitidos)} icon={FileText} />
-      <KpiCard title="Aprovados" value={String(kpisComercial.aprovados)} icon={CheckCircle2} />
-      <KpiCard title="Perdidos" value={String(kpisComercial.perdidos)} icon={XCircle} />
-      <KpiCard title="Valor orçado" value={fmt(kpisComercial.valorOrcado)} icon={DollarSign} />
-      <KpiCard title="Valor convertido" value={fmt(kpisComercial.valorConvertido)} icon={TrendingUp} />
-      <KpiCard title="Taxa de conversão" value={`${kpisComercial.taxaConversao}%`} icon={Percent} />
+      <KpiCard title="Orçamentos emitidos" value={String(kpisComercial.orcamentosEmitidos)} icon={FileText} to="/comercial" />
+      <KpiCard title="Aprovados" value={String(kpisComercial.aprovados)} icon={CheckCircle2} to="/comercial" />
+      <KpiCard title="Perdidos" value={String(kpisComercial.perdidos)} icon={XCircle} to="/comercial" />
+      <KpiCard title="Valor orçado" value={fmt(kpisComercial.valorOrcado)} icon={DollarSign} to="/comercial" />
+      <KpiCard title="Valor convertido" value={fmt(kpisComercial.valorConvertido)} icon={TrendingUp} to="/comercial" />
+      <KpiCard title="Taxa de conversão" value={`${kpisComercial.taxaConversao}%`} icon={Percent} to="/comercial" />
     </div>
 
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

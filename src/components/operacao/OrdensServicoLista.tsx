@@ -26,6 +26,9 @@ const OrdensServicoLista = () => {
       searchParams.delete("action");
       setSearchParams(searchParams, { replace: true });
     }
+    if (searchParams.get("status")) {
+      setBusca(searchParams.get("status") || "");
+    }
   }, [searchParams]);
 
   const fetchOrdens = async () => {
