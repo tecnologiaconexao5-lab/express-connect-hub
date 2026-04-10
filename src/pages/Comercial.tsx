@@ -1,11 +1,12 @@
 import { useSearchParams } from "react-router-dom";
-import { Briefcase, Users, Calculator, BarChart3 } from "lucide-react";
+import { Briefcase, Users, Calculator, BarChart3, FileText } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PlaceholderPage from "@/components/PlaceholderPage";
 import OrcamentosLista from "@/components/comercial/OrcamentosLista";
 import TabelasValoresLista from "@/components/comercial/TabelasValoresLista";
 import SimuladorFrete from "@/components/comercial/SimuladorFrete";
 import CrmBase from "@/components/comercial/crm/CrmBase";
+import PropostasMain from "@/components/comercial/propostas/PropostasMain";
 
 const Comercial = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -23,6 +24,7 @@ const Comercial = () => {
       <Tabs value={activeTab} onValueChange={(v) => setSearchParams({ tab: v })}>
         <TabsList className="bg-muted">
           <TabsTrigger value="crm"><Users className="w-3.5 h-3.5 mr-1" />CRM</TabsTrigger>
+          <TabsTrigger value="propostas"><FileText className="w-3.5 h-3.5 mr-1" />Propostas</TabsTrigger>
           <TabsTrigger value="orcamentos"><Briefcase className="w-3.5 h-3.5 mr-1" />Orçamentos</TabsTrigger>
           <TabsTrigger value="tabela"><Calculator className="w-3.5 h-3.5 mr-1" />Tabela de Valores</TabsTrigger>
           <TabsTrigger value="simulador"><BarChart3 className="w-3.5 h-3.5 mr-1" />Simulador</TabsTrigger>
@@ -42,6 +44,10 @@ const Comercial = () => {
 
         <TabsContent value="simulador">
           <SimuladorFrete />
+        </TabsContent>
+
+        <TabsContent value="propostas">
+          <PropostasMain />
         </TabsContent>
       </Tabs>
     </div>
