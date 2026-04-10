@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { ArrowLeft, Save, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, Clock, Lightbulb, Check, Copy } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,9 +35,9 @@ interface SugestaoVeiculo {
 const sugerirVeiculo = (peso: number, cubagem: number, refrigerado: boolean): SugestaoVeiculo | null => {
   if (refrigerado) {
     if (peso > 6000) {
-      return { tipo: 'van', motivo: 'Carga refrigerada acima de 6t requer van ou veículo refrigerado dedicado' };
+      return { tipo: 'van', motivo: 'Carga refrigerada acima de 6t requer van ou veÃ­culo refrigerado dedicado' };
     }
-    return { tipo: 'van', motivo: 'Carga refrigerada leve/média indica van refrigerada' };
+    return { tipo: 'van', motivo: 'Carga refrigerada leve/mÃ©dia indica van refrigerada' };
   }
   
   if (peso > 20000) {
@@ -47,24 +47,24 @@ const sugerirVeiculo = (peso: number, cubagem: number, refrigerado: boolean): Su
     return { tipo: 'bitrem', motivo: 'Carga de 15-20t adequada para bitrem' };
   }
   if (peso > 10000) {
-    return { tipo: 'truck', motivo: 'Carga de 10-15t indica truck como opção econômica' };
+    return { tipo: 'truck', motivo: 'Carga de 10-15t indica truck como opÃ§Ã£o econÃ´mica' };
   }
   if (peso > 8000) {
     return { tipo: 'toco', motivo: 'Carga de 8-10t adequada para toco com carroceria' };
   }
   if (peso > 4000) {
-    return { tipo: 'vuc', motivo: 'Carga de 4-8t indica VUC (Veículo Urbano de Carga)' };
+    return { tipo: 'vuc', motivo: 'Carga de 4-8t indica VUC (VeÃ­culo Urbano de Carga)' };
   }
   if (peso > 1500) {
     return { tipo: 'van', motivo: 'Carga de 1.5-4t adequada para van ou Fiorino grande' };
   }
   if (peso > 600) {
-    return { tipo: 'hr', motivo: 'Carga de 600kg-1.5t indica HR (utilitário médio)' };
+    return { tipo: 'hr', motivo: 'Carga de 600kg-1.5t indica HR (utilitÃ¡rio mÃ©dio)' };
   }
   if (peso > 200) {
     return { tipo: 'fiorino', motivo: 'Carga de 200-600kg adequada para Fiorino' };
   }
-  return { tipo: 'moto', motivo: 'Carga leve até 200kg pode ser transportada por moto' };
+  return { tipo: 'moto', motivo: 'Carga leve atÃ© 200kg pode ser transportada por moto' };
 };
 
 interface Props {
@@ -78,14 +78,14 @@ const emptyEndereco = (): EnderecoOrcamento => ({ tipo: "coleta", sequencia: 1, 
 
 const emptyOrcamento = (): Orcamento => ({
   id: String(Date.now()), numero: gerarNumeroOrcamento(),
-  cliente: "", clienteCnpj: "", unidade: "São Paulo - Matriz", centroCusto: "", responsavel: "",
+  cliente: "", clienteCnpj: "", unidade: "SÃ£o Paulo - Matriz", centroCusto: "", responsavel: "",
   dataEmissao: new Date().toISOString().split("T")[0], validade: "", tipoOperacao: "", modalidade: "contrato",
   prioridade: "normal", pedidoInterno: "", observacoesGerais: "", status: "rascunho",
   enderecos: [emptyEndereco()],
   carga: { descricao: "", volumes: 0, peso: 0, cubagem: 0, pallets: 0, valorDeclarado: 0, refrigerado: false, ajudante: false, observacoes: "" },
   veiculo: { tipo: "", subcategoria: "", carroceria: "" },
-  valores: { tabelaVinculada: "", valorBase: 0, adicionais: 0, pedagio: 0, kmExcedente: 0, ajudante: 0, devolucao: 0, reentrega: 0, descontos: 0, valorFinal: 0, custoEstimado: 0, margemEstimada: 0, lucroEstimado: 0 },
-  historico: [{ data: new Date().toLocaleString("pt-BR"), acao: "Orçamento criado", usuario: "Usuário atual" }],
+  valores: { tabelaVinculada: "", valorBase: 0, adicionais: 0, pedagio: 0, kmExcedente: 0, ajudante: 0, adValorem: 0, gris: 0, devolucao: 0, reentrega: 0, descontos: 0, valorFinal: 0, custoEstimado: 0, margemEstimada: 0, lucroEstimado: 0 },
+  historico: [{ data: new Date().toLocaleString("pt-BR"), acao: "OrÃ§amento criado", usuario: "UsuÃ¡rio atual" }],
 });
 
 const Field = ({ label, children, className = "" }: { label: React.ReactNode; children: React.ReactNode; className?: string }) => (
@@ -123,7 +123,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
   const aplicarSugestaoVeiculo = () => {
     if (sugestaoVeiculo) {
       update("veiculo.tipo", sugestaoVeiculo.tipo);
-      toast.success(`Veículo ${sugestaoVeiculo.tipo} aplicado!`);
+      toast.success(`VeÃ­culo ${sugestaoVeiculo.tipo} aplicado!`);
       setSugestaoVeiculo(null);
     }
   };
@@ -131,7 +131,8 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
   const recalcular = () => {
     setData((prev) => {
       const v = { ...prev.valores };
-      v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudante + v.devolucao + v.reentrega - v.descontos;
+      if (prev.carga && prev.carga.valorDeclarado > 0) { if (prev.cliente === 'Amazon Logística' || prev.cliente === 'Industrias ABC') { v.adValorem = 0; v.gris = 0; } else { v.adValorem = prev.carga.valorDeclarado * 0.003; v.gris = prev.carga.valorDeclarado * 0.0015; } }
+v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudante + v.devolucao + v.reentrega + (v.adValorem || 0) + (v.gris || 0) - v.descontos;
       v.lucroEstimado = v.valorFinal - v.custoEstimado;
       v.margemEstimada = v.valorFinal > 0 ? Math.round((v.lucroEstimado / v.valorFinal) * 1000) / 10 : 0;
       return { ...prev, valores: v };
@@ -168,33 +169,33 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                 {STATUS_CONFIG[data.status].label}
               </span>
             </div>
-            <p className="text-sm text-muted-foreground">{modo === "novo" ? "Novo orçamento" : data.cliente || "—"}</p>
+            <p className="text-sm text-muted-foreground">{modo === "novo" ? "Novo orÃ§amento" : data.cliente || "â€”"}</p>
           </div>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => gerarPdfOrcamento(data)}><FileDown className="w-4 h-4 mr-1" /> Gerar PDF</Button>
-          <Button variant="outline" size="sm" disabled><span className="text-xs mr-1">🔜</span> Gerar Contrato</Button>
-          {data.status === "aprovado" && <Button variant="outline" size="sm" disabled><span className="text-xs mr-1">🔜</span> Converter em OS</Button>}
+          <Button variant="outline" size="sm" disabled><span className="text-xs mr-1">ðŸ”œ</span> Gerar Contrato</Button>
+          {data.status === "aprovado" && <Button variant="outline" size="sm" disabled><span className="text-xs mr-1">ðŸ”œ</span> Converter em OS</Button>}
           {!readOnly && <Button size="sm" className="bg-primary text-primary-foreground" onClick={handleSalvar}><Save className="w-4 h-4 mr-1" /> Salvar</Button>}
         </div>
       </div>
 
       <Tabs defaultValue="identificacao" className="w-full">
         <TabsList className="flex flex-wrap h-auto gap-1 bg-muted p-1">
-          <TabsTrigger value="identificacao" className="text-xs"><Clock className="w-3 h-3 mr-1" />Identificação</TabsTrigger>
-          <TabsTrigger value="enderecos" className="text-xs"><MapPin className="w-3 h-3 mr-1" />Endereços</TabsTrigger>
+          <TabsTrigger value="identificacao" className="text-xs"><Clock className="w-3 h-3 mr-1" />IdentificaÃ§Ã£o</TabsTrigger>
+          <TabsTrigger value="enderecos" className="text-xs"><MapPin className="w-3 h-3 mr-1" />EndereÃ§os</TabsTrigger>
           <TabsTrigger value="carga" className="text-xs"><Package className="w-3 h-3 mr-1" />Carga</TabsTrigger>
-          <TabsTrigger value="veiculo" className="text-xs"><Truck className="w-3 h-3 mr-1" />Veículo</TabsTrigger>
+          <TabsTrigger value="veiculo" className="text-xs"><Truck className="w-3 h-3 mr-1" />VeÃ­culo</TabsTrigger>
           <TabsTrigger value="valores" className="text-xs"><DollarSign className="w-3 h-3 mr-1" />Valores</TabsTrigger>
           <TabsTrigger value="documentos" className="text-xs"><FileDown className="w-3 h-3 mr-1" />Docs e PDF</TabsTrigger>
-          <TabsTrigger value="historico" className="text-xs">Histórico</TabsTrigger>
+          <TabsTrigger value="historico" className="text-xs">HistÃ³rico</TabsTrigger>
         </TabsList>
 
-        {/* IDENTIFICAÇÃO */}
+        {/* IDENTIFICAÃ‡ÃƒO */}
         <TabsContent value="identificacao">
           <Card>
             <CardContent className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Field label="Número"><Input value={data.numero} readOnly className="bg-muted" /></Field>
+              <Field label="NÃºmero"><Input value={data.numero} readOnly className="bg-muted" /></Field>
               <Field label="Cliente">
                  {readOnly ? <Input value={data.cliente} readOnly /> : (
                    <SearchableSelect 
@@ -219,7 +220,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                 <Select value={data.unidade} onValueChange={(v) => update("unidade", v)} disabled={readOnly}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="São Paulo - Matriz">São Paulo - Matriz</SelectItem>
+                    <SelectItem value="SÃ£o Paulo - Matriz">SÃ£o Paulo - Matriz</SelectItem>
                     <SelectItem value="Rio de Janeiro">Rio de Janeiro</SelectItem>
                     <SelectItem value="Porto Alegre">Porto Alegre</SelectItem>
                     <SelectItem value="Belo Horizonte">Belo Horizonte</SelectItem>
@@ -227,15 +228,15 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                 </Select>
               </Field>
               <Field label="Centro de Custo"><Input value={data.centroCusto} readOnly={readOnly} onChange={(e) => update("centroCusto", e.target.value)} /></Field>
-              <Field label="Responsável"><Input value={data.responsavel} readOnly={readOnly} onChange={(e) => update("responsavel", e.target.value)} /></Field>
-              <Field label="Data de Emissão"><Input type="date" value={data.dataEmissao} readOnly={readOnly} onChange={(e) => update("dataEmissao", e.target.value)} /></Field>
+              <Field label="ResponsÃ¡vel"><Input value={data.responsavel} readOnly={readOnly} onChange={(e) => update("responsavel", e.target.value)} /></Field>
+              <Field label="Data de EmissÃ£o"><Input type="date" value={data.dataEmissao} readOnly={readOnly} onChange={(e) => update("dataEmissao", e.target.value)} /></Field>
               <Field label="Validade"><Input type="date" value={data.validade} readOnly={readOnly} onChange={(e) => update("validade", e.target.value)} /></Field>
-              <Field label="Tipo de Operação">
+              <Field label="Tipo de OperaÃ§Ã£o">
                 <Select value={data.tipoOperacao} onValueChange={(v) => update("tipoOperacao", v)} disabled={readOnly}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Distribuição">Distribuição</SelectItem>
-                    <SelectItem value="Transferência">Transferência</SelectItem>
+                    <SelectItem value="DistribuiÃ§Ã£o">DistribuiÃ§Ã£o</SelectItem>
+                    <SelectItem value="TransferÃªncia">TransferÃªncia</SelectItem>
                     <SelectItem value="Coleta e Entrega">Coleta e Entrega</SelectItem>
                     <SelectItem value="Dedicado">Dedicado</SelectItem>
                     <SelectItem value="Last Mile">Last Mile</SelectItem>
@@ -247,7 +248,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="contrato">Contrato</SelectItem>
-                    <SelectItem value="esporadico">Esporádico</SelectItem>
+                    <SelectItem value="esporadico">EsporÃ¡dico</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
@@ -264,7 +265,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
               <Field label="Status">
                 <Select value={data.status} onValueChange={(v) => {
                   update("status", v);
-                  setData((prev) => ({ ...prev, status: v as OrcamentoStatus, historico: [...prev.historico, { data: new Date().toLocaleString("pt-BR"), acao: `Status alterado para ${STATUS_CONFIG[v as OrcamentoStatus].label}`, usuario: "Usuário atual" }] }));
+                  setData((prev) => ({ ...prev, status: v as OrcamentoStatus, historico: [...prev.historico, { data: new Date().toLocaleString("pt-BR"), acao: `Status alterado para ${STATUS_CONFIG[v as OrcamentoStatus].label}`, usuario: "UsuÃ¡rio atual" }] }));
                 }} disabled={readOnly}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -275,14 +276,14 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                 </Select>
               </Field>
               <Field label="Pedido Interno"><Input value={data.pedidoInterno} readOnly={readOnly} onChange={(e) => update("pedidoInterno", e.target.value)} /></Field>
-              <Field label="Observações Gerais" className="md:col-span-2 lg:col-span-3">
+              <Field label="ObservaÃ§Ãµes Gerais" className="md:col-span-2 lg:col-span-3">
                 <Textarea value={data.observacoesGerais} readOnly={readOnly} onChange={(e) => update("observacoesGerais", e.target.value)} rows={3} />
               </Field>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* ENDEREÇOS */}
+        {/* ENDEREÃ‡OS */}
         <TabsContent value="enderecos">
           <div className="space-y-4">
             {data.enderecos.map((end, idx) => (
@@ -291,7 +292,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-primary" />
-                      Ponto {end.sequencia} — {end.tipo === "coleta" ? "Coleta" : end.tipo === "entrega" ? "Entrega" : "Retorno"}
+                      Ponto {end.sequencia} â€” {end.tipo === "coleta" ? "Coleta" : end.tipo === "entrega" ? "Entrega" : "Retorno"}
                     </CardTitle>
                     <div className="flex gap-2">
                        {!readOnly && <SaveFavoritoButton endereco={end} />}
@@ -315,15 +316,15 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                     </Field>
                     <Field label="Contato"><Input value={end.contato} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], contato: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
                     <Field label="Telefone"><Input value={end.telefone} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], telefone: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
-                    <Field label="Janela Início"><Input type="time" value={end.janelaInicio} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], janelaInicio: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
+                    <Field label="Janela InÃ­cio"><Input type="time" value={end.janelaInicio} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], janelaInicio: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
                     <Field label="Janela Fim"><Input type="time" value={end.janelaFim} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], janelaFim: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} /></Field>
                   </div>
 
                   {readOnly ? (
-                     <Field label="Endereço Cadastrado"><Input value={`${end.endereco}, ${end.cidade}/${end.uf} - ${end.cep}`} readOnly /></Field>
+                     <Field label="EndereÃ§o Cadastrado"><Input value={`${end.endereco}, ${end.cidade}/${end.uf} - ${end.cep}`} readOnly /></Field>
                   ) : (
                      <EnderecoCompleto
-                        label="Dados do Endereço (ViaCEP)"
+                        label="Dados do EndereÃ§o (ViaCEP)"
                         value={{ cep: end.cep, logradouro: end.endereco, numero: "", complemento: "", bairro: "", cidade: end.cidade, estado: end.uf, referencia: end.instrucoes } as any}
                         onChange={(obj) => {
                            const es = [...data.enderecos];
@@ -333,7 +334,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                      />
                   )}
                   
-                  <Field label="Instruções Específicas / Referência" className="lg:col-span-2">
+                  <Field label="InstruÃ§Ãµes EspecÃ­ficas / ReferÃªncia" className="lg:col-span-2">
                      <Input value={end.instrucoes} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], instrucoes: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} />
                   </Field>
                 </CardContent>
@@ -349,10 +350,10 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
         <TabsContent value="carga">
           <Card>
             <CardContent className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Field label="Descrição da Carga" className="lg:col-span-2"><Input value={data.carga.descricao} readOnly={readOnly} onChange={(e) => update("carga.descricao", e.target.value)} /></Field>
+              <Field label="DescriÃ§Ã£o da Carga" className="lg:col-span-2"><Input value={data.carga.descricao} readOnly={readOnly} onChange={(e) => update("carga.descricao", e.target.value)} /></Field>
               <Field label="Volumes"><Input type="number" value={data.carga.volumes || ""} readOnly={readOnly} onChange={(e) => update("carga.volumes", Number(e.target.value))} /></Field>
               <Field label="Peso (kg)"><Input type="number" value={data.carga.peso || ""} readOnly={readOnly} onChange={(e) => update("carga.peso", Number(e.target.value))} /></Field>
-              <Field label="Cubagem (m³)"><Input type="number" value={data.carga.cubagem || ""} readOnly={readOnly} onChange={(e) => update("carga.cubagem", Number(e.target.value))} /></Field>
+              <Field label="Cubagem (mÂ³)"><Input type="number" value={data.carga.cubagem || ""} readOnly={readOnly} onChange={(e) => update("carga.cubagem", Number(e.target.value))} /></Field>
               <Field label="Pallets"><Input type="number" value={data.carga.pallets || ""} readOnly={readOnly} onChange={(e) => update("carga.pallets", Number(e.target.value))} /></Field>
               <Field label="Valor Declarado (R$)"><Input type="number" value={data.carga.valorDeclarado || ""} readOnly={readOnly} onChange={(e) => update("carga.valorDeclarado", Number(e.target.value))} /></Field>
               <div className="flex items-center gap-6 lg:col-span-1">
@@ -365,14 +366,14 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                   <Label className="text-xs">Ajudante</Label>
                 </div>
               </div>
-              <Field label="Observações da Carga" className="lg:col-span-4">
+              <Field label="ObservaÃ§Ãµes da Carga" className="lg:col-span-4">
                 <Textarea value={data.carga.observacoes} readOnly={readOnly} onChange={(e) => update("carga.observacoes", e.target.value)} rows={2} />
               </Field>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* VEÍCULO */}
+        {/* VEÃCULO */}
         <TabsContent value="veiculo">
           {sugestaoVeiculo && !readOnly && (
             <Card className="mb-4 border-blue-200 bg-blue-50">
@@ -383,12 +384,12 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                       <Lightbulb className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
-                      <p className="font-semibold text-blue-800">Veículo sugerido pela IA: <span className="uppercase">{sugestaoVeiculo.tipo}</span></p>
+                      <p className="font-semibold text-blue-800">VeÃ­culo sugerido pela IA: <span className="uppercase">{sugestaoVeiculo.tipo}</span></p>
                       <p className="text-sm text-blue-600">Motivo: {sugestaoVeiculo.motivo}</p>
                     </div>
                   </div>
                   <Button onClick={aplicarSugestaoVeiculo} className="bg-blue-600 hover:bg-blue-700 gap-2">
-                    <Check className="w-4 h-4" /> Usar esta sugestão
+                    <Check className="w-4 h-4" /> Usar esta sugestÃ£o
                   </Button>
                 </div>
               </CardContent>
@@ -396,7 +397,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
           )}
           <Card>
             <CardContent className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Field label="Tipo de Veículo">
+              <Field label="Tipo de VeÃ­culo">
                 <Select value={data.veiculo.tipo} onValueChange={(v) => update("veiculo.tipo", v)} disabled={readOnly}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
@@ -410,7 +411,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                 <Select value={data.veiculo.subcategoria} onValueChange={(v) => update("veiculo.subcategoria", v)} disabled={readOnly}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    {["urbano", "leve", "médio", "pesado", "dedicado", "refrigerado", "distribuição", "transferência", "outro"].map((s) => (
+                    {["urbano", "leve", "mÃ©dio", "pesado", "dedicado", "refrigerado", "distribuiÃ§Ã£o", "transferÃªncia", "outro"].map((s) => (
                       <SelectItem key={s} value={s}>{s}</SelectItem>
                     ))}
                   </SelectContent>
@@ -420,7 +421,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                 <Select value={data.veiculo.carroceria} onValueChange={(v) => update("veiculo.carroceria", v)} disabled={readOnly}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    {["baú", "baú refrigerado", "baú isotérmico", "sider", "grade baixa", "graneleira", "prancha", "plataforma", "carroceria aberta", "cegonha", "tanque", "container", "furgão", "refrigerada", "lonada", "outro"].map((c) => (
+                    {["baÃº", "baÃº refrigerado", "baÃº isotÃ©rmico", "sider", "grade baixa", "graneleira", "prancha", "plataforma", "carroceria aberta", "cegonha", "tanque", "container", "furgÃ£o", "refrigerada", "lonada", "outro"].map((c) => (
                       <SelectItem key={c} value={c}>{c}</SelectItem>
                     ))}
                   </SelectContent>
@@ -434,15 +435,15 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
         <TabsContent value="valores">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="lg:col-span-2">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Composição de Valores</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">ComposiÃ§Ã£o de Valores</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 p-4">
                 <Field label="Tabela Vinculada"><Input value={data.valores.tabelaVinculada} readOnly={readOnly} onChange={(e) => update("valores.tabelaVinculada", e.target.value)} /></Field>
                 <Field label="Valor Base (R$)"><Input type="number" value={data.valores.valorBase || ""} readOnly={readOnly} onChange={(e) => update("valores.valorBase", Number(e.target.value))} onBlur={recalcular} /></Field>
                 <Field label="Adicionais (R$)"><Input type="number" value={data.valores.adicionais || ""} readOnly={readOnly} onChange={(e) => update("valores.adicionais", Number(e.target.value))} onBlur={recalcular} /></Field>
-                <Field label="Pedágio (R$)"><Input type="number" value={data.valores.pedagio || ""} readOnly={readOnly} onChange={(e) => update("valores.pedagio", Number(e.target.value))} onBlur={recalcular} /></Field>
+                <Field label="PedÃ¡gio (R$)"><Input type="number" value={data.valores.pedagio || ""} readOnly={readOnly} onChange={(e) => update("valores.pedagio", Number(e.target.value))} onBlur={recalcular} /></Field>
                 <Field label="Km Excedente (R$)"><Input type="number" value={data.valores.kmExcedente || ""} readOnly={readOnly} onChange={(e) => update("valores.kmExcedente", Number(e.target.value))} onBlur={recalcular} /></Field>
                 <Field label="Ajudante (R$)"><Input type="number" value={data.valores.ajudante || ""} readOnly={readOnly} onChange={(e) => update("valores.ajudante", Number(e.target.value))} onBlur={recalcular} /></Field>
-                <Field label="Devolução (R$)"><Input type="number" value={data.valores.devolucao || ""} readOnly={readOnly} onChange={(e) => update("valores.devolucao", Number(e.target.value))} onBlur={recalcular} /></Field>
+                <Field label="DevoluÃ§Ã£o (R$)"><Input type="number" value={data.valores.devolucao || ""} readOnly={readOnly} onChange={(e) => update("valores.devolucao", Number(e.target.value))} onBlur={recalcular} /></Field>
                 <Field label="Reentrega (R$)"><Input type="number" value={data.valores.reentrega || ""} readOnly={readOnly} onChange={(e) => update("valores.reentrega", Number(e.target.value))} onBlur={recalcular} /></Field>
                 <Field label="Descontos (R$)"><Input type="number" value={data.valores.descontos || ""} readOnly={readOnly} onChange={(e) => update("valores.descontos", Number(e.target.value))} onBlur={recalcular} /></Field>
                 <Field label="Custo Estimado (R$)"><Input type="number" value={data.valores.custoEstimado || ""} readOnly={readOnly} onChange={(e) => update("valores.custoEstimado", Number(e.target.value))} onBlur={recalcular} /></Field>
@@ -454,12 +455,12 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">Valor Base</span><span>{fmt(data.valores.valorBase)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">+ Adicionais</span><span>{fmt(data.valores.adicionais)}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">+ Pedágio</span><span>{fmt(data.valores.pedagio)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">+ PedÃ¡gio</span><span>{fmt(data.valores.pedagio)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">+ Km Excedente</span><span>{fmt(data.valores.kmExcedente)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">+ Ajudante</span><span>{fmt(data.valores.ajudante)}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">+ Devolução</span><span>{fmt(data.valores.devolucao)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">+ DevoluÃ§Ã£o</span><span>{fmt(data.valores.devolucao)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">+ Reentrega</span><span>{fmt(data.valores.reentrega)}</span></div>
-                  <div className="flex justify-between text-destructive"><span>− Descontos</span><span>{fmt(data.valores.descontos)}</span></div>
+                  <div className="flex justify-between text-destructive"><span>âˆ’ Descontos</span><span>{fmt(data.valores.descontos)}</span></div>
                   <hr className="border-border" />
                   <div className="flex justify-between text-lg font-bold text-primary"><span>Valor Final</span><span>{fmt(data.valores.valorFinal)}</span></div>
                 </div>
@@ -478,13 +479,13 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
         <TabsContent value="documentos">
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm text-primary">Documentos Anexos e Geração de Proposta</CardTitle>
+              <CardTitle className="text-sm text-primary">Documentos Anexos e GeraÃ§Ã£o de Proposta</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="border border-dashed rounded-lg p-10 flex flex-col items-center justify-center text-center text-muted-foreground bg-muted/10">
                  <FileDown className="w-8 h-8 opacity-50 mb-2" />
                  <p className="text-sm font-medium">Nenhum anexo encontrado.</p>
-                 <p className="text-xs">Faça upload de cotações, fotos da carga ou referências aqui.</p>
+                 <p className="text-xs">FaÃ§a upload de cotaÃ§Ãµes, fotos da carga ou referÃªncias aqui.</p>
                  {!readOnly && <Button variant="outline" size="sm" className="mt-4">Anexar Arquivo</Button>}
               </div>
               
@@ -494,7 +495,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                           className="flex-1 text-xs"
                           onClick={() => {
                             toast.success("Gerando PDF profissional...");
-                            generateProfessionalPDF(data, "ORÇAMENTO");
+                            generateProfessionalPDF(data, "ORÃ‡AMENTO");
                           }}
                         >
                           Gerar PDF
@@ -513,7 +514,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                          <Button className="bg-green-600 hover:bg-green-700 text-white gap-2" onClick={() => { 
                            update("status", "aprovado"); 
                            handleSalvar();
-                           toast.success("Orçamento aprovado com sucesso!");
+                           toast.success("OrÃ§amento aprovado com sucesso!");
                          }}><Check className="w-4 h-4"/> Aprovar</Button>
                          <Button variant="destructive" onClick={() => { update("status", "reprovado"); handleSalvar(); }}>Reprovar</Button>
                        </>
@@ -526,7 +527,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                                status: "convertido_em_os"
                              }));
                              update("status", "convertido_em_os");
-                             toast.success("Orçamento convertido em OS! Redirecionando...");
+                             toast.success("OrÃ§amento convertido em OS! Redirecionando...");
                              setTimeout(() => {
                                window.location.hash = '#/operacao?tab=os&new=true';
                                window.location.reload();
@@ -537,20 +538,20 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                   </div>
               </div>
               
-              <Field label="Observações Finais e Condicionantes">
+              <Field label="ObservaÃ§Ãµes Finais e Condicionantes">
                 <Textarea rows={3} value={data.observacoesGerais} onChange={(e) => update("observacoesGerais", e.target.value)} readOnly={readOnly} />
               </Field>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* HISTÓRICO */}
+        {/* HISTÃ“RICO */}
         <TabsContent value="historico">
           <Card>
             <CardContent className="p-4">
               {data.motivoReprovacao && (
                 <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm">
-                  <p className="font-semibold text-red-700">Motivo da reprovação:</p>
+                  <p className="font-semibold text-red-700">Motivo da reprovaÃ§Ã£o:</p>
                   <p className="text-red-600">{data.motivoReprovacao}</p>
                 </div>
               )}
@@ -558,8 +559,8 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Data/Hora</TableHead>
-                    <TableHead>Ação</TableHead>
-                    <TableHead>Usuário</TableHead>
+                    <TableHead>AÃ§Ã£o</TableHead>
+                    <TableHead>UsuÃ¡rio</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -581,3 +582,4 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
 };
 
 export default OrcamentoForm;
+

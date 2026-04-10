@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Network, Radio, Briefcase, ClipboardList, Database,
   DollarSign, FileText, Car, FileSignature, Award, ShieldCheck,
   BarChart3, Users, Smartphone, Settings, UserPlus, Library, LucideIcon, Sparkles,
-  FileCheck, Megaphone, Route,
+  FileCheck, Megaphone, Route, Umbrella,
 } from "lucide-react";
 
 export interface SidebarSubItem {
@@ -157,6 +157,19 @@ export const sidebarItems: SidebarItem[] = [
       { title: "NPS e Confiança", path: "/sla?tab=nps" },
       { title: "Desempenho Rota", path: "/sla?tab=entrega" },
       { title: "Ranking Prestadores", path: "/sla?tab=performance" },
+    ],
+  },
+  {
+    title: "Seguros e Risco",
+    icon: Umbrella,
+    path: "/seguros",
+    children: [
+      { title: "Configuração Geral", path: "/seguros?tab=configuracao" },
+      { title: "Apólices Transportador", path: "/seguros?tab=apolices" },
+      { title: "Regras por Cliente", path: "/seguros?tab=regras-cliente" },
+      { title: "Regras de Cálculo", path: "/seguros?tab=regras-calculo" },
+      { title: "Alertas e Painel", path: "/seguros?tab=alertas" },
+      { title: "Histórico Sinistros", path: "/seguros?tab=sinistros" },
     ],
   },
   {
