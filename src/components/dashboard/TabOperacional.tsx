@@ -83,26 +83,52 @@ const StatusCard = ({ nome, qtd, cor }: { nome: string; qtd: number; cor: string
   const colorClass = statusColors[nome] || "text-gray-600 bg-gray-100 border-gray-200";
   const tendencia = getTendencia(nome);
   
+  const getStatusBarColor = (nome: string) => {
+    if (nome === "Finalizada") return "bg-green-500";
+    if (nome === "Com Ocorrência") return "bg-red-500";
+    if (nome.includes("Rota") || nome.includes("Entrega") || nome.includes("Operação")) return "bg-emerald-500";
+    if (nome.includes("Coleta") || nome.includes("Carregando")) return "bg-teal-500";
+    if (nome.includes("Aguardando")) return "bg-yellow-500";
+    if (nome === "Programada") return "bg-blue-500";
+    return "bg-gray-400";
+  };
+
+  const getIconBgColor = (nome: string) => {
+    if (nome === "Finalizada") return "bg-green-500";
+    if (nome === "Com Ocorrência") return "bg-red-500";
+    if (nome.includes("Rota") || nome.includes("Entrega") || nome.includes("Operação")) return "bg-emerald-500";
+    if (nome.includes("Coleta") || nome.includes("Carregando")) return "bg-teal-500";
+    if (nome.includes("Aguardando")) return "bg-yellow-500";
+    if (nome === "Programada") return "bg-blue-500";
+    return "bg-gray-500";
+  };
+
   return (
     <Card 
-      className={`cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-l-4 ${colorClass.split(" ")[1]} border-l-4`}
+      className="cursor-pointer hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 bg-white border border-gray-100 shadow-sm"
       onClick={() => navigate(`/operacao/os?status=${encodeURIComponent(nome)}`)}
     >
       <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className={`p-2.5 rounded-xl ${colorClass.split(" ")[1]} border`}>
-            <Icon className={`w-5 h-5 ${colorClass.split(" ")[0]}`} />
+        <div className="flex items-start justify-between mb-3">
+          <div className={`w-10 h-10 rounded-lg ${getIconBgColor(nome)} flex items-center justify-center shadow-md`}>
+            <Icon className="w-5 h-5 text-white" />
           </div>
-          <div className={`flex items-center gap-0.5 text-xs font-medium ${
-            tendencia > 0 ? "text-green-600" : tendencia < 0 ? "text-red-500" : "text-muted-foreground"
+          <div className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full ${
+            tendencia > 0 ? "bg-green-50 text-green-600" : tendencia < 0 ? "bg-red-50 text-red-600" : "bg-gray-50 text-gray-500"
           }`}>
             {tendencia > 0 ? <TrendingUp className="w-3 h-3" /> : tendencia < 0 ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
-            {Math.abs(tendencia)}
+            <span>{Math.abs(tendencia)}%</span>
           </div>
         </div>
-        <div className="mt-3">
-          <p className="text-2xl font-bold">{qtd}</p>
-          <p className="text-xs text-muted-foreground font-medium">{nome}</p>
+        <div className="mb-3">
+          <p className="text-3xl font-bold text-gray-900">{qtd}</p>
+          <p className="text-xs font-medium text-gray-500 mt-0.5">{nome}</p>
+        </div>
+        <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+          <div 
+            className={`h-full rounded-full ${getStatusBarColor(nome)}`} 
+            style={{ width: `${Math.min((qtd / 50) * 100, 100)}%` }}
+          />
         </div>
       </CardContent>
     </Card>
