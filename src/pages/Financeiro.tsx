@@ -24,6 +24,8 @@ import Inadimplencia from "@/components/financeiro/Inadimplencia";
 import ConciliacaoAvancada from "@/components/financeiro/ConciliacaoAvancada";
 import MargemOperacional from "@/components/financeiro/MargemOperacional";
 import DateRangePicker from "@/components/ui/DateRangePicker";
+import ContasBancarias from "@/components/financeiro/ContasBancarias";
+import ReciboRapido from "@/components/financeiro/ReciboRapido";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -162,6 +164,7 @@ export default function Financeiro() {
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full mb-4">
             <TabsTrigger value="dashboard" className="data-[state=active]:bg-muted"><LayoutDashboard className="w-4 h-4 mr-2"/> Dashboard</TabsTrigger>
+            <TabsTrigger value="contas-caixas" className="data-[state=active]:bg-muted"><Landmark className="w-4 h-4 mr-2"/> Contas & Caixas</TabsTrigger>
             <TabsTrigger value="receber" className="data-[state=active]:bg-muted"><ArrowDownRight className="w-4 h-4 mr-2"/> Receber</TabsTrigger>
             <TabsTrigger value="inadimplencia" className="data-[state=active]:bg-muted"><UserMinus className="w-4 h-4 mr-2"/> Inadimplência</TabsTrigger>
             <TabsTrigger value="pagar" className="data-[state=active]:bg-muted"><ArrowUpRight className="w-4 h-4 mr-2"/> Pagar</TabsTrigger>
@@ -170,7 +173,7 @@ export default function Financeiro() {
             <TabsTrigger value="plano-contas" className="data-[state=active]:bg-muted"><BookOpen className="w-4 h-4 mr-2"/> Plano de Contas</TabsTrigger>
             <TabsTrigger value="conciliacao" className="data-[state=active]:bg-muted"><ArrowRightLeft className="w-4 h-4 mr-2"/> Conciliação</TabsTrigger>
             <TabsTrigger value="lotes" className="data-[state=active]:bg-muted"><CreditCard className="w-4 h-4 mr-2"/> CNAB</TabsTrigger>
-            <TabsTrigger value="centro-resultado" className="data-[state=active]:bg-muted"><Landmark className="w-4 h-4 mr-2"/> Centro Resultado</TabsTrigger>
+            <TabsTrigger value="centro-resultado" className="data-[state=active]:bg-muted"><PieChart className="w-4 h-4 mr-2"/> Centro Resultado</TabsTrigger>
             <TabsTrigger value="provisoes" className="data-[state=active]:bg-muted"><Clock className="w-4 h-4 mr-2"/> Provisões</TabsTrigger>
             <TabsTrigger value="recibos" className="data-[state=active]:bg-muted"><Receipt className="w-4 h-4 mr-2"/> Recibos</TabsTrigger>
             <TabsTrigger value="rentabilidade" className="data-[state=active]:bg-muted"><TrendingUpIcon className="w-4 h-4 mr-2"/> Rentabilidade</TabsTrigger>
@@ -200,156 +203,138 @@ export default function Financeiro() {
                   <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
                   <Input placeholder="Buscar fatura ou cliente..." value={buscaReceber} onChange={(e) => setBuscaReceber(e.target.value)} className="pl-9" />
                 </div>
-                <Button className="bg-blue-600 hover:bg-blue-700 text-white"><Plus className="w-4 h-4 mr-2"/> Gerar Fatura C.R</Button>
-             </CardHeader>
-             <CardContent className="p-0">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Nº Fatura</TableHead><TableHead>Cliente</TableHead><TableHead>OS Vinculadas</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {filtrarDoc(receber, buscaReceber).map((r, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="font-semibold">{r.fatura}</TableCell>
-                        <TableCell>{r.cliente}</TableCell><TableCell className="text-sm text-muted-foreground">{r.os_vinculadas}</TableCell>
-                        <TableCell>{new Date(r.vencimento).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right font-medium">{fmtFin(r.valor)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={r.status === "a vencer" ? "bg-blue-50 text-blue-700 border-blue-200" : r.status === "vencida" ? "bg-red-50 text-red-700 border-red-200" : r.status === "paga" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-700 border-gray-200"}>{r.status.toUpperCase()}</Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-             </CardContent>
-           </Card>
-        </TabsContent>
+                <Dialog>
+                  <DialogTrigger asChild>
+                        <Button className="bg-orange-600 hover:bg-orange-700 text-white font-semibold shadow-sm"><Plus className="w-4 h-4 mr-2"/> Nova Despesa (Contas a Pagar)</Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                        <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><ArrowUpRight className="w-5 h-5 text-orange-600"/> Lançamento de Contas a Pagar</DialogTitle></DialogHeader>
+                        
+                        <div className="space-y-6 py-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             <div className="space-y-1">
+                               <Label className="text-xs">Origem do Pagamento / Fornecedor</Label>
+                               <Select>
+                                 <SelectTrigger><SelectValue placeholder="Selecione o favorecido..." /></SelectTrigger>
+                                 <SelectContent>
+                                   <SelectItem value="prestador">Prestador Cadastrado</SelectItem>
+                                   <SelectItem value="fornecedor">Fornecedor Geral</SelectItem>
+                                   <SelectItem value="fixa">Despesa Fixa Recorrente</SelectItem>
+                                   <SelectItem value="outro">Outro (Avulso)</SelectItem>
+                                 </SelectContent>
+                               </Select>
+                             </div>
+                             <div className="space-y-1">
+                               <Label className="text-xs">Buscar Favorecido</Label>
+                               <Input placeholder="Digite o nome, cnpj ou cpf..." disabled={false} />
+                             </div>
+                             <div className="space-y-1">
+                               <Label className="text-xs">Categoria / Plano de Contas</Label>
+                               <Select>
+                                 <SelectTrigger><SelectValue placeholder="Selecione a categoria" /></SelectTrigger>
+                                 <SelectContent>
+                                   <SelectItem value="energia">Energia elétrica</SelectItem>
+                                   <SelectItem value="agua">Água</SelectItem>
+                                   <SelectItem value="aluguel">Aluguel / Condomínio</SelectItem>
+                                   <SelectItem value="manutencao">Manutenção Frota</SelectItem>
+                                   <SelectItem value="combustivel">Combustível</SelectItem>
+                                   <SelectItem value="folha">Folha de Pagamento</SelectItem>
+                                   <SelectItem value="impostos">Impostos Diversos</SelectItem>
+                                   <SelectItem value="outros">Outros</SelectItem>
+                                 </SelectContent>
+                               </Select>
+                             </div>
+                             <div className="space-y-1">
+                               <Label className="text-xs">Centro de Custo / Unidade</Label>
+                               <Select defaultValue="matriz">
+                                 <SelectTrigger><SelectValue placeholder="Unidade..." /></SelectTrigger>
+                                 <SelectContent>
+                                   <SelectItem value="matriz">Matriz (SP) - Administrativo</SelectItem>
+                                   <SelectItem value="frota">Frota Própria</SelectItem>
+                                   <SelectItem value="op">Operacional Base</SelectItem>
+                                 </SelectContent>
+                               </Select>
+                             </div>
+                          </div>
 
-        {/* --- CONTAS A PAGAR --- */}
-        <TabsContent value="pagar" className="space-y-4 pt-4">
-           <Tabs value={subTabPagar} onValueChange={setSubTabPagar}>
-             <TabsList className="bg-muted/50">
-               <TabsTrigger value="prestadores" className="gap-2">
-                 <Users className="w-4 h-4" /> Pagamento a Prestadores
-                 <Badge variant="secondary" className="ml-1">{pagarAguardandoAprovacao.filter(p => p.status === "pendente").length}</Badge>
-               </TabsTrigger>
-               <TabsTrigger value="outras" className="gap-2">
-                 <FileText className="w-4 h-4" /> Outras Despesas
-               </TabsTrigger>
-             </TabsList>
+                          <div className="border border-orange-100 bg-orange-50/50 p-4 rounded-lg grid grid-cols-2 md:grid-cols-4 gap-4">
+                             <div className="col-span-2 md:col-span-1 space-y-1">
+                               <Label className="text-xs">Valor Original (R$)</Label>
+                               <Input type="number" placeholder="0,00" className="font-mono font-bold text-orange-700 text-lg" />
+                             </div>
+                             <div className="space-y-1">
+                               <Label className="text-xs">Acres/Multa/Juros (+)</Label>
+                               <Input type="number" placeholder="0,00" className="font-mono text-red-600" />
+                             </div>
+                             <div className="space-y-1">
+                               <Label className="text-xs">Descontos (-)</Label>
+                               <Input type="number" placeholder="0,00" className="font-mono text-green-600" />
+                             </div>
+                             <div className="space-y-1">
+                               <Label className="text-xs">Valor Total Pagar</Label>
+                               <Input disabled type="text" value="R$ 0,00" className="font-mono font-bold text-orange-700 bg-transparent border-none p-0 text-lg" />
+                             </div>
+                          </div>
 
-             {/* PAGAMENTO A PRESTADORES */}
-             <TabsContent value="prestadores" className="space-y-4 mt-4">
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                 <StatCard title="Total a Pagar" value={fmtFin(filtrarDoc(pagarPrestadores, "").reduce((acc, i: any) => acc + (i.status !== "paga" ? i.valor : 0), 0))} icon={DollarSign} color="#ea580c" />
-                 <StatCard title="Vencido" value={fmtFin(filtrarDoc(pagarPrestadores, "").reduce((acc, i: any) => acc + (i.status === "vencida" ? i.valor : 0), 0))} icon={ArrowUpRight} color="#dc2626" />
-                 <StatCard title="A Vencer (7 Dias)" value={fmtFin(filtrarDoc(pagarPrestadores, "").reduce((acc, i: any) => acc + (i.status === "a vencer" ? i.valor : 0), 0))} icon={ArrowUpRight} color="#eab308" />
-                 <StatCard title="Pago no Mês" value={fmtFin(filtrarDoc(pagarPrestadores, "").reduce((acc, i: any) => acc + (i.status === "paga" ? i.valor : 0), 0))} icon={DollarSign} color="#16a34a" />
-               </div>
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                             <div className="space-y-1">
+                               <Label className="text-xs">Documento/NF</Label>
+                               <Input placeholder="Nº Documento" />
+                             </div>
+                             <div className="space-y-1">
+                               <Label className="text-xs">Vencimento</Label>
+                               <Input type="date" />
+                             </div>
+                             <div className="space-y-1">
+                               <Label className="text-xs">Competência</Label>
+                               <Input placeholder="MM/AAAA" />
+                             </div>
+                             <div className="space-y-1 col-span-2">
+                               <Label className="text-xs">Forma de Pagamento</Label>
+                               <Select>
+                                 <SelectTrigger><SelectValue placeholder="PIX/Boleto..." /></SelectTrigger>
+                                 <SelectContent>
+                                   <SelectItem value="boleto">Boleto Bancário</SelectItem>
+                                   <SelectItem value="pix">PIX</SelectItem>
+                                   <SelectItem value="ted">TED / Transferência</SelectItem>
+                                   <SelectItem value="debito">Débito Automático</SelectItem>
+                                 </SelectContent>
+                               </Select>
+                             </div>
+                          </div>
 
-               {/* Fila de Aprovação */}
-               <Card className="border-yellow-200 bg-yellow-50">
-                 <CardHeader className="py-3">
-                   <CardTitle className="text-sm flex items-center gap-2">
-                     <Clock className="w-4 h-4 text-yellow-600" />
-                     Aguardando Aprovação ({pagarAguardandoAprovacao.filter(p => p.status === "pendente").length})
-                   </CardTitle>
-                 </CardHeader>
-                 <CardContent className="p-0">
-                   <Table>
-                     <TableHeader><TableRow><TableHead>OS</TableHead><TableHead>Prestador</TableHead><TableHead>Valor</TableHead><TableHead>Data Execução</TableHead><TableHead>Comprovante</TableHead><TableHead className="text-right">Ações</TableHead></TableRow></TableHeader>
-                     <TableBody>
-                       {pagarAguardandoAprovacao.filter(p => p.status === "pendente").map((p) => (
-                         <TableRow key={p.id}>
-                           <TableCell className="font-medium">{p.os}</TableCell>
-                           <TableCell>{p.prestador}</TableCell>
-                           <TableCell className="font-mono">{fmtFin(p.valor)}</TableCell>
-                           <TableCell>{p.dataExecucao}</TableCell>
-                           <TableCell><Badge variant="outline">{p.comprovante}</Badge></TableCell>
-                           <TableCell className="text-right">
-                             <Button size="sm" variant="outline" className="h-6 w-6 p-0"><Eye className="w-3 h-3" /></Button>
-                             <Button size="sm" variant="outline" className="h-6 w-6 p-0 ml-1 text-green-600"><Check className="w-3 h-3" /></Button>
-                             <Button size="sm" variant="outline" className="h-6 w-6 p-0 ml-1 text-red-600"><X className="w-3 h-3" /></Button>
-                           </TableCell>
-                         </TableRow>
-                       ))}
-                     </TableBody>
-                   </Table>
-                 </CardContent>
-               </Card>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1 flex flex-col justify-end">
+                               <Label className="text-xs mb-2">Lote CNAB</Label>
+                               <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 border rounded-md bg-muted/20">
+                                  <input type="checkbox" id="cnab" className="w-4 h-4 cursor-pointer" />
+                                  <Label htmlFor="cnab" className="cursor-pointer">Gerar para remessa em lote (CNAB)</Label>
+                               </div>
+                             </div>
+                             <div className="space-y-1">
+                               <Label className="text-xs">Conta Bancária de Saída</Label>
+                               <Select>
+                                 <SelectTrigger><SelectValue placeholder="De onde o dinheiro sairá?" /></SelectTrigger>
+                                 <SelectContent>
+                                   <SelectItem value="itau">Conta Corrente Principal Itaú</SelectItem>
+                                   <SelectItem value="poupanca">Conta Poupança Bradesco</SelectItem>
+                                   <SelectItem value="caixa">Caixa Físico Interno</SelectItem>
+                                 </SelectContent>
+                               </Select>
+                             </div>
+                          </div>
 
-               <Card>
-                 <CardHeader className="py-4 flex flex-row items-center justify-between">
-                   <div className="relative flex-1 max-w-sm">
-                     <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-                     <Input placeholder="Buscar prestador..." value={buscaPagar} onChange={(e) => setBuscaPagar(e.target.value)} className="pl-9" />
-                   </div>
-                   <Button className="bg-orange-600 hover:bg-orange-700 text-white"><Plus className="w-4 h-4 mr-2"/> Gerar Lote CNAB</Button>
-                 </CardHeader>
-                 <CardContent className="p-0">
-                   <Table>
-                     <TableHeader><TableRow><TableHead>Documento</TableHead><TableHead>Prestador</TableHead><TableHead>OS</TableHead><TableHead>Competência</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                     <TableBody>
-                       {filtrarDoc(pagarPrestadores, buscaPagar).map((p: any, i: number) => (
-                         <TableRow key={i}>
-                           <TableCell className="font-semibold">{p.doc}</TableCell>
-                           <TableCell>{p.fornecedor}</TableCell>
-                           <TableCell>{p.os || "—"}</TableCell>
-                           <TableCell>{p.competencia}</TableCell>
-                           <TableCell>{new Date(p.vencimento).toLocaleDateString()}</TableCell>
-                           <TableCell className="text-right font-medium">{fmtFin(p.valor)}</TableCell>
-                           <TableCell>
-                             <Badge variant="outline" className={p.status === "a vencer" ? "bg-blue-50 text-blue-700 border-blue-200" : p.status === "vencida" ? "bg-red-50 text-red-700 border-red-200" : p.status === "paga" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-700 border-gray-200"}>{p.status.toUpperCase()}</Badge>
-                           </TableCell>
-                         </TableRow>
-                       ))}
-                     </TableBody>
-                   </Table>
-                 </CardContent>
-               </Card>
-             </TabsContent>
-
-             {/* OUTRAS DESPESAS */}
-             <TabsContent value="outras" className="space-y-4 mt-4">
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                 <StatCard title="Total a Pagar" value={fmtFin(filtrarDoc(pagarOutros, "").reduce((acc, i: any) => acc + (i.status !== "paga" ? i.valor : 0), 0))} icon={DollarSign} color="#ea580c" />
-                 <StatCard title="Vencido" value={fmtFin(filtrarDoc(pagarOutros, "").reduce((acc, i: any) => acc + (i.status === "vencida" ? i.valor : 0), 0))} icon={ArrowUpRight} color="#dc2626" />
-                 <StatCard title="A Vencer (7 Dias)" value={fmtFin(filtrarDoc(pagarOutros, "").reduce((acc, i: any) => acc + (i.status === "a vencer" ? i.valor : 0), 0))} icon={ArrowUpRight} color="#eab308" />
-                 <StatCard title="Pago no Mês" value={fmtFin(filtrarDoc(pagarOutros, "").reduce((acc, i: any) => acc + (i.status === "paga" ? i.valor : 0), 0))} icon={DollarSign} color="#16a34a" />
-               </div>
-
-               <Card>
-                 <CardHeader className="py-4 flex flex-row items-center justify-between">
-                   <div className="relative flex-1 max-w-sm">
-                     <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-                     <Input placeholder="Buscar despesa..." value={buscaPagar} onChange={(e) => setBuscaPagar(e.target.value)} className="pl-9" />
-                   </div>
-                   <Dialog>
-                     <DialogTrigger asChild>
-                       <Button className="bg-orange-600 hover:bg-orange-700 text-white"><Plus className="w-4 h-4 mr-2"/> Nova Despesa</Button>
-                     </DialogTrigger>
-                     <DialogContent>
-                       <DialogHeader><DialogTitle>Nova Despesa</DialogTitle></DialogHeader>
-                       <div className="space-y-4 py-4">
-                         <div><Label>Fornecedor</Label><Input placeholder="Nome do fornecedor" className="mt-1" /></div>
-                         <div><Label>Categoria</Label>
-                           <Select>
-                             <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione a categoria" /></SelectTrigger>
-                             <SelectContent>
-                               {categoriasPagar.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                             </SelectContent>
-                           </Select>
-                         </div>
-                         <div className="grid grid-cols-2 gap-4">
-                           <div><Label>Vencimento</Label><Input type="date" className="mt-1" /></div>
-                           <div><Label>Valor</Label><Input type="number" placeholder="0,00" className="mt-1" /></div>
-                         </div>
-                         <div><Label>Competência</Label><Input placeholder="MM/AAAA" className="mt-1" /></div>
-                         <div className="flex items-center gap-2"><input type="checkbox" id="recorrente" /> <Label htmlFor="recorrente">Despesa recorrente?</Label></div>
-                       </div>
-                       <DialogFooter>
-                         <Button variant="outline">Cancelar</Button>
-                         <Button className="bg-orange-500">Salvar</Button>
-                       </DialogFooter>
-                     </DialogContent>
+                          <div className="space-y-1">
+                             <Label className="text-xs">Observações / Histórico</Label>
+                             <Textarea placeholder="Descreva os detalhes desta despesa..." className="resize-none" />
+                          </div>
+                        </div>
+                        
+                        <DialogFooter>
+                          <Button variant="outline">Cancelar</Button>
+                          <Button className="bg-orange-600 hover:bg-orange-700 font-bold gap-2"><Check className="w-4 h-4"/> Salvar Despesa</Button>
+                        </DialogFooter>
+                      </DialogContent>
                    </Dialog>
                  </CardHeader>
                  <CardContent className="p-0">
@@ -375,6 +360,11 @@ export default function Financeiro() {
                </Card>
              </TabsContent>
            </Tabs>
+        </TabsContent>
+
+        {/* --- CONTAS & CAIXAS (NOVO) --- */}
+        <TabsContent value="contas-caixas" className="pt-4">
+           <ContasBancarias />
         </TabsContent>
 
         {/* --- FLUXO DE CAIXA ENTERPRISE --- */}
@@ -523,61 +513,63 @@ export default function Financeiro() {
 
         {/* --- RECIBOS --- */}
         <TabsContent value="recibos" className="space-y-4 pt-4">
-           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-             <div>
-               <h2 className="text-xl font-bold flex items-center gap-2">
-                 <Receipt className="w-6 h-6 text-primary" />
-                 Recibos
-               </h2>
-               <p className="text-sm text-muted-foreground">Geração de recibos de prestação de serviço</p>
-             </div>
-             <Button className="bg-orange-500 hover:bg-orange-600"><Plus className="w-4 h-4 mr-2"/> Novo Recibo</Button>
-           </div>
-
-           <Card>
-             <CardHeader className="py-3">
-               <CardTitle className="text-sm">Lista de Recibos Emitidos</CardTitle>
-             </CardHeader>
-             <CardContent className="p-0">
-               <Table>
-                 <TableHeader>
-                   <TableRow>
-                     <TableHead>Nº Recibo</TableHead>
-                     <TableHead>OS</TableHead>
-                     <TableHead>Prestador</TableHead>
-                     <TableHead>CPF/CNPJ</TableHead>
-                     <TableHead>Serviço</TableHead>
-                     <TableHead>Data Serviço</TableHead>
-                     <TableHead className="text-right">Valor Líquido</TableHead>
-                     <TableHead>Status</TableHead>
-                     <TableHead className="text-right">Ações</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                   {recibos.map((r) => (
-                     <TableRow key={r.id}>
-                       <TableCell className="font-medium">{r.numero}</TableCell>
-                       <TableCell>{r.os}</TableCell>
-                       <TableCell>{r.prestador}</TableCell>
-                       <TableCell className="text-xs font-mono">{r.cpfCnpj}</TableCell>
-                       <TableCell>{r.servico}</TableCell>
-                       <TableCell>{r.dataServico}</TableCell>
-                       <TableCell className="text-right font-mono font-semibold">{fmtFin(r.valorLiquido)}</TableCell>
-                       <TableCell>
-                         <Badge className={r.status === "emitido" ? "bg-blue-100 text-blue-800" : "bg-green-100 text-green-800"}>
-                           {r.status === "emitido" ? "Emitido" : "Pago"}
-                         </Badge>
-                       </TableCell>
-                       <TableCell className="text-right">
-                         <Button size="sm" variant="ghost" className="h-6 w-6 p-0"><Eye className="w-3 h-3" /></Button>
-                         <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500"><FileX className="w-3 h-3" /></Button>
-                       </TableCell>
-                     </TableRow>
-                   ))}
-                 </TableBody>
-               </Table>
-             </CardContent>
-           </Card>
+           <Tabs defaultValue="lista">
+             <TabsList className="mb-4 bg-muted/50">
+               <TabsTrigger value="lista"><FileCheck className="w-4 h-4 mr-2" /> Recibos Emitidos</TabsTrigger>
+               <TabsTrigger value="novo-rapido"><Plus className="w-4 h-4 mr-2" /> Recibo Rápido</TabsTrigger>
+             </TabsList>
+             
+             <TabsContent value="lista" className="space-y-4">
+               <Card>
+                 <CardHeader className="py-3 flex flex-row items-center justify-between">
+                   <CardTitle className="text-sm">Lista de Recibos Emitidos</CardTitle>
+                 </CardHeader>
+                 <CardContent className="p-0">
+                   <Table>
+                     <TableHeader>
+                       <TableRow>
+                         <TableHead>Nº Recibo</TableHead>
+                         <TableHead>OS</TableHead>
+                         <TableHead>Prestador/Cliente</TableHead>
+                         <TableHead>CPF/CNPJ</TableHead>
+                         <TableHead>Serviço</TableHead>
+                         <TableHead>Data Serviço</TableHead>
+                         <TableHead className="text-right">Valor Líquido</TableHead>
+                         <TableHead>Status</TableHead>
+                         <TableHead className="text-right">Ações</TableHead>
+                       </TableRow>
+                     </TableHeader>
+                     <TableBody>
+                       {recibos.map((r) => (
+                         <TableRow key={r.id}>
+                           <TableCell className="font-medium text-xs">{r.numero}</TableCell>
+                           <TableCell>{r.os}</TableCell>
+                           <TableCell>{r.prestador}</TableCell>
+                           <TableCell className="text-xs font-mono">{r.cpfCnpj}</TableCell>
+                           <TableCell className="text-xs">{r.servico}</TableCell>
+                           <TableCell className="text-xs">{r.dataServico}</TableCell>
+                           <TableCell className="text-right font-mono font-semibold text-sm">{fmtFin(r.valorLiquido)}</TableCell>
+                           <TableCell>
+                             <Badge variant="outline" className={r.status === "emitido" ? "bg-blue-50 text-blue-800 border-blue-200" : "bg-green-50 text-green-800 border-green-200"}>
+                               {r.status === "emitido" ? "Emitido" : "Pago"}
+                             </Badge>
+                           </TableCell>
+                           <TableCell className="text-right">
+                             <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-muted"><Eye className="w-3.5 h-3.5 text-slate-500" /></Button>
+                             <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-red-50 text-red-500"><FileX className="w-3.5 h-3.5" /></Button>
+                           </TableCell>
+                         </TableRow>
+                       ))}
+                     </TableBody>
+                   </Table>
+                 </CardContent>
+               </Card>
+             </TabsContent>
+             
+             <TabsContent value="novo-rapido">
+                <ReciboRapido />
+             </TabsContent>
+           </Tabs>
         </TabsContent>
 
         {/* --- RENTABILIDADE --- */}
