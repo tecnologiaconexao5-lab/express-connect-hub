@@ -76,27 +76,42 @@ interface KPICardProps {
   icon: React.ElementType;
   color: string;
   trend?: number;
+  variant?: "default" | "gradient-blue" | "gradient-green" | "gradient-red" | "gradient-purple" | "gradient-amber";
 }
 
-const KPICard = ({ title, value, subValue, icon: Icon, color, trend }: KPICardProps) => (
-  <Card className="border-l-4" style={{ borderLeftColor: color }}>
-    <CardContent className="p-4 flex items-center justify-between">
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground uppercase">{title}</p>
-        <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-        {subValue && <p className="text-[10px] text-muted-foreground mt-1">{subValue}</p>}
-        {trend !== undefined && (
-          <p className={`text-xs font-semibold mt-1 ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {trend >= 0 ? '↑' : '↓'} {fmtPct(trend)} vs mês ant.
-          </p>
-        )}
-      </div>
-      <div className="p-3 bg-muted rounded-full">
-        <Icon className="w-5 h-5" style={{ color }} />
-      </div>
-    </CardContent>
-  </Card>
-);
+const KPICard = ({ title, value, subValue, icon: Icon, color, trend, variant = "default" }: KPICardProps) => {
+  const gradientClass = {
+    "default": "bg-card border-l-4",
+    "gradient-blue": "bg-gradient-to-br from-blue-500 to-blue-700 text-white border-none",
+    "gradient-green": "bg-gradient-to-br from-emerald-500 to-emerald-700 text-white border-none",
+    "gradient-red": "bg-gradient-to-br from-red-500 to-red-700 text-white border-none",
+    "gradient-purple": "bg-gradient-to-br from-purple-500 to-purple-700 text-white border-none",
+    "gradient-amber": "bg-gradient-to-br from-amber-500 to-orange-600 text-white border-none",
+  }[variant];
+
+  const isGradient = variant !== "default";
+
+  return (
+    <Card className={`${gradientClass} shadow-md hover:shadow-lg transition-all hover:-translate-y-0.5`} style={variant === "default" ? { borderLeftColor: color } : {}}>
+      <CardContent className="p-5 flex items-center justify-between">
+        <div className="flex-1">
+          <p className={`text-xs font-semibold uppercase ${isGradient ? "text-white/80" : "text-muted-foreground"}`}>{title}</p>
+          <p className="text-2xl font-bold mt-1" style={isGradient ? { color: "white" } : { color }}>{value}</p>
+          {subValue && <p className={`text-[10px] mt-1 ${isGradient ? "text-white/70" : "text-muted-foreground"}`}>{subValue}</p>}
+          {trend !== undefined && (
+            <p className={`text-xs font-semibold mt-2 flex items-center gap-1 ${trend >= 0 ? (isGradient ? "text-green-200" : "text-green-600") : (isGradient ? "text-red-200" : "text-red-600")}`}>
+              {trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingUp className="w-3 h-3 rotate-180" />}
+              {fmtPct(trend)} vs mês ant.
+            </p>
+          )}
+        </div>
+        <div className={`p-3 rounded-xl ${isGradient ? "bg-white/20" : "bg-muted"}`}>
+          <Icon className="w-6 h-6" style={isGradient ? { color: "white" } : { color }} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 export default function DashboardFinanceiroEnterprise() {
   const [receber, setReceber] = useState<any[]>([]);

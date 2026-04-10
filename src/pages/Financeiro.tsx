@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Download, UploadCloud, PieChart, CheckCircle2, MoreHorizontal, FileText, Target, UserMinus, ShieldCheck, CreditCard, ArrowRightLeft, Plus, Search, LayoutDashboard, Calculator, BookOpen, Landmark, Users, Package, Clock, Receipt, TrendingUpIcon, FileCheck, FileX, Check, X, Eye, Edit, Trash2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -34,6 +34,28 @@ const categoriasPagar = [
   "Energia elétrica", "Água", "Aluguel", "Internet/telefone", 
   "Software/licenças", "Combustível frota própria", "Manutenção", 
   "Folha de pagamento (CLT)", "Impostos (DAS, DCTF, etc.)", "Outros"
+];
+
+const mockClientes = [
+  { id: 1, nome: "Magazine Luiza", cnpj: "47.960.950/0001-62", email: "financeiro@magazineluiza.com.br", telefone: "(11) 3500-0000" },
+  { id: 2, nome: "Amazon Brasil", cnpj: "15.436.940/0001-62", email: "logistica@amazon.com.br", telefone: "(11) 3224-0000" },
+  { id: 3, nome: "Mercado Livre", cnpj: "03.432.307/0001-41", email: "contas@mercadolivre.com.br", telefone: "(11) 3003-0000" },
+  { id: 4, nome: "Shopee", cnpj: "20.870.774/0001-06", email: "financeiro@shopee.com.br", telefone: "(11) 4000-0000" },
+  { id: 5, nome: "Americanas", cnpj: "06.169.553/0001-64", email: "pagamentos@americanas.com.br", telefone: "(11) 4003-0000" },
+  { id: 6, nome: "Tech Solutions", cnpj: "12.345.678/0001-90", email: "financeiro@techsolutions.com.br", telefone: "(11) 99999-0001" },
+  { id: 7, nome: "Indústria Global", cnpj: "98.765.432/0001-10", email: "financeiro@industriaglobal.com.br", telefone: "(11) 99999-0002" },
+  { id: 8, nome: "Comércio Varejo", cnpj: "55.555.555/0001-11", email: "financeiro@commerciovarejoltda.com.br", telefone: "(11) 99999-0003" },
+];
+
+const mockFornecedores = [
+  { id: 1, nome: "João Silva - ME", cnpj: "123.456.789-00", segmento: "Transporte" },
+  { id: 2, nome: "Transporte Rápido LTDA", cnpj: "12.345.678/0001-90", segmento: "Transporte" },
+  { id: 3, nome: "Maria Freitas", cnpj: "987.654.321-00", segmento: "Transporte" },
+  { id: 4, nome: "Companhia de Energia", cnpj: "33.333.333/0001-33", segmento: "Utilidade" },
+  { id: 5, nome: "Locação de Galpão", cnpj: "44.444.444/0001-44", segmento: "Imóvel" },
+  { id: 6, nome: "Posto Ipiranga", cnpj: "55.555.555/0001-55", segmento: "Combustível" },
+  { id: 7, nome: "Pedágio BR-101", cnpj: "66.666.666/0001-66", segmento: "Pedágio" },
+  { id: 8, nome: "Seguradora Sancor", cnpj: "77.777.777/0001-77", segmento: "Seguro" },
 ];
 
 const mockRecibos = [
@@ -80,14 +102,48 @@ export default function Financeiro() {
   const [dateRange, setDateRange] = useState<{from: Date | undefined; to: Date | undefined}>({ from: undefined, to: undefined });
 
   const [showNovaReceita, setShowNovaReceita] = useState(false);
+  const [buscaCliente, setBuscaCliente] = useState("");
   const [novaReceita, setNovaReceita] = useState({
     fatura: "",
-    cliente: "",
+    clienteId: "",
+    clienteNome: "",
+    clienteCnpj: "",
+    clienteEmail: "",
     os_vinculadas: "",
     competencia: "",
     vencimento: "",
-    valor: 0
+    valor: 0,
+    desconto: 0,
+    juros: 0,
+    multa: 0,
+    valorLiquido: 0,
+    formaRecebimento: "",
+    contaFinanceira: "",
+    categoria: "",
+    planoContas: "",
+    centroResultado: "",
+    observacoes: "",
+    contrato: "",
+    proposta: ""
   });
+
+  const clientesFiltrados = mockClientes.filter(c => 
+    c.nome.toLowerCase().includes(buscaCliente.toLowerCase()) ||
+    c.cnpj.includes(buscaCliente)
+  );
+
+  const handleSelecionarCliente = (cliente: any) => {
+    setNovaReceita({
+      ...novaReceita,
+      clienteId: cliente.id.toString(),
+      clienteNome: cliente.nome,
+      clienteCnpj: cliente.cnpj,
+      clienteEmail: cliente.email
+    });
+    setBuscaCliente("");
+  };
+
+  const valorLiquidoReceita = novaReceita.valor - novaReceita.desconto + novaReceita.juros + novaReceita.multa;
 
   const [showNovaDespesa, setShowNovaDespesa] = useState(false);
   const [novaDespesa, setNovaDespesa] = useState({
@@ -104,23 +160,36 @@ export default function Financeiro() {
   });
 
   const handleSalvarReceita = async () => {
-    if (!novaReceita.cliente || !novaReceita.valor) {
-      toast.error("Preencha cliente e valor");
+    if (!novaReceita.clienteNome || !novaReceita.valor) {
+      toast.error("Preencha o cliente e valor");
       return;
     }
     const nova: any = {
       id: Date.now(),
       fatura: novaReceita.fatura || `FAT-${Date.now()}`,
-      cliente: novaReceita.cliente,
+      cliente: novaReceita.clienteNome,
+      clienteId: novaReceita.clienteId,
+      clienteCnpj: novaReceita.clienteCnpj,
       os_vinculadas: novaReceita.os_vinculadas,
       competencia: novaReceita.competencia || new Date().toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" }),
       vencimento: novaReceita.vencimento || new Date(Date.now() + 30 * 86400000).toISOString(),
       valor: novaReceita.valor,
+      valorLiquido: valorLiquidoReceita,
+      desconto: novaReceita.desconto,
+      juros: novaReceita.juros,
+      multa: novaReceita.multa,
+      formaRecebimento: novaReceita.formaRecebimento,
+      categoria: novaReceita.categoria,
+      centroResultado: novaReceita.centroResultado,
+      contrato: novaReceita.contrato,
+      proposta: novaReceita.proposta,
       status: "a vencer"
     };
     setReceber([...receber, nova]);
     setShowNovaReceita(false);
-    setNovaReceita({ fatura: "", cliente: "", os_vinculadas: "", competencia: "", vencimento: "", valor: 0 });
+    setNovaReceita({
+      fatura: "", clienteId: "", clienteNome: "", clienteCnpj: "", clienteEmail: "", os_vinculadas: "", competencia: "", vencimento: "", valor: 0, desconto: 0, juros: 0, multa: 0, valorLiquido: 0, formaRecebimento: "", contaFinanceira: "", categoria: "", planoContas: "", centroResultado: "", observacoes: "", contrato: "", proposta: ""
+    });
     toast.success("Receita cadastrada!");
   };
 
@@ -274,23 +343,161 @@ export default function Financeiro() {
                   <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
                   <Input placeholder="Buscar fatura ou cliente..." value={buscaReceber} onChange={(e) => setBuscaReceber(e.target.value)} className="pl-9" />
                 </div>
-                <Dialog open={showNovaReceita} onOpenChange={setShowNovaReceita}>
-                  <DialogTrigger asChild>
-                    <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm"><Plus className="w-4 h-4 mr-2"/> Nova Receita (Faturar)</Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-2xl">
-                    <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><ArrowDownRight className="w-5 h-5 text-blue-600"/> Nova Receita - Contas a Receber</DialogTitle></DialogHeader>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-                      <div className="space-y-1"><Label className="text-xs">Fatura / Nº Documento</Label><Input value={novaReceita.fatura} onChange={(e) => setNovaReceita({...novaReceita, fatura: e.target.value})} placeholder="Ex: FAT-0046" /></div>
-                      <div className="space-y-1"><Label className="text-xs">Cliente *</Label><Input value={novaReceita.cliente} onChange={(e) => setNovaReceita({...novaReceita, cliente: e.target.value})} placeholder="Nome do cliente" /></div>
-                      <div className="space-y-1"><Label className="text-xs">OS Vinculadas</Label><Input value={novaReceita.os_vinculadas} onChange={(e) => setNovaReceita({...novaReceita, os_vinculadas: e.target.value})} placeholder="OS-4001, OS-4002" /></div>
-                      <div className="space-y-1"><Label className="text-xs">Competência</Label><Input value={novaReceita.competencia} onChange={(e) => setNovaReceita({...novaReceita, competencia: e.target.value})} placeholder="MM/AAAA" /></div>
-                      <div className="space-y-1"><Label className="text-xs">Vencimento</Label><Input type="date" value={novaReceita.vencimento ? novaReceita.vencimento.split("T")[0] : ""} onChange={(e) => setNovaReceita({...novaReceita, vencimento: e.target.value})} /></div>
-                      <div className="space-y-1"><Label className="text-xs">Valor (R$) *</Label><Input type="number" value={novaReceita.valor || ""} onChange={(e) => setNovaReceita({...novaReceita, valor: Number(e.target.value)})} placeholder="0,00" className="font-bold" /></div>
-                    </div>
-                    <DialogFooter><Button variant="outline" onClick={() => setShowNovaReceita(false)}>Cancelar</Button><Button className="bg-blue-600" onClick={handleSalvarReceita}><Check className="w-4 h-4 mr-2"/> Salvar Receita</Button></DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                 <Dialog open={showNovaReceita} onOpenChange={setShowNovaReceita}>
+                   <DialogTrigger asChild>
+                     <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm"><Plus className="w-4 h-4 mr-2"/> Nova Receita (Faturar)</Button>
+                   </DialogTrigger>
+                   <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                     <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><ArrowDownRight className="w-5 h-5 text-blue-600"/> Nova Receita - Contas a Receber</DialogTitle></DialogHeader>
+                     
+                     <div className="space-y-6 py-4">
+                       {/* Busca de Cliente */}
+                       <div className="space-y-2">
+                         <Label className="text-xs font-semibold">Cliente Vinculado *</Label>
+                         {!novaReceita.clienteId ? (
+                           <div className="relative">
+                             <Input 
+                               placeholder="Buscar cliente por nome ou CNPJ..." 
+                               value={buscaCliente} 
+                               onChange={(e) => setBuscaCliente(e.target.value)}
+                               className="w-full"
+                             />
+                             {buscaCliente && clientesFiltrados.length > 0 && (
+                               <div className="absolute z-10 w-full mt-1 bg-card border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                 {clientesFiltrados.map((c) => (
+                                   <div 
+                                     key={c.id} 
+                                     className="p-2 hover:bg-muted cursor-pointer border-b last:border-0"
+                                     onClick={() => handleSelecionarCliente(c)}
+                                   >
+                                     <p className="font-medium text-sm">{c.nome}</p>
+                                     <p className="text-xs text-muted-foreground">{c.cnpj}</p>
+                                   </div>
+                                 ))}
+                               </div>
+                             )}
+                           </div>
+                         ) : (
+                           <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                             <div className="flex-1">
+                               <p className="font-semibold text-sm">{novaReceita.clienteNome}</p>
+                               <p className="text-xs text-blue-600">{novaReceita.clienteCnpj}</p>
+                               <p className="text-xs text-muted-foreground">{novaReceita.clienteEmail}</p>
+                             </div>
+                             <Button variant="ghost" size="sm" onClick={() => setNovaReceita({...novaReceita, clienteId: "", clienteNome: "", clienteCnpj: "", clienteEmail: ""})}>
+                               <X className="w-4 h-4" />
+                             </Button>
+                           </div>
+                         )}
+                       </div>
+
+                       {/* Dados da Fatura */}
+                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                         <div className="space-y-2">
+                           <Label className="text-xs">Fatura / Nº Documento</Label>
+                           <Input value={novaReceita.fatura} onChange={(e) => setNovaReceita({...novaReceita, fatura: e.target.value})} placeholder="Ex: FAT-0046" />
+                         </div>
+                         <div className="space-y-2">
+                           <Label className="text-xs">OS Vinculadas</Label>
+                           <Input value={novaReceita.os_vinculadas} onChange={(e) => setNovaReceita({...novaReceita, os_vinculadas: e.target.value})} placeholder="OS-4001, OS-4002" />
+                         </div>
+                         <div className="space-y-2">
+                           <Label className="text-xs">Contrato Vinculado</Label>
+                           <Input value={novaReceita.contrato} onChange={(e) => setNovaReceita({...novaReceita, contrato: e.target.value})} placeholder="Nº do contrato" />
+                         </div>
+                         <div className="space-y-2">
+                           <Label className="text-xs">Competência</Label>
+                           <Input value={novaReceita.competencia} onChange={(e) => setNovaReceita({...novaReceita, competencia: e.target.value})} placeholder="MM/AAAA" />
+                         </div>
+                         <div className="space-y-2">
+                           <Label className="text-xs">Vencimento</Label>
+                           <Input type="date" value={novaReceita.vencimento ? novaReceita.vencimento.split("T")[0] : ""} onChange={(e) => setNovaReceita({...novaReceita, vencimento: e.target.value})} />
+                         </div>
+                         <div className="space-y-2">
+                           <Label className="text-xs">Centro de Resultado</Label>
+                           <Select value={novaReceita.centroResultado} onValueChange={(v) => setNovaReceita({...novaReceita, centroResultado: v})}>
+                             <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                             <SelectContent>
+                               <SelectItem value="sp">Matriz SP</SelectItem>
+                               <SelectItem value="rj">Filial RJ</SelectItem>
+                               <SelectItem value="mg">Filial MG</SelectItem>
+                             </SelectContent>
+                           </Select>
+                         </div>
+                       </div>
+
+                       {/* Valores */}
+                       <div className="border-t pt-4 space-y-4">
+                         <h4 className="font-semibold text-sm">Valores</h4>
+                         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                           <div className="space-y-2">
+                             <Label className="text-xs">Valor Bruto (R$) *</Label>
+                             <Input type="number" value={novaReceita.valor || ""} onChange={(e) => setNovaReceita({...novaReceita, valor: Number(e.target.value)})} placeholder="0,00" className="font-bold" />
+                           </div>
+                           <div className="space-y-2">
+                             <Label className="text-xs">Desconto (-)</Label>
+                             <Input type="number" value={novaReceita.desconto || ""} onChange={(e) => setNovaReceita({...novaReceita, desconto: Number(e.target.value)})} placeholder="0,00" className="text-green-600" />
+                           </div>
+                           <div className="space-y-2">
+                             <Label className="text-xs">Juros (+)</Label>
+                             <Input type="number" value={novaReceita.juros || ""} onChange={(e) => setNovaReceita({...novaReceita, juros: Number(e.target.value)})} placeholder="0,00" className="text-red-600" />
+                           </div>
+                           <div className="space-y-2">
+                             <Label className="text-xs">Multa (+)</Label>
+                             <Input type="number" value={novaReceita.multa || ""} onChange={(e) => setNovaReceita({...novaReceita, multa: Number(e.target.value)})} placeholder="0,00" className="text-red-600" />
+                           </div>
+                           <div className="space-y-2">
+                             <Label className="text-xs">Valor Líquido</Label>
+                             <div className="p-2 bg-blue-50 border border-blue-200 rounded-lg font-bold text-lg text-center">{fmtFin(valorLiquidoReceita)}</div>
+                           </div>
+                         </div>
+                       </div>
+
+                       {/* Forma de Recebimento */}
+                       <div className="grid grid-cols-2 gap-4">
+                         <div className="space-y-2">
+                           <Label className="text-xs">Forma de Recebimento</Label>
+                           <Select value={novaReceita.formaRecebimento} onValueChange={(v) => setNovaReceita({...novaReceita, formaRecebimento: v})}>
+                             <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                             <SelectContent>
+                               <SelectItem value="boleto">Boleto</SelectItem>
+                               <SelectItem value="transferencia">Transferência</SelectItem>
+                               <SelectItem value="deposito">Depósito</SelectItem>
+                               <SelectItem value="pix">PIX</SelectItem>
+                               <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                               <SelectItem value="cheque">Cheque</SelectItem>
+                             </SelectContent>
+                           </Select>
+                         </div>
+                         <div className="space-y-2">
+                           <Label className="text-xs">Categoria / Plano de Contas</Label>
+                           <Select value={novaReceita.categoria} onValueChange={(v) => setNovaReceita({...novaReceita, categoria: v})}>
+                             <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                             <SelectContent>
+                               <SelectItem value="frete">Frete</SelectItem>
+                               <SelectItem value="armazenagem">Armazenagem</SelectItem>
+                               <SelectItem value="last-mile">Last Mile</SelectItem>
+                               <SelectItem value="distribuicao">Distribuição</SelectItem>
+                               <SelectItem value="operacao-dedicada">Operação Dedicada</SelectItem>
+                               <SelectItem value="receita-financeira">Receita Financeira</SelectItem>
+                               <SelectItem value="outras">Outras Receitas</SelectItem>
+                             </SelectContent>
+                           </Select>
+                         </div>
+                       </div>
+
+                       <div className="space-y-2">
+                         <Label className="text-xs">Observações</Label>
+                         <Textarea value={novaReceita.observacoes} onChange={(e) => setNovaReceita({...novaReceita, observacoes: e.target.value})} placeholder="Observações sobre esta receita..." className="resize-none" />
+                       </div>
+                     </div>
+
+                     <DialogFooter>
+                       <Button variant="outline" onClick={() => setShowNovaReceita(false)}>Cancelar</Button>
+                       <Button className="bg-blue-600" onClick={handleSalvarReceita}><Check className="w-4 h-4 mr-2"/> Salvar Receita</Button>
+                     </DialogFooter>
+                   </DialogContent>
+                 </Dialog>
              </CardHeader>
              <CardContent className="p-0">
                <Table>
