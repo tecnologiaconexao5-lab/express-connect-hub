@@ -359,8 +359,6 @@ export default function Financeiro() {
                  </CardContent>
                </Card>
              </TabsContent>
-           </Tabs>
-        </TabsContent>
 
         {/* --- CONTAS & CAIXAS (NOVO) --- */}
         <TabsContent value="contas-caixas" className="pt-4">
