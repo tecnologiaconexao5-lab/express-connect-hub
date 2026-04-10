@@ -1,4 +1,4 @@
-import { DollarSign, Activity, Users, TrendingUp, UserCheck, CheckCircle2, Receipt, Clock } from "lucide-react";
+import { DollarSign, Activity, Users, TrendingUp, UserCheck, CheckCircle2, Receipt, Clock, TrendingDown, Package, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { kpisExecutivo, faturamentoMensal, operacoesSemana, operacoesTipoVeiculo, topClientes, CORES_GRAFICOS } from "./mockData";
@@ -7,33 +7,39 @@ import { AniversariantesWidget } from "@/components/comunicacao/AniversariantesW
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const fmtN = (v: number) => v.toLocaleString("pt-BR");
 
-const KpiCard = ({ title, value, icon: Icon, accent = false }: { title: string; value: string; icon: any; accent?: boolean }) => (
-  <Card className={`relative overflow-hidden transition-all hover:shadow-md ${accent ? "border-primary bg-gradient-to-br from-primary/10 to-primary/5 border-2 shadow-sm" : "border-border/50 bg-card/60 backdrop-blur-sm"}`}>
-    <CardContent className="p-6">
+const KpiCard = ({ title, value, icon: Icon, accent = false, trend }: { title: string; value: string; icon: any; accent?: boolean; trend?: "up" | "down" | "neutral" }) => (
+  <Card className={`relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-0.5 ${accent ? "bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-slate-700 shadow-xl" : "border-border/50 bg-card shadow-sm hover:shadow-md"}`}>
+    <CardContent className="p-5">
       <div className="flex items-start justify-between">
-        <div className="space-y-2">
-          <p className={`text-xs font-semibold uppercase tracking-wider ${accent ? "text-primary" : "text-muted-foreground"}`}>{title}</p>
-          <p className="text-3xl font-bold tracking-tight text-foreground">{value}</p>
+        <div className="space-y-2 flex-1">
+          <p className={`text-xs font-semibold uppercase tracking-wider ${accent ? "text-slate-300" : "text-muted-foreground"}`}>{title}</p>
+          <p className={`text-3xl font-extrabold tracking-tight ${accent ? "text-white" : "text-foreground"}`}>{value}</p>
+          {trend && (
+            <div className={`flex items-center gap-1 text-xs ${trend === "up" ? "text-emerald-400" : trend === "down" ? "text-rose-400" : "text-slate-400"}`}>
+              {trend === "up" ? <TrendingUp className="w-3 h-3" /> : trend === "down" ? <TrendingDown className="w-3 h-3" /> : null}
+              <span>{trend === "up" ? "+12%" : trend === "down" ? "-5%" : "0%"}</span>
+            </div>
+          )}
         </div>
-        <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-inner ${accent ? "bg-primary text-primary-foreground" : "bg-muted/80 text-foreground"}`}>
+        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${accent ? "bg-white/10 text-white" : "bg-primary/10 text-primary"}`}>
           <Icon className="w-6 h-6" />
         </div>
       </div>
     </CardContent>
+    {accent && <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-transparent pointer-events-none" />}
   </Card>
 );
 
-const KpiSmall = ({ title, value, icon: Icon }: { title: string; value: string; icon: any }) => (
-  <Card className="border-border/40 bg-card/40 hover:bg-card/60 transition-colors backdrop-blur-sm shadow-sm">
-    <CardContent className="p-4 flex flex-col justify-center gap-2">
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center ring-1 ring-primary/20">
-          <Icon className="w-4 h-4 text-primary" />
-        </div>
-        <div>
-          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{title}</p>
-          <p className="text-xl font-bold text-foreground leading-none mt-1">{value}</p>
-        </div>
+const KpiSmall = ({ title, value, icon: Icon, subtext }: { title: string; value: string; icon: any; subtext?: string }) => (
+  <Card className="border-border/40 bg-gradient-to-br from-card to-card/80 shadow-sm hover:shadow-md transition-all">
+    <CardContent className="p-4 flex items-center gap-4">
+      <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0">
+        <Icon className="w-5 h-5 text-primary" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide truncate">{title}</p>
+        <p className="text-xl font-bold text-foreground leading-none mt-1 truncate">{value}</p>
+        {subtext && <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{subtext}</p>}
       </div>
     </CardContent>
   </Card>
@@ -43,26 +49,26 @@ const TabExecutivo = () => (
   <div className="space-y-6">
     <AniversariantesWidget />
 
-    {/* Linha 1 — 4 KPIs grandes */}
+    {/* Linha 1 — 4 KPIs grandes Premium */}
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <KpiCard title="Faturamento do mês" value={fmt(kpisExecutivo.faturamentoMes)} icon={DollarSign} accent />
-      <KpiCard title="Total de operações" value={fmtN(kpisExecutivo.totalOperacoes)} icon={Activity} />
+      <KpiCard title="Faturamento do mês" value={fmt(kpisExecutivo.faturamentoMes)} icon={DollarSign} accent trend="up" />
+      <KpiCard title="Total de operações" value={fmtN(kpisExecutivo.totalOperacoes)} icon={Activity} trend="up" />
       <KpiCard title="Prestadores ativos" value={fmtN(kpisExecutivo.prestadoresAtivos)} icon={Users} />
-      <KpiCard title="Margem média" value={`${kpisExecutivo.margemMedia}%`} icon={TrendingUp} />
+      <KpiCard title="Margem média" value={`${kpisExecutivo.margemMedia}%`} icon={TrendingUp} trend="neutral" />
     </div>
 
     {/* Linha 2 — 4 KPIs menores */}
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <KpiSmall title="Clientes ativos" value={fmtN(kpisExecutivo.clientesAtivos)} icon={UserCheck} />
-      <KpiSmall title="Ordens concluídas" value={fmtN(kpisExecutivo.ordensConcluidas)} icon={CheckCircle2} />
-      <KpiSmall title="Ticket médio" value={fmt(kpisExecutivo.ticketMedio)} icon={Receipt} />
-      <KpiSmall title="Entrega no prazo" value={`${kpisExecutivo.entregaNoPrazo}%`} icon={Clock} />
+      <KpiSmall title="Clientes ativos" value={fmtN(kpisExecutivo.clientesAtivos)} icon={UserCheck} subtext="+3 novos" />
+      <KpiSmall title="Ordens concluídas" value={fmtN(kpisExecutivo.ordensConcluidas)} icon={CheckCircle2} subtext="98% aprovação" />
+      <KpiSmall title="Ticket médio" value={fmt(kpisExecutivo.ticketMedio)} icon={Receipt} subtext="por operação" />
+      <KpiSmall title="Entrega no prazo" value={`${kpisExecutivo.entregaNoPrazo}%`} icon={Clock} subtext="meta: 95%" />
     </div>
 
     {/* Linha 3 — 2 gráficos */}
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Faturamento por mês</CardTitle></CardHeader>
+      <Card className="shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Faturamento por mês</CardTitle></CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={faturamentoMensal}>
@@ -76,8 +82,8 @@ const TabExecutivo = () => (
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Evolução de operações por semana</CardTitle></CardHeader>
+      <Card className="shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Evolução de operações por semana</CardTitle></CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={operacoesSemana}>
@@ -94,8 +100,8 @@ const TabExecutivo = () => (
 
     {/* Linha 4 — 2 gráficos */}
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Operações por tipo de veículo</CardTitle></CardHeader>
+      <Card className="shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Operações por tipo de veículo</CardTitle></CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={260}>
             <PieChart>
@@ -108,8 +114,8 @@ const TabExecutivo = () => (
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Top 5 clientes por volume</CardTitle></CardHeader>
+      <Card className="shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Top 5 clientes por volume</CardTitle></CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={topClientes} layout="vertical">

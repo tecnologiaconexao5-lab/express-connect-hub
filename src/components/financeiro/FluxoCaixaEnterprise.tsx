@@ -13,7 +13,7 @@ import {
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-const mockFluxo30Dias = Array.from({ length: 30 }, (_, i) => {
+const dadosExibir = Array.from({ length: 30 }, (_, i) => {
   const day = i + 1;
   const entrada = Math.random() * 80000 + 20000;
   const saida = Math.random() * 60000 + 15000;
@@ -48,9 +48,47 @@ export default function FluxoCaixaEnterprise() {
   const [tipo, setTipo] = useState("todos");
   const [status, setStatus] = useState("todos");
   const [view, setView] = useState("grafico");
+  const [visualizacao, setVisualizacao] = useState("diario");
 
-  const totalEntradas = mockFluxo30Dias.reduce((acc, d) => acc + d.entrada, 0);
-  const totalSaidas = mockFluxo30Dias.reduce((acc, d) => acc + d.saida, 0);
+  const filteredData = () => {
+    const data = dadosExibir;
+    if (visualizacao === "semanal") {
+      const semanas: any[] = [];
+      for (let i = 0; i < data.length; i += 7) {
+        const semana = data.slice(i, i + 7);
+        semanas.push({
+          dia: `S${Math.ceil((i + 1) / 7)}`,
+          data: semana[0]?.data || "",
+          entrada: semana.reduce((a, d) => a + d.entrada, 0),
+          saida: semana.reduce((a, d) => a + d.saida, 0),
+          saldoAcumulado: semana.reduce((a, d) => a + d.saldoAcumulado, 0),
+          realizado: semana.every(d => d.realizado)
+        });
+      }
+      return semanas;
+    }
+    if (visualizacao === "quinzenal") {
+      const qz: any[] = [];
+      for (let i = 0; i < data.length; i += 15) {
+        const Quinzenal = data.slice(i, i + 15);
+        qz.push({
+          dia: i === 0 ? "1ª Q" : "2ª Q",
+          data: Quinzenal[0]?.data || "",
+          entrada: Quinzenal.reduce((a, d) => a + d.entrada, 0),
+          saida: Quinzenal.reduce((a, d) => a + d.saida, 0),
+          saldoAcumulado: Quinzenal.reduce((a, d) => a + d.saldoAcumulado, 0),
+          realizado: Quinzenal.every(d => d.realizado)
+        });
+      }
+      return qz;
+    }
+    return data;
+  };
+
+  const dadosExibir = filteredData();
+
+  const totalEntradas = dadosExibir.reduce((acc, d) => acc + d.entrada, 0);
+  const totalSaidas = dadosExibir.reduce((acc, d) => acc + d.saida, 0);
   const saldoAtual = totalEntradas - totalSaidas;
 
   const filteredLancamentos = mockLancamentos.filter(l => {
@@ -75,6 +113,16 @@ export default function FluxoCaixaEnterprise() {
           <p className="text-sm text-muted-foreground">Controle de entradas e saídas com projeções</p>
         </div>
         <div className="flex gap-2 items-center">
+          <Select value={visualizacao} onValueChange={setVisualizacao}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Visualização" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="diario">Diário</SelectItem>
+              <SelectItem value="semanal">Semanal</SelectItem>
+              <SelectItem value="quinzenal">Quinzenal</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={periodo} onValueChange={setPeriodo}>
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Período" />
@@ -185,7 +233,7 @@ export default function FluxoCaixaEnterprise() {
           </CardHeader>
           <CardContent className="h-[350px]">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={mockFluxo30Dias}>
+              <ComposedChart data={dadosExibir}>
                 <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                 <XAxis dataKey="dia" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `R$ ${(v/1000).toFixed(0)}k`} />
@@ -270,7 +318,7 @@ export default function FluxoCaixaEnterprise() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mockFluxo30Dias.slice(0, 15).map((d, i) => (
+              {dadosExibir.slice(0, 15).map((d, i) => (
                 <TableRow key={i} className={d.realizado ? "" : "opacity-70"}>
                   <TableCell className="text-xs">{new Date(d.data).toLocaleDateString("pt-BR")}</TableCell>
                   <TableCell className="text-xs text-green-600 font-mono">{fmtFin(d.entrada)}</TableCell>

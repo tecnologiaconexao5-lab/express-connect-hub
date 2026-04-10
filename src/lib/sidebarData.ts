@@ -132,6 +132,11 @@ export const sidebarItems: SidebarItem[] = [
     icon: UserPlus,
     path: "/recrutamento",
     children: [
+      { title: "Operações", path: "/recrutamento?tab=operacoes" },
+      { title: "Nova Operação", path: "/recrutamento?tab=nova-operacao" },
+      { title: "Indicadores RI", path: "/recrutamento?tab=indicadores-ri" },
+      { title: "Disparos WhatsApp", path: "/recrutamento?tab=disparos" },
+      { title: "Banco Motoristas", path: "/recrutamento?tab=motoristas" },
       { title: "Mural Captação (Vagas)", path: "/recrutamento?tab=vagas" },
       { title: "Funil de Triagem", path: "/recrutamento?tab=triagem" },
       { title: "Homologações", path: "/recrutamento?tab=homologacoes" },

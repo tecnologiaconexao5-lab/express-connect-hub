@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import DashboardFinanceiroEnterprise from "@/components/financeiro/DashboardFinanceiroEnterprise";
 import DREGerencial from "@/components/financeiro/DREGerencial";
@@ -77,6 +78,76 @@ export default function Financeiro() {
   const [buscaReceber, setBuscaReceber] = useState("");
   const [buscaPagar, setBuscaPagar] = useState("");
   const [dateRange, setDateRange] = useState<{from: Date | undefined; to: Date | undefined}>({ from: undefined, to: undefined });
+
+  const [showNovaReceita, setShowNovaReceita] = useState(false);
+  const [novaReceita, setNovaReceita] = useState({
+    fatura: "",
+    cliente: "",
+    os_vinculadas: "",
+    competencia: "",
+    vencimento: "",
+    valor: 0
+  });
+
+  const [showNovaDespesa, setShowNovaDespesa] = useState(false);
+  const [novaDespesa, setNovaDespesa] = useState({
+    doc: "",
+    fornecedor: "",
+    categoria: "",
+    competencia: "",
+    vencimento: "",
+    valorOriginal: 0,
+    acrescimos: 0,
+    descuentos: 0,
+    formaPagamento: "",
+    observacoes: ""
+  });
+
+  const handleSalvarReceita = async () => {
+    if (!novaReceita.cliente || !novaReceita.valor) {
+      toast.error("Preencha cliente e valor");
+      return;
+    }
+    const nova: any = {
+      id: Date.now(),
+      fatura: novaReceita.fatura || `FAT-${Date.now()}`,
+      cliente: novaReceita.cliente,
+      os_vinculadas: novaReceita.os_vinculadas,
+      competencia: novaReceita.competencia || new Date().toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" }),
+      vencimento: novaReceita.vencimento || new Date(Date.now() + 30 * 86400000).toISOString(),
+      valor: novaReceita.valor,
+      status: "a vencer"
+    };
+    setReceber([...receber, nova]);
+    setShowNovaReceita(false);
+    setNovaReceita({ fatura: "", cliente: "", os_vinculadas: "", competencia: "", vencimento: "", valor: 0 });
+    toast.success("Receita cadastrada!");
+  };
+
+  const handleSalvarDespesa = async () => {
+    if (!novaDespesa.fornecedor || !novaDespesa.valorOriginal) {
+      toast.error("Preencha fornecedor e valor");
+      return;
+    }
+    const total = novaDespesa.valorOriginal + novaDespesa.acrescimos - novaDespesa.descuentos;
+    const nova: any = {
+      id: Date.now(),
+      doc: novaDespesa.doc || `DOC-${Date.now()}`,
+      fornecedor: novaDespesa.fornecedor,
+      competencia: novaDespesa.competencia || new Date().toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" }),
+      vencimento: novaDespesa.vencimento || new Date(Date.now() + 30 * 86400000).toISOString(),
+      valor: total,
+      status: "a vencer",
+      tipo: "outro",
+      categoria: novaDespesa.categoria || "Outros"
+    };
+    setPagarOutros([...pagarOutros, nova]);
+    setShowNovaDespesa(false);
+    setNovaDespesa({ doc: "", fornecedor: "", categoria: "", competencia: "", vencimento: "", valorOriginal: 0, acrescimos: 0, descuentos: 0, formaPagamento: "", observacoes: "" });
+    toast.success("Despesa cadastrada!");
+  };
+
+  const valorTotalDespesa = novaDespesa.valorOriginal + novaDespesa.acrescimos - novaDespesa.descuentos;
 
   const handleTabChange = (val: string) => setSearchParams({ tab: val });
 
@@ -203,7 +274,23 @@ export default function Financeiro() {
                   <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
                   <Input placeholder="Buscar fatura ou cliente..." value={buscaReceber} onChange={(e) => setBuscaReceber(e.target.value)} className="pl-9" />
                 </div>
-                <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm"><Plus className="w-4 h-4 mr-2"/> Nova Receita (Faturar)</Button>
+                <Dialog open={showNovaReceita} onOpenChange={setShowNovaReceita}>
+                  <DialogTrigger asChild>
+                    <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm"><Plus className="w-4 h-4 mr-2"/> Nova Receita (Faturar)</Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><ArrowDownRight className="w-5 h-5 text-blue-600"/> Nova Receita - Contas a Receber</DialogTitle></DialogHeader>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+                      <div className="space-y-1"><Label className="text-xs">Fatura / Nº Documento</Label><Input value={novaReceita.fatura} onChange={(e) => setNovaReceita({...novaReceita, fatura: e.target.value})} placeholder="Ex: FAT-0046" /></div>
+                      <div className="space-y-1"><Label className="text-xs">Cliente *</Label><Input value={novaReceita.cliente} onChange={(e) => setNovaReceita({...novaReceita, cliente: e.target.value})} placeholder="Nome do cliente" /></div>
+                      <div className="space-y-1"><Label className="text-xs">OS Vinculadas</Label><Input value={novaReceita.os_vinculadas} onChange={(e) => setNovaReceita({...novaReceita, os_vinculadas: e.target.value})} placeholder="OS-4001, OS-4002" /></div>
+                      <div className="space-y-1"><Label className="text-xs">Competência</Label><Input value={novaReceita.competencia} onChange={(e) => setNovaReceita({...novaReceita, competencia: e.target.value})} placeholder="MM/AAAA" /></div>
+                      <div className="space-y-1"><Label className="text-xs">Vencimento</Label><Input type="date" value={novaReceita.vencimento ? novaReceita.vencimento.split("T")[0] : ""} onChange={(e) => setNovaReceita({...novaReceita, vencimento: e.target.value})} /></div>
+                      <div className="space-y-1"><Label className="text-xs">Valor (R$) *</Label><Input type="number" value={novaReceita.valor || ""} onChange={(e) => setNovaReceita({...novaReceita, valor: Number(e.target.value)})} placeholder="0,00" className="font-bold" /></div>
+                    </div>
+                    <DialogFooter><Button variant="outline" onClick={() => setShowNovaReceita(false)}>Cancelar</Button><Button className="bg-blue-600" onClick={handleSalvarReceita}><Check className="w-4 h-4 mr-2"/> Salvar Receita</Button></DialogFooter>
+                  </DialogContent>
+                </Dialog>
              </CardHeader>
              <CardContent className="p-0">
                <Table>
@@ -243,7 +330,7 @@ export default function Financeiro() {
                   <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
                   <Input placeholder="Buscar documento ou fornecedor..." value={buscaPagar} onChange={(e) => setBuscaPagar(e.target.value)} className="pl-9" />
                 </div>
-                <Dialog>
+                <Dialog open={showNovaDespesa} onOpenChange={setShowNovaDespesa}>
                   <DialogTrigger asChild>
                         <Button className="bg-orange-600 hover:bg-orange-700 text-white font-semibold shadow-sm"><Plus className="w-4 h-4 mr-2"/> Nova Despesa (Contas a Pagar)</Button>
                       </DialogTrigger>
@@ -253,55 +340,29 @@ export default function Financeiro() {
                         <div className="space-y-6 py-4">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                              <div className="space-y-1">
-                               <Label className="text-xs">Origem do Pagamento / Fornecedor</Label>
-                               <Select>
-                                 <SelectTrigger><SelectValue placeholder="Selecione a origem..." /></SelectTrigger>
-                                 <SelectContent>
-                                   <SelectItem value="prestador">Prestador Cadastrado</SelectItem>
-                                   <SelectItem value="fornecedor">Fornecedor Geral</SelectItem>
-                                   <SelectItem value="fixa">Despesa Fixa Recorrente</SelectItem>
-                                   <SelectItem value="outro">Outro (Avulso)</SelectItem>
-                                 </SelectContent>
-                               </Select>
-                             </div>
-                             <div className="space-y-1">
-                               <Label className="text-xs">Buscar Favorecido (Obrigatório)</Label>
-                               <Select>
-                                 <SelectTrigger><SelectValue placeholder="Selecione ou crie um favorecido..." /></SelectTrigger>
-                                 <SelectContent>
-                                   <SelectItem value="novo" className="text-primary font-bold"><Plus className="w-4 h-4 inline mr-1"/> Criar Novo Cadastro de Favorecido</SelectItem>
-                                   <SelectItem value="joao">João Transporte (Prestador)</SelectItem>
-                                   <SelectItem value="energia">Companhia de Energia (Fornecedor)</SelectItem>
-                                   <SelectItem value="maria">Maria Freitas - ME (Prestador)</SelectItem>
-                                   <SelectItem value="imob">Imobiliária Alfa (Locação)</SelectItem>
-                                 </SelectContent>
-                               </Select>
-                               <p className="text-[10px] text-muted-foreground mt-1">O favorecido deve constar nos cadastros do sistema.</p>
+                               <Label className="text-xs">Buscar Favorecido (Obrigatório) *</Label>
+                               <Input 
+                                 value={novaDespesa.fornecedor} 
+                                 onChange={(e) => setNovaDespesa({...novaDespesa, fornecedor: e.target.value})}
+                                 placeholder="Nome do fornecedor" 
+                               />
                              </div>
                              <div className="space-y-1">
                                <Label className="text-xs">Categoria / Plano de Contas</Label>
-                               <Select>
+                               <Select 
+                                 value={novaDespesa.categoria} 
+                                 onValueChange={(v) => setNovaDespesa({...novaDespesa, categoria: v})}
+                               >
                                  <SelectTrigger><SelectValue placeholder="Selecione a categoria" /></SelectTrigger>
                                  <SelectContent>
-                                   <SelectItem value="energia">Energia elétrica</SelectItem>
-                                   <SelectItem value="agua">Água</SelectItem>
-                                   <SelectItem value="aluguel">Aluguel / Condomínio</SelectItem>
-                                   <SelectItem value="manutencao">Manutenção Frota</SelectItem>
-                                   <SelectItem value="combustivel">Combustível</SelectItem>
-                                   <SelectItem value="folha">Folha de Pagamento</SelectItem>
-                                   <SelectItem value="impostos">Impostos Diversos</SelectItem>
-                                   <SelectItem value="outros">Outros</SelectItem>
-                                 </SelectContent>
-                               </Select>
-                             </div>
-                             <div className="space-y-1">
-                               <Label className="text-xs">Centro de Custo / Unidade</Label>
-                               <Select defaultValue="matriz">
-                                 <SelectTrigger><SelectValue placeholder="Unidade..." /></SelectTrigger>
-                                 <SelectContent>
-                                   <SelectItem value="matriz">Matriz (SP) - Administrativo</SelectItem>
-                                   <SelectItem value="frota">Frota Própria</SelectItem>
-                                   <SelectItem value="op">Operacional Base</SelectItem>
+                                   <SelectItem value="Energia elétrica">Energia elétrica</SelectItem>
+                                   <SelectItem value="Água">Água</SelectItem>
+                                   <SelectItem value="Aluguel">Aluguel / Condomínio</SelectItem>
+                                   <SelectItem value="Manutenção">Manutenção Frota</SelectItem>
+                                   <SelectItem value="Combustível">Combustível</SelectItem>
+                                   <SelectItem value="Folha de Pagamento">Folha de Pagamento</SelectItem>
+                                   <SelectItem value="Impostos">Impostos Diversos</SelectItem>
+                                   <SelectItem value="Outros">Outros</SelectItem>
                                  </SelectContent>
                                </Select>
                              </div>
@@ -309,85 +370,87 @@ export default function Financeiro() {
 
                           <div className="border border-orange-100 bg-orange-50/50 p-4 rounded-lg grid grid-cols-2 md:grid-cols-4 gap-4">
                              <div className="col-span-2 md:col-span-1 space-y-1">
-                               <Label className="text-xs">Valor Original (R$)</Label>
-                               <Input type="number" placeholder="0,00" className="font-mono font-bold text-orange-700 text-lg" />
+                               <Label className="text-xs">Valor Original (R$) *</Label>
+                               <Input 
+                                 type="number" 
+                                 value={novaDespesa.valorOriginal || ""} 
+                                 onChange={(e) => setNovaDespesa({...novaDespesa, valorOriginal: Number(e.target.value)})}
+                                 placeholder="0,00" 
+                                 className="font-mono font-bold text-orange-700 text-lg" 
+                               />
                              </div>
                              <div className="space-y-1">
                                <Label className="text-xs">Acres/Multa/Juros (+)</Label>
-                               <Input type="number" placeholder="0,00" className="font-mono text-red-600" />
+                               <Input 
+                                 type="number" 
+                                 value={novaDespesa.acrescimos || ""} 
+                                 onChange={(e) => setNovaDespesa({...novaDespesa, acrescimos: Number(e.target.value)})}
+                                 placeholder="0,00" 
+                                 className="font-mono text-red-600" 
+                               />
                              </div>
                              <div className="space-y-1">
                                <Label className="text-xs">Descontos (-)</Label>
-                               <Input type="number" placeholder="0,00" className="font-mono text-green-600" />
+                               <Input 
+                                 type="number" 
+                                 value={novaDespesa.descuentos || ""} 
+                                 onChange={(e) => setNovaDespesa({...novaDespesa, descuentos: Number(e.target.value)})}
+                                 placeholder="0,00" 
+                                 className="font-mono text-green-600" 
+                               />
                              </div>
                              <div className="space-y-1">
                                <Label className="text-xs">Valor Total Pagar</Label>
-                               <Input disabled type="text" value="R$ 0,00" className="font-mono font-bold text-orange-700 bg-transparent border-none p-0 text-lg" />
+                               <div className="font-mono font-bold text-orange-700 text-lg py-2">{fmtFin(valorTotalDespesa)}</div>
                              </div>
                           </div>
 
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                              <div className="space-y-1">
                                <Label className="text-xs">Documento/NF</Label>
-                               <Input placeholder="Nº Documento" />
+                               <Input 
+                                 value={novaDespesa.doc}
+                                 onChange={(e) => setNovaDespesa({...novaDespesa, doc: e.target.value})}
+                                 placeholder="Nº Documento" 
+                               />
                              </div>
                              <div className="space-y-1">
                                <Label className="text-xs">Vencimento</Label>
-                               <Input type="date" />
+                               <Input 
+                                 type="date" 
+                                 value={novaDespesa.vencimento ? novaDespesa.vencimento.split("T")[0] : ""}
+                                 onChange={(e) => setNovaDespesa({...novaDespesa, vencimento: e.target.value})} 
+                               />
                              </div>
                              <div className="space-y-1">
                                <Label className="text-xs">Competência</Label>
-                               <Input placeholder="MM/AAAA" />
-                             </div>
-                             <div className="space-y-1 col-span-2">
-                               <Label className="text-xs">Forma de Pagamento</Label>
-                               <Select>
-                                 <SelectTrigger><SelectValue placeholder="PIX/Boleto..." /></SelectTrigger>
-                                 <SelectContent>
-                                   <SelectItem value="boleto">Boleto Bancário</SelectItem>
-                                   <SelectItem value="pix">PIX</SelectItem>
-                                   <SelectItem value="ted">TED / Transferência</SelectItem>
-                                   <SelectItem value="debito">Débito Automático</SelectItem>
-                                 </SelectContent>
-                               </Select>
-                             </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1 flex flex-col justify-end">
-                               <Label className="text-xs mb-2">Lote CNAB</Label>
-                               <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 border rounded-md bg-muted/20">
-                                  <input type="checkbox" id="cnab" className="w-4 h-4 cursor-pointer" />
-                                  <Label htmlFor="cnab" className="cursor-pointer">Gerar para remessa em lote (CNAB)</Label>
-                               </div>
-                             </div>
-                             <div className="space-y-1">
-                               <Label className="text-xs">Conta Bancária de Saída</Label>
-                               <Select>
-                                 <SelectTrigger><SelectValue placeholder="De onde o dinheiro sairá?" /></SelectTrigger>
-                                 <SelectContent>
-                                   <SelectItem value="itau">Conta Corrente Principal Itaú</SelectItem>
-                                   <SelectItem value="poupanca">Conta Poupança Bradesco</SelectItem>
-                                   <SelectItem value="caixa">Caixa Físico Interno</SelectItem>
-                                 </SelectContent>
-                               </Select>
+                               <Input 
+                                 value={novaDespesa.competencia}
+                                 onChange={(e) => setNovaDespesa({...novaDespesa, competencia: e.target.value})}
+                                 placeholder="MM/AAAA" 
+                               />
                              </div>
                           </div>
 
                           <div className="space-y-1">
                              <Label className="text-xs">Observações / Histórico</Label>
-                             <Textarea placeholder="Descreva os detalhes desta despesa..." className="resize-none" />
+                             <Textarea 
+                               value={novaDespesa.observacoes}
+                               onChange={(e) => setNovaDespesa({...novaDespesa, observacoes: e.target.value})}
+                               placeholder="Descreva os detalhes desta despesa..." 
+                               className="resize-none" 
+                             />
                           </div>
                         </div>
                         
-                        <DialogFooter>
-                          <Button variant="outline">Cancelar</Button>
-                          <Button className="bg-orange-600 hover:bg-orange-700 font-bold gap-2"><Check className="w-4 h-4"/> Salvar Despesa</Button>
+<DialogFooter>
+                          <Button variant="outline" onClick={() => setShowNovaDespesa(false)}>Cancelar</Button>
+                          <Button className="bg-orange-600 hover:bg-orange-700 font-bold gap-2" onClick={handleSalvarDespesa}><Check className="w-4 h-4"/> Salvar Despesa</Button>
                         </DialogFooter>
                       </DialogContent>
-                   </Dialog>
-             </CardHeader>
-             <CardContent className="p-0">
+                    </Dialog>
+              </CardHeader>
+              <CardContent className="p-0">
                <Table>
                  <TableHeader><TableRow><TableHead>Documento</TableHead><TableHead>Fornecedor</TableHead><TableHead>Categoria / Tipo</TableHead><TableHead>Competência</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
                  <TableBody>

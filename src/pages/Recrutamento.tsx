@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { UserPlus, Filter, Database, Clock, LineChart, Briefcase, PlusCircle, BarChart3, MessageSquare } from "lucide-react";
+import { UserPlus, Filter, Database, Clock, LineChart, Briefcase, PlusCircle, BarChart3, MessageSquare, Truck } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { Captacao } from "@/components/recrutamento/Captacao";
@@ -13,6 +13,7 @@ import { OperacoesRI } from "@/components/recrutamento/OperacoesRI";
 import { NovaOperacaoRI } from "@/components/recrutamento/NovaOperacaoRI";
 import { IndicadoresRI } from "@/components/recrutamento/IndicadoresRI";
 import { DisparosWhatsApp } from "@/components/recrutamento/DisparosWhatsApp";
+import { BancoMotoristas } from "@/components/recrutamento/BancoMotoristas";
 
 export default function Recrutamento() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -36,6 +37,7 @@ export default function Recrutamento() {
            <TabsTrigger value="nova-operacao" className="px-5"><PlusCircle className="w-4 h-4 mr-2"/> Nova Operação</TabsTrigger>
            <TabsTrigger value="indicadores-ri" className="px-5"><BarChart3 className="w-4 h-4 mr-2"/> Indicadores</TabsTrigger>
            <TabsTrigger value="disparos" className="px-5"><MessageSquare className="w-4 h-4 mr-2"/> Disparos WhatsApp</TabsTrigger>
+           <TabsTrigger value="motoristas" className="px-5"><Truck className="w-4 h-4 mr-2"/> Banco Motoristas</TabsTrigger>
            <TabsTrigger value="captacao" className="px-5 text-muted-foreground"><UserPlus className="w-4 h-4 mr-2"/> Captação Base</TabsTrigger>
            <TabsTrigger value="banco" className="px-5 text-muted-foreground"><Database className="w-4 h-4 mr-2"/> Célula de Talentos</TabsTrigger>
            <TabsTrigger value="triagem" className="px-5 text-muted-foreground"><Filter className="w-4 h-4 mr-2"/> Triagem IA</TabsTrigger>
@@ -47,6 +49,7 @@ export default function Recrutamento() {
         <TabsContent value="nova-operacao" className="pt-4"><NovaOperacaoRI /></TabsContent>
         <TabsContent value="indicadores-ri" className="pt-4"><IndicadoresRI /></TabsContent>
         <TabsContent value="disparos" className="pt-4"><DisparosWhatsApp /></TabsContent>
+        <TabsContent value="motoristas" className="pt-4"><BancoMotoristas /></TabsContent>
         
         <TabsContent value="captacao" className="pt-4"><Captacao /></TabsContent>
         <TabsContent value="banco" className="pt-4"><BancoTalentos /></TabsContent>
