@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Plus, Building2, Wallet, Banknote, MoreHorizontal, ArrowRightLeft, Landmark } from "lucide-react";
+import { Plus, Building2, Wallet, Banknote, MoreHorizontal, ArrowRightLeft, Landmark, Check } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -8,10 +8,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 
 const formatCurrency = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 export default function ContasBancarias() {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showNovaConta, setShowNovaConta] = useState(false);
+  const [novaConta, setNovaConta] = useState({
+    nome: "", tipo: "", banco: "", agencia: "", conta: "", titular: "", saldoInicial: 0, empresa: ""
+  });
+
+  const [showTransferencia, setShowTransferencia] = useState(false);
+  const [transferencia, setTransferencia] = useState({
+    contaOrigemId: "", contaDestinoId: "", valor: 0, observacao: ""
+  });
+
   const [contas, setContas] = useState([
     { id: 1, banco: "Itaú", nome: "Conta Corrente Principal", agencia: "1234", conta: "56789-0", tipo: "Conta Corrente", titular: "Express Connect Transportes LTDA", saldo: 145000.50, status: "Ativa", empresa: "Matriz (SP)" },
     { id: 2, banco: "Bradesco", nome: "Conta Reserva / Impostos", agencia: "4321", conta: "98765-4", tipo: "C. Poupança", titular: "Express Connect Transportes LTDA", saldo: 85200.00, status: "Ativa", empresa: "Matriz (SP)" },
@@ -20,6 +32,83 @@ export default function ContasBancarias() {
   ]);
 
   const saldoTotal = contas.reduce((acc, c) => acc + c.saldo, 0);
+
+  const handleSalvarConta = async () => {
+    try {
+      setIsSubmitting(true);
+      if (!novaConta.nome.trim() || !novaConta.tipo || !novaConta.banco.trim()) {
+        toast.error("Preencha Nome, Tipo de Conta e Instituição Financeira.");
+        return;
+      }
+
+      await new Promise(res => setTimeout(res, 800));
+
+      const newAccount = {
+        id: Date.now(),
+        banco: novaConta.banco,
+        nome: novaConta.nome,
+        agencia: novaConta.agencia || "-",
+        conta: novaConta.conta || "-",
+        tipo: novaConta.tipo,
+        titular: novaConta.titular || "Empresa",
+        saldo: novaConta.saldoInicial || 0,
+        status: "Ativa",
+        empresa: novaConta.empresa || "Matriz (SP)"
+      };
+
+      setContas(prev => [...prev, newAccount]);
+      setShowNovaConta(false);
+      setNovaConta({ nome: "", tipo: "", banco: "", agencia: "", conta: "", titular: "", saldoInicial: 0, empresa: "" });
+      toast.success("Conta cadastrada com sucesso!");
+    } catch (error) {
+      console.error("Erro ao salvar conta:", error);
+      toast.error("Ocorreu um erro ao salvar a conta. Tente novamente.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleTransferir = async () => {
+    try {
+      setIsSubmitting(true);
+      if (!transferencia.contaOrigemId || !transferencia.contaDestinoId) {
+        toast.error("Selecione conta de origem e destino.");
+        return;
+      }
+      if (transferencia.contaOrigemId === transferencia.contaDestinoId) {
+        toast.error("Conta de origem e destino devem ser diferentes.");
+        return;
+      }
+      if (!transferencia.valor || transferencia.valor <= 0) {
+        toast.error("Valor de transferência inválido.");
+        return;
+      }
+
+      const origemId = parseInt(transferencia.contaOrigemId);
+      const contaOrigem = contas.find(c => c.id === origemId);
+      if (contaOrigem && contaOrigem.saldo < transferencia.valor) {
+        toast.error("Saldo insuficiente na conta de origem.");
+        return;
+      }
+
+      await new Promise(res => setTimeout(res, 800));
+
+      setContas(prev => prev.map(c => {
+        if (c.id === origemId) return { ...c, saldo: c.saldo - transferencia.valor };
+        if (c.id === parseInt(transferencia.contaDestinoId)) return { ...c, saldo: c.saldo + transferencia.valor };
+        return c;
+      }));
+
+      setShowTransferencia(false);
+      setTransferencia({ contaOrigemId: "", contaDestinoId: "", valor: 0, observacao: "" });
+      toast.success("Transferência realizada com sucesso!");
+    } catch (error) {
+      console.error("Erro na transferência:", error);
+      toast.error("Erro ao realizar transferência. Tente novamente.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -32,8 +121,51 @@ export default function ContasBancarias() {
           <p className="text-sm text-muted-foreground">Gestão de saldos, contas bancárias e caixas internos</p>
         </div>
         <div className="flex gap-2">
-           <Button variant="outline" className="gap-2"><ArrowRightLeft className="w-4 h-4"/> Transferência entre Contas</Button>
-           <Dialog>
+           <Dialog open={showTransferencia} onOpenChange={setShowTransferencia}>
+             <DialogTrigger asChild>
+               <Button variant="outline" className="gap-2"><ArrowRightLeft className="w-4 h-4"/> Transferência entre Contas</Button>
+             </DialogTrigger>
+             <DialogContent className="max-w-md">
+               <DialogHeader>
+                 <DialogTitle>Transferência entre Contas</DialogTitle>
+                 <DialogDescription>Mova fundos entre suas próprias contas e caixas.</DialogDescription>
+               </DialogHeader>
+               <div className="space-y-4 py-4">
+                 <div className="space-y-1">
+                   <Label>Conta de Origem</Label>
+                   <Select value={transferencia.contaOrigemId} onValueChange={(v) => setTransferencia({...transferencia, contaOrigemId: v})}>
+                     <SelectTrigger><SelectValue placeholder="Selecione a conta de origem" /></SelectTrigger>
+                     <SelectContent>
+                       {contas.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.nome} ({formatCurrency(c.saldo)})</SelectItem>)}
+                     </SelectContent>
+                   </Select>
+                 </div>
+                 <div className="space-y-1">
+                   <Label>Conta de Destino</Label>
+                   <Select value={transferencia.contaDestinoId} onValueChange={(v) => setTransferencia({...transferencia, contaDestinoId: v})}>
+                     <SelectTrigger><SelectValue placeholder="Selecione a conta de destino" /></SelectTrigger>
+                     <SelectContent>
+                       {contas.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.nome}</SelectItem>)}
+                     </SelectContent>
+                   </Select>
+                 </div>
+                 <div className="space-y-1">
+                   <Label>Valor R$</Label>
+                   <Input type="number" min="0.01" step="0.01" value={transferencia.valor || ""} onChange={(e) => setTransferencia({...transferencia, valor: Number(e.target.value)})} placeholder="0,00" />
+                 </div>
+                 <div className="space-y-1">
+                   <Label>Observação (Opcional)</Label>
+                   <Input value={transferencia.observacao} onChange={(e) => setTransferencia({...transferencia, observacao: e.target.value})} placeholder="Ex: Reposição de caixa" />
+                 </div>
+               </div>
+               <DialogFooter>
+                 <Button variant="outline" onClick={() => setShowTransferencia(false)} disabled={isSubmitting}>Cancelar</Button>
+                 <Button className="bg-primary" onClick={handleTransferir} disabled={isSubmitting}>{isSubmitting ? "Transferindo..." : <><Check className="w-4 h-4 mr-2"/> Transferir</>}</Button>
+               </DialogFooter>
+             </DialogContent>
+           </Dialog>
+
+           <Dialog open={showNovaConta} onOpenChange={setShowNovaConta}>
              <DialogTrigger asChild>
                <Button className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2"><Plus className="w-4 h-4"/> Nova Conta/Caixa</Button>
              </DialogTrigger>
@@ -43,56 +175,56 @@ export default function ContasBancarias() {
                </DialogHeader>
                <div className="grid grid-cols-2 gap-4 py-4">
                  <div className="col-span-2">
-                   <Label>Nome da Conta/Identificação</Label>
-                   <Input placeholder="Ex: Conta Corrente Principal Itaú" />
+                   <Label>Nome da Conta/Identificação *</Label>
+                   <Input placeholder="Ex: Conta Corrente Principal Itaú" value={novaConta.nome} onChange={(e) => setNovaConta({...novaConta, nome: e.target.value})} />
                  </div>
                  <div>
-                   <Label>Tipo de Conta</Label>
-                   <Select>
+                   <Label>Tipo de Conta *</Label>
+                   <Select value={novaConta.tipo} onValueChange={(v) => setNovaConta({...novaConta, tipo: v})}>
                      <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                      <SelectContent>
-                       <SelectItem value="corrente">Conta Corrente</SelectItem>
-                       <SelectItem value="poupanca">Conta Poupança</SelectItem>
-                       <SelectItem value="digital">Conta Digital / Carteira</SelectItem>
-                       <SelectItem value="caixinha">Caixa Físico (Interno)</SelectItem>
-                       <SelectItem value="investimento">Conta Investimento</SelectItem>
+                       <SelectItem value="Conta Corrente">Conta Corrente</SelectItem>
+                       <SelectItem value="Conta Poupança">Conta Poupança</SelectItem>
+                       <SelectItem value="Conta Digital">Conta Digital / Carteira</SelectItem>
+                       <SelectItem value="Caixinha">Caixa Físico (Interno)</SelectItem>
+                       <SelectItem value="Conta Investimento">Conta Investimento</SelectItem>
                      </SelectContent>
                    </Select>
                  </div>
                  <div>
-                   <Label>Instituição Financeira / Banco</Label>
-                   <Input placeholder="Itaú, Bradesco, Nubank, Caixa..." />
+                   <Label>Instituição Financeira / Banco *</Label>
+                   <Input placeholder="Itaú, Bradesco..." value={novaConta.banco} onChange={(e) => setNovaConta({...novaConta, banco: e.target.value})} />
                  </div>
                  <div>
                    <Label>Agência</Label>
-                   <Input placeholder="0000" />
+                   <Input placeholder="0000" value={novaConta.agencia} onChange={(e) => setNovaConta({...novaConta, agencia: e.target.value})} />
                  </div>
                  <div>
                    <Label>Número da Conta</Label>
-                   <Input placeholder="00000-0" />
+                   <Input placeholder="00000-0" value={novaConta.conta} onChange={(e) => setNovaConta({...novaConta, conta: e.target.value})} />
                  </div>
                  <div className="col-span-2">
                    <Label>Titular da Conta / Razão Social</Label>
-                   <Input placeholder="Nome na conta..." />
+                   <Input placeholder="Nome na conta..." value={novaConta.titular} onChange={(e) => setNovaConta({...novaConta, titular: e.target.value})} />
                  </div>
                  <div>
                    <Label>Saldo Inicial R$</Label>
-                   <Input placeholder="0,00" type="number" />
+                   <Input placeholder="0,00" type="number" value={novaConta.saldoInicial || ""} onChange={(e) => setNovaConta({...novaConta, saldoInicial: Number(e.target.value)})} />
                  </div>
                  <div>
                    <Label>Vincular Empresa/Unidade</Label>
-                   <Select>
+                   <Select value={novaConta.empresa} onValueChange={(v) => setNovaConta({...novaConta, empresa: v})}>
                      <SelectTrigger><SelectValue placeholder="Matriz (SP)" /></SelectTrigger>
                      <SelectContent>
-                       <SelectItem value="matriz">Matriz (SP)</SelectItem>
-                       <SelectItem value="filial_rj">Filial (RJ)</SelectItem>
+                       <SelectItem value="Matriz (SP)">Matriz (SP)</SelectItem>
+                       <SelectItem value="Filial (RJ)">Filial (RJ)</SelectItem>
                      </SelectContent>
                    </Select>
                  </div>
                </div>
                <DialogFooter>
-                 <Button variant="outline">Cancelar</Button>
-                 <Button>Salvar Conta</Button>
+                 <Button variant="outline" onClick={() => setShowNovaConta(false)} disabled={isSubmitting}>Cancelar</Button>
+                 <Button onClick={handleSalvarConta} disabled={isSubmitting}>{isSubmitting ? "Salvando..." : "Salvar Conta"}</Button>
                </DialogFooter>
              </DialogContent>
            </Dialog>

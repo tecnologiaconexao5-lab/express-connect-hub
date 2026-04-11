@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 export default function PendenciasCadastro() {
   const [pendencias, setPendencias] = useState([
@@ -12,10 +13,25 @@ export default function PendenciasCadastro() {
   ]);
 
   const [ativo, setAtivo] = useState<any>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const removerDaFila = (id: number) => {
-     setPendencias(prev => prev.filter(p => p.id !== id));
-     setAtivo(null);
+  const processarFila = async (id: number, acao: 'aprovar' | 'rejeitar') => {
+    try {
+      setIsProcessing(true);
+      await new Promise(res => setTimeout(res, 800)); // Simulando API
+      setPendencias(prev => prev.filter(p => p.id !== id));
+      setAtivo(null);
+      if (acao === 'aprovar') {
+        toast.success("Subscrição aprovada com sucesso!");
+      } else {
+        toast.success("Subscrição rejeitada!");
+      }
+    } catch (error) {
+      console.error("Erro ao processar pendência:", error);
+      toast.error("Ocorreu um erro ao tentar processar esta solicitação.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -88,8 +104,8 @@ export default function PendenciasCadastro() {
                   )}
 
                   <div className="pt-4 border-t flex justify-end gap-3 flex-wrap">
-                     <Button variant="outline" size="lg" className="border-slate-300 hover:bg-slate-100" onClick={() => removerDaFila(ativo.id)}><X className="w-4 h-4 mr-2"/> Rejeitar e Notificar</Button>
-                     <Button size="lg" className="bg-green-600 hover:bg-green-700 shadow-lg text-white font-bold" onClick={() => removerDaFila(ativo.id)}><Check className="w-5 h-5 mr-2"/> Aprovar Subscrição</Button>
+                     <Button variant="outline" size="lg" className="border-slate-300 hover:bg-slate-100" onClick={() => processarFila(ativo.id, 'rejeitar')} disabled={isProcessing}><X className="w-4 h-4 mr-2"/> Rejeitar e Notificar</Button>
+                     <Button size="lg" className="bg-green-600 hover:bg-green-700 shadow-lg text-white font-bold" onClick={() => processarFila(ativo.id, 'aprovar')} disabled={isProcessing}><Check className="w-5 h-5 mr-2"/> {isProcessing ? "Processando..." : "Aprovar Subscrição"}</Button>
                   </div>
                </CardContent>
             </Card>

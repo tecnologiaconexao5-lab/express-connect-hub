@@ -103,51 +103,88 @@ export default function Financeiro() {
     observacoes: ""
   });
 
+  const [isSubmittingReceita, setIsSubmittingReceita] = useState(false);
+  const [isSubmittingDespesa, setIsSubmittingDespesa] = useState(false);
+
   const handleSalvarReceita = async () => {
-    if (!novaReceita.cliente || !novaReceita.valor) {
-      toast.error("Preencha cliente e valor");
-      return;
+    try {
+      setIsSubmittingReceita(true);
+      if (!novaReceita.cliente || !novaReceita.cliente.trim()) {
+        toast.error("O nome do cliente é obrigatório.");
+        return;
+      }
+      if (!novaReceita.valor || novaReceita.valor <= 0) {
+        toast.error("O valor da receita deve ser maior que zero.");
+        return;
+      }
+
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      const nova: any = {
+        id: Date.now(),
+        fatura: novaReceita.fatura || `FAT-${Date.now()}`,
+        cliente: novaReceita.cliente,
+        os_vinculadas: novaReceita.os_vinculadas,
+        competencia: novaReceita.competencia || new Date().toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" }),
+        vencimento: novaReceita.vencimento || new Date(Date.now() + 30 * 86400000).toISOString(),
+        valor: novaReceita.valor,
+        status: "a vencer"
+      };
+      
+      setReceber(prev => [...prev, nova]);
+      setShowNovaReceita(false);
+      setNovaReceita({ fatura: "", cliente: "", os_vinculadas: "", competencia: "", vencimento: "", valor: 0 });
+      toast.success("Receita cadastrada com sucesso!");
+    } catch (error) {
+      console.error("Erro ao salvar receita:", error);
+      toast.error("Erro ao salvar receita. Tente novamente mais tarde.");
+    } finally {
+      setIsSubmittingReceita(false);
     }
-    const nova: any = {
-      id: Date.now(),
-      fatura: novaReceita.fatura || `FAT-${Date.now()}`,
-      cliente: novaReceita.cliente,
-      os_vinculadas: novaReceita.os_vinculadas,
-      competencia: novaReceita.competencia || new Date().toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" }),
-      vencimento: novaReceita.vencimento || new Date(Date.now() + 30 * 86400000).toISOString(),
-      valor: novaReceita.valor,
-      status: "a vencer"
-    };
-    setReceber([...receber, nova]);
-    setShowNovaReceita(false);
-    setNovaReceita({ fatura: "", cliente: "", os_vinculadas: "", competencia: "", vencimento: "", valor: 0 });
-    toast.success("Receita cadastrada!");
   };
 
   const handleSalvarDespesa = async () => {
-    if (!novaDespesa.fornecedor || !novaDespesa.valorOriginal) {
-      toast.error("Preencha fornecedor e valor");
-      return;
+    try {
+      setIsSubmittingDespesa(true);
+      if (!novaDespesa.fornecedor || !novaDespesa.fornecedor.trim()) {
+        toast.error("O nome do fornecedor é obrigatório.");
+        return;
+      }
+      if (!novaDespesa.valorOriginal || novaDespesa.valorOriginal <= 0) {
+        toast.error("O valor da despesa deve ser maior que zero.");
+        return;
+      }
+
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      const total = novaDespesa.valorOriginal + (novaDespesa.acrescimos || 0) - (novaDespesa.descuentos || 0);
+      const nova: any = {
+        id: Date.now(),
+        doc: novaDespesa.doc || `DOC-${Date.now()}`,
+        fornecedor: novaDespesa.fornecedor,
+        competencia: novaDespesa.competencia || new Date().toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" }),
+        vencimento: novaDespesa.vencimento || new Date(Date.now() + 30 * 86400000).toISOString(),
+        valor: total > 0 ? total : 0,
+        status: "a vencer",
+        tipo: "outro",
+        categoria: novaDespesa.categoria || "Outros"
+      };
+      
+      setPagarOutros(prev => [...prev, nova]);
+      setShowNovaDespesa(false);
+      setNovaDespesa({ doc: "", fornecedor: "", categoria: "", competencia: "", vencimento: "", valorOriginal: 0, acrescimos: 0, descuentos: 0, formaPagamento: "", observacoes: "" });
+      toast.success("Despesa cadastrada com sucesso!");
+    } catch (error) {
+      console.error("Erro ao salvar despesa:", error);
+      toast.error("Erro ao salvar despesa. Tente novamente mais tarde.");
+    } finally {
+      setIsSubmittingDespesa(false);
     }
-    const total = novaDespesa.valorOriginal + novaDespesa.acrescimos - novaDespesa.descuentos;
-    const nova: any = {
-      id: Date.now(),
-      doc: novaDespesa.doc || `DOC-${Date.now()}`,
-      fornecedor: novaDespesa.fornecedor,
-      competencia: novaDespesa.competencia || new Date().toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" }),
-      vencimento: novaDespesa.vencimento || new Date(Date.now() + 30 * 86400000).toISOString(),
-      valor: total,
-      status: "a vencer",
-      tipo: "outro",
-      categoria: novaDespesa.categoria || "Outros"
-    };
-    setPagarOutros([...pagarOutros, nova]);
-    setShowNovaDespesa(false);
-    setNovaDespesa({ doc: "", fornecedor: "", categoria: "", competencia: "", vencimento: "", valorOriginal: 0, acrescimos: 0, descuentos: 0, formaPagamento: "", observacoes: "" });
-    toast.success("Despesa cadastrada!");
   };
 
-  const valorTotalDespesa = novaDespesa.valorOriginal + novaDespesa.acrescimos - novaDespesa.descuentos;
+  const valorTotalDespesa = (novaDespesa.valorOriginal || 0) + (novaDespesa.acrescimos || 0) - (novaDespesa.descuentos || 0);
 
   const handleTabChange = (val: string) => setSearchParams({ tab: val });
 
@@ -159,35 +196,50 @@ export default function Financeiro() {
 
   const fetchReceber = async () => {
     try {
-      const { data } = await supabase.from("financeiro_receber").select("*").order("vencimento", { ascending: true });
-      if (data && data.length > 0) setReceber(data);
-      else setReceber([
-         { id: 1, fatura: "FAT-0045", cliente: "Tech Solutions", os_vinculadas: "OS-401, OS-402", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 5)).toISOString(), valor: 14500.00, status: "a vencer" },
-         { id: 2, fatura: "FAT-0038", cliente: "Indústria Global", os_vinculadas: "OS-380", competencia: "09/2026", vencimento: new Date(new Date().setDate(new Date().getDate() - 2)).toISOString(), valor: 8200.50, status: "vencida" },
-         { id: 3, fatura: "FAT-0035", cliente: "Comércio Varejo", os_vinculadas: "OS-350, OS-355", competencia: "09/2026", vencimento: new Date(new Date().setDate(new Date().getDate() - 10)).toISOString(), valor: 5400.00, status: "paga" }
+      const { data, error } = await supabase.from("financeiro_receber").select("*").order("vencimento", { ascending: true });
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setReceber(data);
+      } else {
+        setReceber([
+           { id: 1, fatura: "FAT-0045", cliente: "Tech Solutions", os_vinculadas: "OS-401, OS-402", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 5)).toISOString(), valor: 14500.00, status: "a vencer" },
+           { id: 2, fatura: "FAT-0038", cliente: "Indústria Global", os_vinculadas: "OS-380", competencia: "09/2026", vencimento: new Date(new Date().setDate(new Date().getDate() - 2)).toISOString(), valor: 8200.50, status: "vencida" },
+           { id: 3, fatura: "FAT-0035", cliente: "Comércio Varejo", os_vinculadas: "OS-350, OS-355", competencia: "09/2026", vencimento: new Date(new Date().setDate(new Date().getDate() - 10)).toISOString(), valor: 5400.00, status: "paga" }
+        ]);
+      }
+    } catch (error) {
+      console.error("Erro ao buscar contas a receber:", error);
+      // Fallback local
+      setReceber([
+         { id: 1, fatura: "FAT-0045", cliente: "Tech Solutions", os_vinculadas: "OS-401, OS-402", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 5)).toISOString(), valor: 14500.00, status: "a vencer" }
       ]);
-    } catch { }
+    }
   };
 
   const fetchPagar = async () => {
     try {
-      const { data } = await supabase.from("financeiro_pagar").select("*").order("vencimento", { ascending: true });
+      const { data, error } = await supabase.from("financeiro_pagar").select("*").order("vencimento", { ascending: true });
+      if (error) throw error;
       if (data && data.length > 0) {
         const prestadores = data.filter((d: any) => d.tipo === "prestador");
         const outros = data.filter((d: any) => d.tipo === "outro");
         setPagarPrestadores(prestadores);
         setPagarOutros(outros);
       } else {
-        setPagarPrestadores([
-          { id: 1, doc: "NF-8599", fornecedor: "João Transporte (Prestador)", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 3)).toISOString(), valor: 1200.00, status: "a vencer", tipo: "prestador" },
-          { id: 2, doc: "NF-8600", fornecedor: "Maria Freitas - ME", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 5)).toISOString(), valor: 8500.00, status: "a vencer", tipo: "prestador", os: "OS-4821" },
-        ]);
-        setPagarOutros([
-          { id: 3, doc: "NF-902", fornecedor: "Companhia de Energia", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 10)).toISOString(), valor: 4500.00, status: "a vencer", tipo: "outro", categoria: "Energia elétrica" },
-          { id: 4, doc: "BOLETO-001", fornecedor: "Locação de Galpão", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString(), valor: 15000.00, status: "a vencer", tipo: "outro", categoria: "Aluguel", recorrente: true },
-        ]);
+        throw new Error("No data");
       }
-    } catch { }
+    } catch (error) {
+      console.error("Erro ao buscar contas a pagar:", error);
+      // Fallback local
+      setPagarPrestadores([
+        { id: 1, doc: "NF-8599", fornecedor: "João Transporte (Prestador)", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 3)).toISOString(), valor: 1200.00, status: "a vencer", tipo: "prestador" },
+        { id: 2, doc: "NF-8600", fornecedor: "Maria Freitas - ME", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 5)).toISOString(), valor: 8500.00, status: "a vencer", tipo: "prestador", os: "OS-4821" },
+      ]);
+      setPagarOutros([
+        { id: 3, doc: "NF-902", fornecedor: "Companhia de Energia", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 10)).toISOString(), valor: 4500.00, status: "a vencer", tipo: "outro", categoria: "Energia elétrica" },
+        { id: 4, doc: "BOLETO-001", fornecedor: "Locação de Galpão", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString(), valor: 15000.00, status: "a vencer", tipo: "outro", categoria: "Aluguel", recorrente: true },
+      ]);
+    }
   };
 
   const fetchLancamentos = async () => {
@@ -288,7 +340,7 @@ export default function Financeiro() {
                       <div className="space-y-1"><Label className="text-xs">Vencimento</Label><Input type="date" value={novaReceita.vencimento ? novaReceita.vencimento.split("T")[0] : ""} onChange={(e) => setNovaReceita({...novaReceita, vencimento: e.target.value})} /></div>
                       <div className="space-y-1"><Label className="text-xs">Valor (R$) *</Label><Input type="number" value={novaReceita.valor || ""} onChange={(e) => setNovaReceita({...novaReceita, valor: Number(e.target.value)})} placeholder="0,00" className="font-bold" /></div>
                     </div>
-                    <DialogFooter><Button variant="outline" onClick={() => setShowNovaReceita(false)}>Cancelar</Button><Button className="bg-blue-600" onClick={handleSalvarReceita}><Check className="w-4 h-4 mr-2"/> Salvar Receita</Button></DialogFooter>
+                    <DialogFooter><Button variant="outline" onClick={() => setShowNovaReceita(false)} disabled={isSubmittingReceita}>Cancelar</Button><Button className="bg-blue-600" onClick={handleSalvarReceita} disabled={isSubmittingReceita}>{isSubmittingReceita ? "Salvando..." : <><Check className="w-4 h-4 mr-2"/> Salvar Receita</>}</Button></DialogFooter>
                   </DialogContent>
                 </Dialog>
              </CardHeader>
@@ -444,8 +496,8 @@ export default function Financeiro() {
                         </div>
                         
 <DialogFooter>
-                          <Button variant="outline" onClick={() => setShowNovaDespesa(false)}>Cancelar</Button>
-                          <Button className="bg-orange-600 hover:bg-orange-700 font-bold gap-2" onClick={handleSalvarDespesa}><Check className="w-4 h-4"/> Salvar Despesa</Button>
+                          <Button variant="outline" onClick={() => setShowNovaDespesa(false)} disabled={isSubmittingDespesa}>Cancelar</Button>
+                          <Button className="bg-orange-600 hover:bg-orange-700 font-bold gap-2" onClick={handleSalvarDespesa} disabled={isSubmittingDespesa}>{isSubmittingDespesa ? "Salvando..." : <><Check className="w-4 h-4"/> Salvar Despesa</>}</Button>
                         </DialogFooter>
                       </DialogContent>
                     </Dialog>

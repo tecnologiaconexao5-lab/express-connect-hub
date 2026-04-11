@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { CopyPlus, ArrowRightLeft, ShieldCheck, CheckSquare, Search, Lock, Link, RefreshCcw, BellRing, Link2Off, SplitSquareHorizontal } from "lucide-react";
+import { CopyPlus, ArrowRightLeft, ShieldCheck, CheckSquare, Search, Lock, Link, RefreshCcw, BellRing, Link2Off, SplitSquareHorizontal, CheckCircle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -17,11 +18,50 @@ export default function ConciliacaoAvancada() {
      { id: 3, banco_data: "21/03/2026", banco_desc: "PAGTO TED PRESTADOR D", banco_valor: -3200.00, erp_encontrado: "Baixa OS-40A2 (R$ 3.200,00)", status: "Match Exato", acao_sugerida: "Confirmado" },
   ]);
 
-  const baterMatrix = () => {
-    setMatchingStatus("processando");
-    setTimeout(() => {
-       setMatchingStatus("sucesso");
-    }, 1500);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const baterMatrix = async () => {
+    try {
+      setMatchingStatus("processando");
+      setIsProcessing(true);
+      await new Promise(res => setTimeout(res, 1500));
+      setMatchingStatus("sucesso");
+      toast.success("Comparação concluída com sucesso!");
+    } catch (error) {
+      console.error("Erro na conciliação:", error);
+      toast.error("Erro ao realizar conciliação.");
+      setMatchingStatus("pendente");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleForcarVinculo = async (id: number) => {
+    try {
+      setIsProcessing(true);
+      await new Promise(res => setTimeout(res, 800));
+      setDiferencas(prev => prev.map(d => d.id === id ? { ...d, status: "Match Exato", erp_encontrado: "Vínculo Forçado" } : d));
+      toast.success("Vínculo forçado com sucesso!");
+    } catch (error) {
+      console.error("Erro ao forçar vínculo:", error);
+      toast.error("Não foi possível realizar o vínculo.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleLancarDespesa = async (id: number, acao: string) => {
+    try {
+      setIsProcessing(true);
+      await new Promise(res => setTimeout(res, 800));
+      setDiferencas(prev => prev.map(d => d.id === id ? { ...d, status: "Match Exato", erp_encontrado: `Lançado: ${acao}` } : d));
+      toast.success(`Lançamento (${acao}) criado e conciliado!`);
+    } catch (error) {
+      console.error("Erro ao lançar despesa:", error);
+      toast.error("Falha ao criar o lançamento.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -86,9 +126,9 @@ export default function ConciliacaoAvancada() {
                            <p className="text-xs text-muted-foreground font-mono mt-0">{d.status}</p>
                         </TableCell>
                         <TableCell className="text-right">
-                           {d.status === "Match Exato" && <Badge variant="secondary" className="bg-green-100 text-green-800">Vinculado Automaticamente</Badge>}
-                           {d.status === "Sugerido (Data Diferente)" && <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700"><Link className="w-4 h-4 mr-2"/> Forçar Vínculo Lote</Button>}
-                           {d.status === "Sem Lançamento" && <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50"><SplitSquareHorizontal className="w-4 h-4 mr-2"/> Lançar como <br className="hidden"/> {d.acao_sugerida}</Button>}
+                           {d.status === "Match Exato" && <Badge variant="secondary" className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1"/> Vinculado</Badge>}
+                           {d.status === "Sugerido (Data Diferente)" && <Button size="sm" onClick={() => handleForcarVinculo(d.id)} disabled={isProcessing} className="bg-indigo-600 hover:bg-indigo-700"><Link className="w-4 h-4 mr-2"/> Forçar Vínculo</Button>}
+                           {d.status === "Sem Lançamento" && <Button size="sm" onClick={() => handleLancarDespesa(d.id, d.acao_sugerida)} disabled={isProcessing} variant="outline" className="text-red-600 border-red-200 hover:bg-red-50"><SplitSquareHorizontal className="w-4 h-4 mr-2"/> Lançar como <br className="hidden"/> {d.acao_sugerida}</Button>}
                         </TableCell>
                      </TableRow>
                   ))}
