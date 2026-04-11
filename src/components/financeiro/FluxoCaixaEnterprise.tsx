@@ -625,7 +625,7 @@ export default function FluxoCaixaEnterprise() {
                       <TableCell className="text-xs text-green-600 font-mono">{fmtFin(d.entrada)}</TableCell>
                       <TableCell className="text-xs text-red-600 font-mono">{fmtFin(d.saida)}</TableCell>
                       <TableCell className="text-xs font-mono font-medium">{fmtFin(d.entrada - d.saida)}</TableCell>
-                      <TableCell className="text-xs font-mono font-bold">{fmtFin(d.saldoAcumulado)}</Cell>
+                      <TableCell className="text-xs font-mono font-bold">{fmtFin(d.saldoAcumulado)}</TableCell>
                       <TableCell>
                         {d.realizado ? (
                           <div className="w-3 h-3 rounded-full bg-green-500" title="Realizado" />
