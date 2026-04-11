@@ -130,7 +130,7 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
             }
             localStorage.removeItem('DraftOS_Orcamento');
             toast.success("Dados do Orçamento importados com sucesso.");
-          } catch(e) {}
+} catch(e) { /* erro ignorado */ }
        }
     }
   }, [modo]);
@@ -233,21 +233,21 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
                cliente: data.cliente,
                status: "aberto"
            }]);
-         } catch(e) {}
-      }
-      
-      if (data.prestador && !os?.prestador) {
-         try {
-           await supabase.from("financeiro_pagar").insert([{
-               descricao: `Pagamento Viagem OS ${data.numero} - ${data.prestador}`,
-               valor: data.custoPrestador || 0,
-               vencimento: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString().split("T")[0],
-               os_id: resId || data.id,
-               prestador: data.prestador,
-               status: "aberto"
-           }]);
-         } catch(e) {}
-      }
+} catch(e) { /* erro ignorado */ }
+       }
+       
+       if (data.prestador && !os?.prestador) {
+          try {
+            await supabase.from("financeiro_pagar").insert([{
+                descricao: `Pagamento Viagem OS ${data.numero} - ${data.prestador}`,
+                valor: data.custoPrestador || 0,
+                vencimento: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString().split("T")[0],
+                os_id: resId || data.id,
+                prestador: data.prestador,
+                status: "aberto"
+            }]);
+          } catch(e) { /* erro ignorado */ }
+       }
 
       toast.success(isNovo ? "OS Criada com sucesso." : "OS Atualizada.");
       onSalvar();

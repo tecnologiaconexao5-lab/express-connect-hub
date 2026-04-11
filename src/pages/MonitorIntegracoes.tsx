@@ -34,7 +34,7 @@ export default function MonitorIntegracoes() {
           { id: 4, created_at: new Date(Date.now() - 860000).toISOString(), integration_name: "SEGURO_ATMS", endpoint: "https://ws.portoseguro.com.br/averbacoes", method: "POST", status_code: 200, latency_ms: 602 },
         ]);
       }
-    } catch { }
+    } catch { /* erro ignorado */ }
   };
 
   const getStatusBadge = (code: number) => {

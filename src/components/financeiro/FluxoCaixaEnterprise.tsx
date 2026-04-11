@@ -13,20 +13,6 @@ import {
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-const dadosExibir = Array.from({ length: 30 }, (_, i) => {
-  const day = i + 1;
-  const entrada = Math.random() * 80000 + 20000;
-  const saida = Math.random() * 60000 + 15000;
-  return {
-    dia: day.toString().padStart(2, '0'),
-    data: new Date(Date.now() + (i * 86400000)).toISOString().split('T')[0],
-    entrada: Math.round(entrada),
-    saida: Math.round(saida),
-    saldoAcumulado: Math.round(150000 + (entrada - saida) * (i + 1) / 3),
-    realizado: i < new Date().getDate(),
-  };
-});
-
 const mockLancamentos = [
   { id: 1, data: new Date().toISOString(), descricao: "Recebimento FAT-0045 - Tech Solutions", categoria: "Receita Faturamento", tipo: "entrada", valor: 14500, realizado: true },
   { id: 2, data: new Date().toISOString(), descricao: "Recebimento FAT-0038 - Indústria Global", categoria: "Receita Faturamento", tipo: "entrada", valor: 8200, realizado: true },
@@ -50,39 +36,53 @@ export default function FluxoCaixaEnterprise() {
   const [view, setView] = useState("grafico");
   const [visualizacao, setVisualizacao] = useState("diario");
 
-  const filteredData = () => {
-    const data = dadosExibir;
-    if (visualizacao === "semanal") {
-      const semanas: any[] = [];
-      for (let i = 0; i < data.length; i += 7) {
-        const semana = data.slice(i, i + 7);
-        semanas.push({
-          dia: `S${Math.ceil((i + 1) / 7)}`,
-          data: semana[0]?.data || "",
-          entrada: semana.reduce((a, d) => a + d.entrada, 0),
-          saida: semana.reduce((a, d) => a + d.saida, 0),
-          saldoAcumulado: semana.reduce((a, d) => a + d.saldoAcumulado, 0),
-          realizado: semana.every(d => d.realizado)
-        });
-      }
-      return semanas;
+  const rawData = Array.from({ length: 30 }, (_, i) => {
+  const day = i + 1;
+  const entrada = Math.random() * 80000 + 20000;
+  const saida = Math.random() * 60000 + 15000;
+  return {
+    dia: day.toString().padStart(2, '0'),
+    data: new Date(Date.now() + (i * 86400000)).toISOString().split('T')[0],
+    entrada: Math.round(entrada),
+    saida: Math.round(saida),
+    saldoAcumulado: Math.round(150000 + (entrada - saida) * (i + 1) / 3),
+    realizado: i < new Date().getDate(),
+  };
+});
+
+const filteredData = () => {
+  const data = rawData;
+  if (visualizacao === "semanal") {
+    const semanas: any[] = [];
+    for (let i = 0; i < data.length; i += 7) {
+      const semana = data.slice(i, i + 7);
+      semanas.push({
+        dia: `S${Math.ceil((i + 1) / 7)}`,
+        data: semana[0]?.data || "",
+        entrada: semana.reduce((a, d) => a + d.entrada, 0),
+        saida: semana.reduce((a, d) => a + d.saida, 0),
+        saldoAcumulado: semana.reduce((a, d) => a + d.saldoAcumulado, 0),
+        realizado: semana.every(d => d.realizado)
+      });
     }
-    if (visualizacao === "quinzenal") {
-      const qz: any[] = [];
-      for (let i = 0; i < data.length; i += 15) {
-        const Quinzenal = data.slice(i, i + 15);
-        qz.push({
-          dia: i === 0 ? "1ª Q" : "2ª Q",
-          data: Quinzenal[0]?.data || "",
-          entrada: Quinzenal.reduce((a, d) => a + d.entrada, 0),
-          saida: Quinzenal.reduce((a, d) => a + d.saida, 0),
-          saldoAcumulado: Quinzenal.reduce((a, d) => a + d.saldoAcumulado, 0),
-          realizado: Quinzenal.every(d => d.realizado)
-        });
-      }
-      return qz;
+    return semanas;
+  }
+  if (visualizacao === "quinzenal") {
+    const qz: any[] = [];
+    for (let i = 0; i < data.length; i += 15) {
+      const Quinzenal = data.slice(i, i + 15);
+      qz.push({
+        dia: i === 0 ? "1ª Q" : "2ª Q",
+        data: Quinzenal[0]?.data || "",
+        entrada: Quinzenal.reduce((a, d) => a + d.entrada, 0),
+        saida: Quinzenal.reduce((a, d) => a + d.saida, 0),
+        saldoAcumulado: Quinzenal.reduce((a, d) => a + d.saldoAcumulado, 0),
+        realizado: Quinzenal.every(d => d.realizado)
+      });
     }
-    return data;
+    return qz;
+  }
+  return data;
   };
 
   const dadosExibir = filteredData();
