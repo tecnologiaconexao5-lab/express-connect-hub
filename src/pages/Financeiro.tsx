@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Download, UploadCloud, PieChart, CheckCircle2, MoreHorizontal, FileText, Target, UserMinus, ShieldCheck, CreditCard, ArrowRightLeft, Plus, Search, LayoutDashboard, Calculator, BookOpen, Landmark, Users, Package, Clock, Receipt, TrendingUpIcon, FileCheck, FileX, Check, X, Eye, Edit, Trash2 } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Download, UploadCloud, PieChart, CheckCircle2, MoreHorizontal, FileText, Target, UserMinus, ShieldCheck, CreditCard, ArrowRightLeft, Plus, Search, LayoutDashboard, Calculator, BookOpen, Landmark, Users, Package, Clock, Receipt, TrendingUpIcon, FileCheck, FileX, Check, X, Eye, Edit, Trash2, AlertCircle, Sparkles } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -29,6 +29,24 @@ import ContasBancarias from "@/components/financeiro/ContasBancarias";
 import ReciboRapido from "@/components/financeiro/ReciboRapido";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+// Helper: format numeric input as BRL currency string
+const parseCurrency = (s: string): number => {
+  const clean = s.replace(/[^\d,]/g, "").replace(",", ".");
+  return parseFloat(clean) || 0;
+};
+
+// Status badge com cores padronizadas
+const StatusBadge = ({ status }: { status: string }) => {
+  const map: Record<string, { label: string; cls: string }> = {
+    "a vencer": { label: "A Vencer", cls: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300" },
+    vencida: { label: "Vencida", cls: "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300" },
+    paga: { label: "Paga", cls: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300" },
+    cancelada: { label: "Cancelada", cls: "bg-gray-100 text-gray-500 border-gray-200" },
+  };
+  const entry = map[status?.toLowerCase()] ?? { label: status ?? "-", cls: "bg-gray-100 text-gray-500" };
+  return <Badge variant="outline" className={`text-[11px] font-semibold px-2.5 py-0.5 ${entry.cls}`}>{entry.label}</Badge>;
+};
 
 const categoriasPagar = [
   "Energia elétrica", "Água", "Aluguel", "Internet/telefone", 
@@ -255,19 +273,38 @@ export default function Financeiro() {
 
   const filtrarDoc = (lista: any[], busca: string) => lista.filter(i => JSON.stringify(i).toLowerCase().includes(busca.toLowerCase()));
 
-  const StatCard = ({ title, value, sub, icon: Icon, color }: any) => (
-    <Card className="border-l-4" style={{ borderLeftColor: color }}>
-      <CardContent className="p-4 flex items-center justify-between">
-        <div>
-           <p className="text-xs font-semibold text-muted-foreground uppercase">{title}</p>
-           <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-           {sub && <p className="text-[10px] text-muted-foreground mt-1">{sub}</p>}
-        </div>
-        <div className="p-3 bg-muted rounded-full">
-          <Icon className="w-5 h-5" style={{ color }} />
-        </div>
-      </CardContent>
-    </Card>
+  // Erros inline para formulário de receita
+  const [errosReceita, setErrosReceita] = useState<Record<string, string>>({});
+  const [errosDespesa, setErrosDespesa] = useState<Record<string, string>>({});
+
+  const validarCampoReceita = (campo: string, valor: any) => {
+    const erros = { ...errosReceita };
+    if (campo === "cliente") erros.cliente = valor.trim() ? "" : "Cliente é obrigatório";
+    if (campo === "valor") erros.valor = (Number(valor) > 0) ? "" : "Valor deve ser maior que zero";
+    if (campo === "vencimento") erros.vencimento = valor ? "" : "Informe a data de vencimento";
+    setErrosReceita(erros);
+  };
+
+  const validarCampoDespesa = (campo: string, valor: any) => {
+    const erros = { ...errosDespesa };
+    if (campo === "fornecedor") erros.fornecedor = valor.trim() ? "" : "Fornecedor é obrigatório";
+    if (campo === "valorOriginal") erros.valorOriginal = (Number(valor) > 0) ? "" : "Valor deve ser maior que zero";
+    if (campo === "vencimento") erros.vencimento = valor ? "" : "Informe o vencimento";
+    setErrosDespesa(erros);
+  };
+
+  const StatCard = ({ title, value, sub, icon: Icon, gradient, iconBg }: any) => (
+    <div className="relative overflow-hidden rounded-xl border bg-card shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 p-5 flex items-center justify-between">
+      <div className={`absolute top-0 left-0 right-0 h-1 ${gradient}`} />
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">{title}</p>
+        <p className="text-2xl font-black text-foreground leading-none">{value}</p>
+        {sub && <p className="text-xs text-muted-foreground mt-1.5 font-medium">{sub}</p>}
+      </div>
+      <div className={`p-3 rounded-xl ${iconBg} shadow-sm`}>
+        <Icon className="w-5 h-5 text-white" />
+      </div>
+    </div>
   );
 
   return (
@@ -312,55 +349,126 @@ export default function Financeiro() {
         </TabsContent>
 
         {/* --- CONTAS A RECEBER --- */}
-        <TabsContent value="receber" className="space-y-4 pt-4">
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-             <StatCard title="Total a Receber" value={fmtFin(filtrarDoc(receber, "").reduce((acc, i) => acc + (i.status !== "paga" && i.status !== "cancelada" ? i.valor : 0), 0))} icon={DollarSign} color="#2563eb" />
-             <StatCard title="Vencido" value={fmtFin(filtrarDoc(receber, "").reduce((acc, i) => acc + (i.status === "vencida" ? i.valor : 0), 0))} icon={ArrowDownRight} color="#dc2626" />
-             <StatCard title="A Vencer (7 Dias)" value={fmtFin(filtrarDoc(receber, "").reduce((acc, i) => acc + (i.status === "a vencer" ? i.valor : 0), 0))} icon={ArrowDownRight} color="#eab308" />
-             <StatCard title="Recebido no Mês" value={fmtFin(filtrarDoc(receber, "").reduce((acc, i) => acc + (i.status === "paga" ? i.valor : 0), 0))} icon={DollarSign} color="#16a34a" />
+        <TabsContent value="receber" className="space-y-5 pt-4">
+           {/* KPIs Receber */}
+           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+             <StatCard title="Total a Receber" value={fmtFin(filtrarDoc(receber, "").reduce((acc, i) => acc + (i.status !== "paga" && i.status !== "cancelada" ? i.valor : 0), 0))} icon={DollarSign} gradient="bg-gradient-to-r from-blue-500 to-blue-600" iconBg="bg-gradient-to-br from-blue-500 to-blue-700" />
+             <StatCard title="Vencido" value={fmtFin(filtrarDoc(receber, "").reduce((acc, i) => acc + (i.status === "vencida" ? i.valor : 0), 0))} icon={AlertCircle} gradient="bg-gradient-to-r from-red-500 to-rose-600" iconBg="bg-gradient-to-br from-red-500 to-rose-700" />
+             <StatCard title="A Vencer (7 Dias)" value={fmtFin(filtrarDoc(receber, "").reduce((acc, i) => acc + (i.status === "a vencer" ? i.valor : 0), 0))} icon={ArrowDownRight} gradient="bg-gradient-to-r from-amber-400 to-yellow-500" iconBg="bg-gradient-to-br from-amber-400 to-yellow-600" />
+             <StatCard title="Recebido no Mês" value={fmtFin(filtrarDoc(receber, "").reduce((acc, i) => acc + (i.status === "paga" ? i.valor : 0), 0))} icon={CheckCircle2} gradient="bg-gradient-to-r from-emerald-500 to-green-600" iconBg="bg-gradient-to-br from-emerald-500 to-green-700" />
            </div>
 
-           <Card>
-             <CardHeader className="py-4 flex flex-row items-center gap-4 justify-between">
+           {/* Tabela Receber */}
+           <Card className="shadow-sm overflow-hidden">
+             <CardHeader className="py-3 px-5 flex flex-row items-center gap-4 justify-between border-b bg-muted/20">
                 <div className="relative flex-1 max-w-sm">
                   <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-                  <Input placeholder="Buscar fatura ou cliente..." value={buscaReceber} onChange={(e) => setBuscaReceber(e.target.value)} className="pl-9" />
+                  <Input placeholder="Buscar fatura ou cliente..." value={buscaReceber} onChange={(e) => setBuscaReceber(e.target.value)} className="pl-9 h-9" />
                 </div>
-                <Dialog open={showNovaReceita} onOpenChange={setShowNovaReceita}>
+                <Dialog open={showNovaReceita} onOpenChange={(open) => { setShowNovaReceita(open); if (!open) setErrosReceita({}); }}>
                   <DialogTrigger asChild>
-                    <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm"><Plus className="w-4 h-4 mr-2"/> Nova Receita (Faturar)</Button>
+                    <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm gap-1.5 h-9"><Plus className="w-4 h-4"/> Nova Receita</Button>
                   </DialogTrigger>
                   <DialogContent className="max-w-2xl">
-                    <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><ArrowDownRight className="w-5 h-5 text-blue-600"/> Nova Receita - Contas a Receber</DialogTitle></DialogHeader>
+                    <DialogHeader>
+                      <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                        <div className="p-1.5 bg-blue-100 rounded-lg"><ArrowDownRight className="w-4 h-4 text-blue-600"/></div>
+                        Nova Receita — Contas a Receber
+                      </DialogTitle>
+                      <DialogDescription>Preencha os dados abaixo. Campos com * são obrigatórios.</DialogDescription>
+                    </DialogHeader>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-                      <div className="space-y-1"><Label className="text-xs">Fatura / Nº Documento</Label><Input value={novaReceita.fatura} onChange={(e) => setNovaReceita({...novaReceita, fatura: e.target.value})} placeholder="Ex: FAT-0046" /></div>
-                      <div className="space-y-1"><Label className="text-xs">Cliente *</Label><Input value={novaReceita.cliente} onChange={(e) => setNovaReceita({...novaReceita, cliente: e.target.value})} placeholder="Nome do cliente" /></div>
-                      <div className="space-y-1"><Label className="text-xs">OS Vinculadas</Label><Input value={novaReceita.os_vinculadas} onChange={(e) => setNovaReceita({...novaReceita, os_vinculadas: e.target.value})} placeholder="OS-4001, OS-4002" /></div>
-                      <div className="space-y-1"><Label className="text-xs">Competência</Label><Input value={novaReceita.competencia} onChange={(e) => setNovaReceita({...novaReceita, competencia: e.target.value})} placeholder="MM/AAAA" /></div>
-                      <div className="space-y-1"><Label className="text-xs">Vencimento</Label><Input type="date" value={novaReceita.vencimento ? novaReceita.vencimento.split("T")[0] : ""} onChange={(e) => setNovaReceita({...novaReceita, vencimento: e.target.value})} /></div>
-                      <div className="space-y-1"><Label className="text-xs">Valor (R$) *</Label><Input type="number" value={novaReceita.valor || ""} onChange={(e) => setNovaReceita({...novaReceita, valor: Number(e.target.value)})} placeholder="0,00" className="font-bold" /></div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fatura / Nº Documento</Label>
+                        <Input value={novaReceita.fatura} onChange={(e) => setNovaReceita({...novaReceita, fatura: e.target.value})} placeholder="Ex: FAT-0046" className="h-10" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Cliente <span className="text-red-500">*</span></Label>
+                        <Input
+                          value={novaReceita.cliente}
+                          onChange={(e) => { setNovaReceita({...novaReceita, cliente: e.target.value}); validarCampoReceita("cliente", e.target.value); }}
+                          placeholder="Nome do cliente"
+                          className={`h-10 ${errosReceita.cliente ? "border-red-400 focus-visible:ring-red-300" : ""}`}
+                        />
+                        {errosReceita.cliente && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3"/>{errosReceita.cliente}</p>}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">OS Vinculadas</Label>
+                        <Input value={novaReceita.os_vinculadas} onChange={(e) => setNovaReceita({...novaReceita, os_vinculadas: e.target.value})} placeholder="OS-4001, OS-4002" className="h-10" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Competência</Label>
+                        <Input value={novaReceita.competencia} onChange={(e) => setNovaReceita({...novaReceita, competencia: e.target.value})} placeholder="MM/AAAA" className="h-10" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vencimento <span className="text-red-500">*</span></Label>
+                        <Input
+                          type="date"
+                          value={novaReceita.vencimento ? novaReceita.vencimento.split("T")[0] : ""}
+                          onChange={(e) => { setNovaReceita({...novaReceita, vencimento: e.target.value}); validarCampoReceita("vencimento", e.target.value); }}
+                          className={`h-10 ${errosReceita.vencimento ? "border-red-400" : ""}`}
+                        />
+                        {errosReceita.vencimento && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3"/>{errosReceita.vencimento}</p>}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Valor (R$) <span className="text-red-500">*</span></Label>
+                        <Input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={novaReceita.valor || ""}
+                          onChange={(e) => { setNovaReceita({...novaReceita, valor: Number(e.target.value)}); validarCampoReceita("valor", e.target.value); }}
+                          placeholder="0,00"
+                          className={`h-10 font-bold text-blue-700 dark:text-blue-400 ${errosReceita.valor ? "border-red-400" : ""}`}
+                        />
+                        {errosReceita.valor && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3"/>{errosReceita.valor}</p>}
+                      </div>
                     </div>
-                    <DialogFooter><Button variant="outline" onClick={() => setShowNovaReceita(false)} disabled={isSubmittingReceita}>Cancelar</Button><Button className="bg-blue-600" onClick={handleSalvarReceita} disabled={isSubmittingReceita}>{isSubmittingReceita ? "Salvando..." : <><Check className="w-4 h-4 mr-2"/> Salvar Receita</>}</Button></DialogFooter>
+
+                    {novaReceita.valor > 0 && (
+                      <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-3 border border-blue-200 dark:border-blue-800 mb-2">
+                        <p className="text-xs text-blue-700 dark:text-blue-300 font-semibold">Valor a ser registrado: <span className="text-lg font-black">{fmtFin(novaReceita.valor)}</span></p>
+                      </div>
+                    )}
+
+                    <DialogFooter className="gap-2">
+                      <Button variant="outline" onClick={() => setShowNovaReceita(false)} disabled={isSubmittingReceita} className="h-10">Cancelar</Button>
+                      <Button className="bg-blue-600 hover:bg-blue-700 font-semibold h-10 px-6" onClick={handleSalvarReceita} disabled={isSubmittingReceita}>
+                        {isSubmittingReceita ? <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/50 border-t-white rounded-full animate-spin"/> Salvando...</span> : <><Check className="w-4 h-4 mr-1.5"/> Salvar Receita</>}
+                      </Button>
+                    </DialogFooter>
                   </DialogContent>
                 </Dialog>
              </CardHeader>
              <CardContent className="p-0">
                <Table>
-                 <TableHeader><TableRow><TableHead>Fatura</TableHead><TableHead>Cliente</TableHead><TableHead>OS Vinculada</TableHead><TableHead>Competência</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                 <TableHeader>
+                   <TableRow className="bg-muted/30 hover:bg-muted/30">
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase pl-5">Fatura</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase">Cliente</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase">OS Vinculada</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase">Competência</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase">Vencimento</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase text-right pr-5">Valor</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase">Status</TableHead>
+                   </TableRow>
+                 </TableHeader>
                  <TableBody>
                    {filtrarDoc(receber, buscaReceber).map((r: any, i: number) => (
-                     <TableRow key={i}>
-                       <TableCell className="font-semibold">{r.fatura}</TableCell>
-                       <TableCell>{r.cliente}</TableCell>
-                       <TableCell><Badge variant="outline">{r.os_vinculadas}</Badge></TableCell>
-                       <TableCell>{r.competencia}</TableCell>
-                       <TableCell>{new Date(r.vencimento).toLocaleDateString()}</TableCell>
-                       <TableCell className="text-right font-medium">{fmtFin(r.valor)}</TableCell>
-                       <TableCell>
-                         <Badge variant="outline" className={r.status === "a vencer" ? "bg-blue-50 text-blue-700 border-blue-200" : r.status === "vencida" ? "bg-red-50 text-red-700 border-red-200" : r.status === "paga" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-700 border-gray-200"}>{r.status.toUpperCase()}</Badge>
-                       </TableCell>
+                     <TableRow key={i} className="hover:bg-muted/20 transition-colors">
+                       <TableCell className="font-semibold text-sm pl-5 text-blue-700 dark:text-blue-400">{r.fatura}</TableCell>
+                       <TableCell className="font-medium text-sm">{r.cliente}</TableCell>
+                       <TableCell><Badge variant="outline" className="text-xs font-mono">{r.os_vinculadas}</Badge></TableCell>
+                       <TableCell className="text-sm text-muted-foreground">{r.competencia}</TableCell>
+                       <TableCell className="text-sm">{new Date(r.vencimento).toLocaleDateString("pt-BR")}</TableCell>
+                       <TableCell className="text-right pr-5 font-bold text-sm">{fmtFin(r.valor)}</TableCell>
+                       <TableCell><StatusBadge status={r.status} /></TableCell>
                      </TableRow>
                    ))}
+                   {filtrarDoc(receber, buscaReceber).length === 0 && (
+                     <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground text-sm">Nenhum registro encontrado</TableCell></TableRow>
+                   )}
                  </TableBody>
                </Table>
              </CardContent>
@@ -368,157 +476,154 @@ export default function Financeiro() {
         </TabsContent>
 
         {/* --- CONTAS A PAGAR --- */}
-        <TabsContent value="pagar" className="space-y-4 pt-4">
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-             <StatCard title="Total a Pagar" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status !== "paga" && i.status !== "cancelada" ? i.valor : 0), 0))} icon={DollarSign} color="#ea580c" />
-             <StatCard title="Atrasado" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status === "vencida" ? i.valor : 0), 0))} icon={ArrowDownRight} color="#dc2626" />
-             <StatCard title="A Vencer (7 Dias)" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status === "a vencer" ? i.valor : 0), 0))} icon={ArrowDownRight} color="#eab308" />
-             <StatCard title="Pago no Mês" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status === "paga" ? i.valor : 0), 0))} icon={DollarSign} color="#16a34a" />
+        <TabsContent value="pagar" className="space-y-5 pt-4">
+           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+             <StatCard title="Total a Pagar" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status !== "paga" && i.status !== "cancelada" ? i.valor : 0), 0))} icon={ArrowUpRight} gradient="bg-gradient-to-r from-orange-500 to-red-500" iconBg="bg-gradient-to-br from-orange-500 to-red-600" />
+             <StatCard title="Atrasado" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status === "vencida" ? i.valor : 0), 0))} icon={AlertCircle} gradient="bg-gradient-to-r from-red-600 to-rose-700" iconBg="bg-gradient-to-br from-red-600 to-rose-800" />
+             <StatCard title="A Vencer (7 Dias)" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status === "a vencer" ? i.valor : 0), 0))} icon={Clock} gradient="bg-gradient-to-r from-amber-400 to-yellow-500" iconBg="bg-gradient-to-br from-amber-400 to-yellow-600" />
+             <StatCard title="Pago no Mês" value={fmtFin(filtrarDoc([...pagarOutros, ...pagarPrestadores], "").reduce((acc, i) => acc + (i.status === "paga" ? i.valor : 0), 0))} icon={CheckCircle2} gradient="bg-gradient-to-r from-emerald-500 to-green-600" iconBg="bg-gradient-to-br from-emerald-500 to-green-700" />
            </div>
 
-           <Card>
-             <CardHeader className="py-4 flex flex-row items-center gap-4 justify-between">
+           <Card className="shadow-sm overflow-hidden">
+             <CardHeader className="py-3 px-5 flex flex-row items-center gap-4 justify-between border-b bg-muted/20">
                 <div className="relative flex-1 max-w-sm">
                   <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-                  <Input placeholder="Buscar documento ou fornecedor..." value={buscaPagar} onChange={(e) => setBuscaPagar(e.target.value)} className="pl-9" />
+                  <Input placeholder="Buscar documento ou fornecedor..." value={buscaPagar} onChange={(e) => setBuscaPagar(e.target.value)} className="pl-9 h-9" />
                 </div>
-                <Dialog open={showNovaDespesa} onOpenChange={setShowNovaDespesa}>
+                <Dialog open={showNovaDespesa} onOpenChange={(open) => { setShowNovaDespesa(open); if (!open) setErrosDespesa({}); }}>
                   <DialogTrigger asChild>
-                        <Button className="bg-orange-600 hover:bg-orange-700 text-white font-semibold shadow-sm"><Plus className="w-4 h-4 mr-2"/> Nova Despesa (Contas a Pagar)</Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                        <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><ArrowUpRight className="w-5 h-5 text-orange-600"/> Lançamento de Contas a Pagar</DialogTitle></DialogHeader>
-                        
-                        <div className="space-y-6 py-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                             <div className="space-y-1">
-                               <Label className="text-xs">Buscar Favorecido (Obrigatório) *</Label>
-                               <Input 
-                                 value={novaDespesa.fornecedor} 
-                                 onChange={(e) => setNovaDespesa({...novaDespesa, fornecedor: e.target.value})}
-                                 placeholder="Nome do fornecedor" 
-                               />
-                             </div>
-                             <div className="space-y-1">
-                               <Label className="text-xs">Categoria / Plano de Contas</Label>
-                               <Select 
-                                 value={novaDespesa.categoria} 
-                                 onValueChange={(v) => setNovaDespesa({...novaDespesa, categoria: v})}
-                               >
-                                 <SelectTrigger><SelectValue placeholder="Selecione a categoria" /></SelectTrigger>
-                                 <SelectContent>
-                                   <SelectItem value="Energia elétrica">Energia elétrica</SelectItem>
-                                   <SelectItem value="Água">Água</SelectItem>
-                                   <SelectItem value="Aluguel">Aluguel / Condomínio</SelectItem>
-                                   <SelectItem value="Manutenção">Manutenção Frota</SelectItem>
-                                   <SelectItem value="Combustível">Combustível</SelectItem>
-                                   <SelectItem value="Folha de Pagamento">Folha de Pagamento</SelectItem>
-                                   <SelectItem value="Impostos">Impostos Diversos</SelectItem>
-                                   <SelectItem value="Outros">Outros</SelectItem>
-                                 </SelectContent>
-                               </Select>
-                             </div>
-                          </div>
+                    <Button className="bg-orange-600 hover:bg-orange-700 text-white font-semibold shadow-sm gap-1.5 h-9"><Plus className="w-4 h-4"/> Nova Despesa</Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                        <div className="p-1.5 bg-orange-100 rounded-lg"><ArrowUpRight className="w-4 h-4 text-orange-600"/></div>
+                        Lançamento — Contas a Pagar
+                      </DialogTitle>
+                      <DialogDescription>Campos com * são obrigatórios para salvar.</DialogDescription>
+                    </DialogHeader>
 
-                          <div className="border border-orange-100 bg-orange-50/50 p-4 rounded-lg grid grid-cols-2 md:grid-cols-4 gap-4">
-                             <div className="col-span-2 md:col-span-1 space-y-1">
-                               <Label className="text-xs">Valor Original (R$) *</Label>
-                               <Input 
-                                 type="number" 
-                                 value={novaDespesa.valorOriginal || ""} 
-                                 onChange={(e) => setNovaDespesa({...novaDespesa, valorOriginal: Number(e.target.value)})}
-                                 placeholder="0,00" 
-                                 className="font-mono font-bold text-orange-700 text-lg" 
-                               />
-                             </div>
-                             <div className="space-y-1">
-                               <Label className="text-xs">Acres/Multa/Juros (+)</Label>
-                               <Input 
-                                 type="number" 
-                                 value={novaDespesa.acrescimos || ""} 
-                                 onChange={(e) => setNovaDespesa({...novaDespesa, acrescimos: Number(e.target.value)})}
-                                 placeholder="0,00" 
-                                 className="font-mono text-red-600" 
-                               />
-                             </div>
-                             <div className="space-y-1">
-                               <Label className="text-xs">Descontos (-)</Label>
-                               <Input 
-                                 type="number" 
-                                 value={novaDespesa.descuentos || ""} 
-                                 onChange={(e) => setNovaDespesa({...novaDespesa, descuentos: Number(e.target.value)})}
-                                 placeholder="0,00" 
-                                 className="font-mono text-green-600" 
-                               />
-                             </div>
-                             <div className="space-y-1">
-                               <Label className="text-xs">Valor Total Pagar</Label>
-                               <div className="font-mono font-bold text-orange-700 text-lg py-2">{fmtFin(valorTotalDespesa)}</div>
-                             </div>
-                          </div>
+                    <div className="space-y-5 py-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Favorecido / Fornecedor <span className="text-red-500">*</span></Label>
+                          <Input
+                            value={novaDespesa.fornecedor}
+                            onChange={(e) => { setNovaDespesa({...novaDespesa, fornecedor: e.target.value}); validarCampoDespesa("fornecedor", e.target.value); }}
+                            placeholder="Nome do fornecedor"
+                            className={`h-10 ${errosDespesa.fornecedor ? "border-red-400 focus-visible:ring-red-300" : ""}`}
+                          />
+                          {errosDespesa.fornecedor && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3"/>{errosDespesa.fornecedor}</p>}
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Categoria / Plano de Contas</Label>
+                          <Select value={novaDespesa.categoria} onValueChange={(v) => setNovaDespesa({...novaDespesa, categoria: v})}>
+                            <SelectTrigger className="h-10"><SelectValue placeholder="Selecione a categoria" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Energia elétrica">Energia elétrica</SelectItem>
+                              <SelectItem value="Água">Água</SelectItem>
+                              <SelectItem value="Aluguel">Aluguel / Condomínio</SelectItem>
+                              <SelectItem value="Manutenção">Manutenção Frota</SelectItem>
+                              <SelectItem value="Combustível">Combustível</SelectItem>
+                              <SelectItem value="Folha de Pagamento">Folha de Pagamento</SelectItem>
+                              <SelectItem value="Impostos">Impostos Diversos</SelectItem>
+                              <SelectItem value="Outros">Outros</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
 
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                             <div className="space-y-1">
-                               <Label className="text-xs">Documento/NF</Label>
-                               <Input 
-                                 value={novaDespesa.doc}
-                                 onChange={(e) => setNovaDespesa({...novaDespesa, doc: e.target.value})}
-                                 placeholder="Nº Documento" 
-                               />
-                             </div>
-                             <div className="space-y-1">
-                               <Label className="text-xs">Vencimento</Label>
-                               <Input 
-                                 type="date" 
-                                 value={novaDespesa.vencimento ? novaDespesa.vencimento.split("T")[0] : ""}
-                                 onChange={(e) => setNovaDespesa({...novaDespesa, vencimento: e.target.value})} 
-                               />
-                             </div>
-                             <div className="space-y-1">
-                               <Label className="text-xs">Competência</Label>
-                               <Input 
-                                 value={novaDespesa.competencia}
-                                 onChange={(e) => setNovaDespesa({...novaDespesa, competencia: e.target.value})}
-                                 placeholder="MM/AAAA" 
-                               />
-                             </div>
+                      {/* Bloco de valores */}
+                      <div className="rounded-xl border border-orange-200 bg-orange-50/40 dark:bg-orange-950/20 dark:border-orange-800 p-4">
+                        <p className="text-xs font-bold text-orange-700 dark:text-orange-400 uppercase tracking-wide mb-3">Composição do Valor</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-muted-foreground">Valor Original (R$) <span className="text-red-500">*</span></Label>
+                            <Input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              value={novaDespesa.valorOriginal || ""}
+                              onChange={(e) => { setNovaDespesa({...novaDespesa, valorOriginal: Number(e.target.value)}); validarCampoDespesa("valorOriginal", e.target.value); }}
+                              placeholder="0,00"
+                              className={`h-10 font-bold text-orange-700 dark:text-orange-400 ${errosDespesa.valorOriginal ? "border-red-400" : ""}`}
+                            />
+                            {errosDespesa.valorOriginal && <p className="text-xs text-red-500">{errosDespesa.valorOriginal}</p>}
                           </div>
-
-                          <div className="space-y-1">
-                             <Label className="text-xs">Observações / Histórico</Label>
-                             <Textarea 
-                               value={novaDespesa.observacoes}
-                               onChange={(e) => setNovaDespesa({...novaDespesa, observacoes: e.target.value})}
-                               placeholder="Descreva os detalhes desta despesa..." 
-                               className="resize-none" 
-                             />
+                          <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-muted-foreground">Acres/Multa (+)</Label>
+                            <Input type="number" value={novaDespesa.acrescimos || ""} onChange={(e) => setNovaDespesa({...novaDespesa, acrescimos: Number(e.target.value)})} placeholder="0,00" className="h-10 font-mono text-red-600" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-muted-foreground">Descontos (-)</Label>
+                            <Input type="number" value={novaDespesa.descuentos || ""} onChange={(e) => setNovaDespesa({...novaDespesa, descuentos: Number(e.target.value)})} placeholder="0,00" className="h-10 font-mono text-green-600" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs font-semibold text-muted-foreground">Total a Pagar</Label>
+                            <div className="h-10 flex items-center px-3 rounded-lg bg-orange-100 dark:bg-orange-900/30 font-black text-orange-700 dark:text-orange-300 text-lg">{fmtFin(valorTotalDespesa)}</div>
                           </div>
                         </div>
-                        
-<DialogFooter>
-                          <Button variant="outline" onClick={() => setShowNovaDespesa(false)} disabled={isSubmittingDespesa}>Cancelar</Button>
-                          <Button className="bg-orange-600 hover:bg-orange-700 font-bold gap-2" onClick={handleSalvarDespesa} disabled={isSubmittingDespesa}>{isSubmittingDespesa ? "Salvando..." : <><Check className="w-4 h-4"/> Salvar Despesa</>}</Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-              </CardHeader>
-              <CardContent className="p-0">
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Documento/NF</Label>
+                          <Input value={novaDespesa.doc} onChange={(e) => setNovaDespesa({...novaDespesa, doc: e.target.value})} placeholder="Nº Documento" className="h-10" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vencimento <span className="text-red-500">*</span></Label>
+                          <Input type="date" value={novaDespesa.vencimento ? novaDespesa.vencimento.split("T")[0] : ""} onChange={(e) => { setNovaDespesa({...novaDespesa, vencimento: e.target.value}); validarCampoDespesa("vencimento", e.target.value); }} className={`h-10 ${errosDespesa.vencimento ? "border-red-400" : ""}`} />
+                          {errosDespesa.vencimento && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3"/>{errosDespesa.vencimento}</p>}
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Competência</Label>
+                          <Input value={novaDespesa.competencia} onChange={(e) => setNovaDespesa({...novaDespesa, competencia: e.target.value})} placeholder="MM/AAAA" className="h-10" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Observações / Histórico</Label>
+                        <Textarea value={novaDespesa.observacoes} onChange={(e) => setNovaDespesa({...novaDespesa, observacoes: e.target.value})} placeholder="Descreva os detalhes desta despesa..." className="resize-none h-20" />
+                      </div>
+                    </div>
+
+                    <DialogFooter className="gap-2">
+                      <Button variant="outline" onClick={() => setShowNovaDespesa(false)} disabled={isSubmittingDespesa} className="h-10">Cancelar</Button>
+                      <Button className="bg-orange-600 hover:bg-orange-700 font-semibold h-10 px-6 gap-2" onClick={handleSalvarDespesa} disabled={isSubmittingDespesa}>
+                        {isSubmittingDespesa ? <span className="flex items-center gap-2"><span className="w-3.5 h-3.5 border-2 border-white/50 border-t-white rounded-full animate-spin"/> Salvando...</span> : <><Check className="w-4 h-4"/> Salvar Despesa</>}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+             </CardHeader>
+             <CardContent className="p-0">
                <Table>
-                 <TableHeader><TableRow><TableHead>Documento</TableHead><TableHead>Fornecedor</TableHead><TableHead>Categoria / Tipo</TableHead><TableHead>Competência</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                 <TableHeader>
+                   <TableRow className="bg-muted/30 hover:bg-muted/30">
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase pl-5">Documento</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase">Fornecedor</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase">Categoria</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase">Competência</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase">Vencimento</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase text-right pr-5">Valor</TableHead>
+                     <TableHead className="font-semibold text-xs text-muted-foreground uppercase">Status</TableHead>
+                   </TableRow>
+                 </TableHeader>
                  <TableBody>
                    {filtrarDoc([...pagarOutros, ...pagarPrestadores], buscaPagar).map((p: any, i: number) => (
-                     <TableRow key={i}>
-                       <TableCell className="font-semibold">{p.doc}</TableCell>
-                       <TableCell>{p.fornecedor}</TableCell>
-                       <TableCell><Badge variant="outline">{p.categoria || p.tipo}</Badge></TableCell>
-                       <TableCell>{p.competencia}</TableCell>
-                       <TableCell>{new Date(p.vencimento).toLocaleDateString()}</TableCell>
-                       <TableCell className="text-right font-medium">{fmtFin(p.valor)}</TableCell>
-                       <TableCell>
-                         <Badge variant="outline" className={p.status === "a vencer" ? "bg-blue-50 text-blue-700 border-blue-200" : p.status === "vencida" ? "bg-red-50 text-red-700 border-red-200" : p.status === "paga" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-700 border-gray-200"}>{p.status.toUpperCase()}</Badge>
-                       </TableCell>
+                     <TableRow key={i} className="hover:bg-muted/20 transition-colors">
+                       <TableCell className="font-semibold text-sm pl-5 font-mono text-muted-foreground">{p.doc}</TableCell>
+                       <TableCell className="font-medium text-sm">{p.fornecedor}</TableCell>
+                       <TableCell><Badge variant="outline" className="text-xs">{p.categoria || p.tipo}</Badge></TableCell>
+                       <TableCell className="text-sm text-muted-foreground">{p.competencia}</TableCell>
+                       <TableCell className="text-sm">{new Date(p.vencimento).toLocaleDateString("pt-BR")}</TableCell>
+                       <TableCell className="text-right pr-5 font-bold text-sm text-orange-600 dark:text-orange-400">{fmtFin(p.valor)}</TableCell>
+                       <TableCell><StatusBadge status={p.status} /></TableCell>
                      </TableRow>
                    ))}
+                   {filtrarDoc([...pagarOutros, ...pagarPrestadores], buscaPagar).length === 0 && (
+                     <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground text-sm">Nenhum registro encontrado</TableCell></TableRow>
+                   )}
                  </TableBody>
                </Table>
              </CardContent>

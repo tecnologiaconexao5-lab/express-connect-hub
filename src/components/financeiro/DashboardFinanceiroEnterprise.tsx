@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Calendar, AlertCircle, FileText, Truck } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Calendar, AlertCircle, FileText, Truck, Wallet, Activity, ChevronUp, ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, AreaChart, Area, ComposedChart } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, Line } from "recharts";
 import { supabase } from "@/lib/supabase";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -74,28 +74,41 @@ interface KPICardProps {
   value: string;
   subValue?: string;
   icon: React.ElementType;
-  color: string;
+  gradient: string;
+  iconBg: string;
   trend?: number;
+  trendLabel?: string;
+  size?: "lg" | "sm";
 }
 
-const KPICard = ({ title, value, subValue, icon: Icon, color, trend }: KPICardProps) => (
-  <Card className="border-l-4" style={{ borderLeftColor: color }}>
-    <CardContent className="p-4 flex items-center justify-between">
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground uppercase">{title}</p>
-        <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-        {subValue && <p className="text-[10px] text-muted-foreground mt-1">{subValue}</p>}
+const KPICard = ({ title, value, subValue, icon: Icon, gradient, iconBg, trend, trendLabel, size = "sm" }: KPICardProps) => (
+  <div className={`relative group overflow-hidden rounded-xl border bg-card shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-0.5 ${size === "lg" ? "p-6" : "p-5"}`}>
+    {/* Gradient accent top */}
+    <div className={`absolute top-0 left-0 right-0 h-1 ${gradient}`} />
+
+    <div className="flex items-start justify-between">
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{title}</p>
+        <p className={`font-black tracking-tight text-foreground truncate ${size === "lg" ? "text-3xl" : "text-2xl"}`}>{value}</p>
+        {subValue && (
+          <p className="text-xs text-muted-foreground mt-1 font-medium">{subValue}</p>
+        )}
         {trend !== undefined && (
-          <p className={`text-xs font-semibold mt-1 ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {trend >= 0 ? '↑' : '↓'} {fmtPct(trend)} vs mês ant.
-          </p>
+          <div className={`inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full text-xs font-bold ${
+            trend >= 0
+              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+          }`}>
+            {trend >= 0 ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {fmtPct(trend)} {trendLabel ?? "vs mês ant."}
+          </div>
         )}
       </div>
-      <div className="p-3 bg-muted rounded-full">
-        <Icon className="w-5 h-5" style={{ color }} />
+      <div className={`flex-shrink-0 ml-3 p-3 rounded-xl ${iconBg} shadow-sm group-hover:scale-110 transition-transform duration-200`}>
+        <Icon className={`${size === "lg" ? "w-6 h-6" : "w-5 h-5"} text-white`} />
       </div>
-    </CardContent>
-  </Card>
+    </div>
+  </div>
 );
 
 export default function DashboardFinanceiroEnterprise() {
@@ -111,7 +124,7 @@ export default function DashboardFinanceiroEnterprise() {
       const { data: rcv } = await supabase.from("financeiro_receber").select("*").order("vencimento", { ascending: true });
       if (rcv) setReceber(rcv);
     } catch { setReceber(mockFaturasVencendo.map(f => ({...f, status: 'a vencer'}))); }
-    
+
     try {
       const { data: pgr } = await supabase.from("financeiro_pagar").select("*").order("vencimento", { ascending: true });
       if (pgr) setPagar(pgr);
@@ -123,215 +136,269 @@ export default function DashboardFinanceiroEnterprise() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold flex items-center gap-2">
-          <TrendingUp className="w-6 h-6 text-primary" />
-          Dashboard Financeiro Enterprise
-        </h2>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div>
+          <h2 className="text-2xl font-black flex items-center gap-2.5 text-foreground">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Activity className="w-5 h-5 text-primary" />
+            </div>
+            Dashboard Financeiro
+          </h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Visão executiva em tempo real</p>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/60 rounded-lg px-3 py-2">
           <Calendar className="w-4 h-4" />
-          {new Date().toLocaleDateString("pt-BR", { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          <span className="font-medium">{new Date().toLocaleDateString("pt-BR", { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
         </div>
       </div>
 
-      {/* Linha 1 - KPIs Grandes */}
+      {/* KPIs primários — grandes */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard 
-          title="Receita do Mês" 
-          value={fmtFin(mockKPIs.receitaMes)} 
-          icon={DollarSign} 
-          color="#2563eb"
+        <KPICard
+          title="Receita do Mês"
+          value={fmtFin(mockKPIs.receitaMes)}
+          icon={TrendingUp}
+          gradient="bg-gradient-to-r from-blue-500 to-blue-600"
+          iconBg="bg-gradient-to-br from-blue-500 to-blue-700"
           trend={variacaoReceita}
+          size="lg"
         />
-        <KPICard 
-          title="Custos Operacionais" 
-          value={fmtFin(mockKPIs.custosOperacionais)} 
-          icon={ArrowUpRight} 
-          color="#dc2626"
+        <KPICard
+          title="Custos Operacionais"
+          value={fmtFin(mockKPIs.custosOperacionais)}
+          icon={ArrowUpRight}
+          gradient="bg-gradient-to-r from-red-500 to-rose-600"
+          iconBg="bg-gradient-to-br from-red-500 to-rose-700"
           trend={variacaoCustos}
+          trendLabel="(↓ bom)"
+          size="lg"
         />
-        <KPICard 
-          title="Resultado Líquido" 
-          value={fmtFin(mockKPIs.resultadoLiquido)} 
+        <KPICard
+          title="Resultado Líquido"
+          value={fmtFin(mockKPIs.resultadoLiquido)}
           subValue={`Margem: ${mockKPIs.margemLiquida}%`}
-          icon={TrendingUp} 
-          color="#16a34a"
+          icon={DollarSign}
+          gradient="bg-gradient-to-r from-emerald-500 to-green-600"
+          iconBg="bg-gradient-to-br from-emerald-500 to-green-700"
+          size="lg"
         />
-        <KPICard 
-          title="Saldo Projetado (30 dias)" 
-          value={fmtFin(mockKPIs.saldoProjetado30)} 
-          icon={DollarSign} 
-          color="#7c3aed"
+        <KPICard
+          title="Saldo Projetado 30d"
+          value={fmtFin(mockKPIs.saldoProjetado30)}
+          subValue="Baseado no fluxo atual"
+          icon={Wallet}
+          gradient="bg-gradient-to-r from-violet-500 to-purple-600"
+          iconBg="bg-gradient-to-br from-violet-500 to-purple-700"
+          size="lg"
         />
       </div>
 
-      {/* Linha 2 - KPIs Menores */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard 
-          title="A Receber (7 dias)" 
-          value={fmtFin(mockKPIs.aReceber7Dias)} 
-          icon={ArrowDownRight} 
-          color="#f59e0b"
+      {/* KPIs secundários */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KPICard
+          title="A Receber (7 dias)"
+          value={fmtFin(mockKPIs.aReceber7Dias)}
+          icon={ArrowDownRight}
+          gradient="bg-gradient-to-r from-amber-400 to-yellow-500"
+          iconBg="bg-gradient-to-br from-amber-400 to-yellow-600"
         />
-        <KPICard 
-          title="A Pagar (7 dias)" 
-          value={fmtFin(mockKPIs.aPagar7Dias)} 
-          icon={ArrowUpRight} 
-          color="#ef4444"
+        <KPICard
+          title="A Pagar (7 dias)"
+          value={fmtFin(mockKPIs.aPagar7Dias)}
+          icon={ArrowUpRight}
+          gradient="bg-gradient-to-r from-orange-500 to-red-500"
+          iconBg="bg-gradient-to-br from-orange-500 to-red-600"
         />
-        <KPICard 
-          title="Inadimplência Atual" 
-          value={fmtFin(mockKPIs.inadimplencia)} 
+        <KPICard
+          title="Inadimplência"
+          value={fmtFin(mockKPIs.inadimplencia)}
           subValue={`${mockKPIs.clientesInadimplentes} clientes`}
-          icon={AlertCircle} 
-          color="#dc2626"
+          icon={AlertCircle}
+          gradient="bg-gradient-to-r from-red-600 to-rose-700"
+          iconBg="bg-gradient-to-br from-red-600 to-rose-800"
         />
-        <KPICard 
-          title="Custo por OS (média)" 
-          value={fmtFin(mockKPIs.custoPorOS)} 
-          icon={Truck} 
-          color="#0891b2"
+        <KPICard
+          title="Custo Médio por OS"
+          value={fmtFin(mockKPIs.custoPorOS)}
+          icon={Truck}
+          gradient="bg-gradient-to-r from-cyan-500 to-sky-600"
+          iconBg="bg-gradient-to-br from-cyan-500 to-sky-700"
         />
       </div>
 
-      {/* Linha 3 - Gráficos */}
+      {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Receita vs Despesa vs Resultado (6 meses)</CardTitle>
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2 border-b">
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-blue-500 inline-block" />
+              Receita vs Despesa (6 meses)
+            </CardTitle>
           </CardHeader>
-          <CardContent className="h-[300px]">
+          <CardContent className="h-[280px] pt-4">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={mockGrafico6Meses}>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `R$ ${(v/1000).toFixed(0)}k`} />
-                <Tooltip 
+              <BarChart data={mockGrafico6Meses} barGap={4}>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-20" vertical={false} />
+                <XAxis dataKey="mes" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
+                <Tooltip
                   formatter={(value: number) => fmtFin(value)}
-                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }}
+                  contentStyle={{ borderRadius: '10px', border: '1px solid #e5e7eb', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 12 }}
                 />
-                <Legend />
-                <Bar dataKey="receita" name="Receita" fill="#2563eb" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="despesa" name="Despesa" fill="#dc2626" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="resultado" name="Resultado" fill="#16a34a" radius={[4, 4, 0, 0]} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="receita" name="Receita" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="despesa" name="Despesa" fill="#f87171" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="resultado" name="Resultado" fill="#34d399" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Fluxo de Caixa Projetado (30 dias)</CardTitle>
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2 border-b">
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" />
+              Fluxo de Caixa Projetado (30 dias)
+            </CardTitle>
           </CardHeader>
-          <CardContent className="h-[300px]">
+          <CardContent className="h-[280px] pt-4">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={mockFluxoCaixa30Dias}>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                <XAxis dataKey="dia" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `R$ ${(v/1000).toFixed(0)}k`} />
-                <Tooltip 
+                <defs>
+                  <linearGradient id="entradaGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#34d399" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="saidaGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f87171" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#f87171" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-20" vertical={false} />
+                <XAxis dataKey="dia" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} axisLine={false} tickLine={false} />
+                <Tooltip
                   formatter={(value: number) => fmtFin(value)}
-                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }}
+                  contentStyle={{ borderRadius: '10px', border: '1px solid #e5e7eb', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 12 }}
                 />
-                <Legend />
-                <Area type="monotone" dataKey="entrada" name="Entradas" stroke="#16a34a" fill="#16a34a" fillOpacity={0.2} />
-                <Area type="monotone" dataKey="saida" name="Saídas" stroke="#dc2626" fill="#dc2626" fillOpacity={0.2} />
-                <Line type="monotone" dataKey="saldoAcumulado" name="Saldo Acumulado" stroke="#7c3aed" strokeWidth={2} dot={false} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Area type="monotone" dataKey="entrada" name="Entradas" stroke="#34d399" fill="url(#entradaGrad)" strokeWidth={2} />
+                <Area type="monotone" dataKey="saida" name="Saídas" stroke="#f87171" fill="url(#saidaGrad)" strokeWidth={2} />
+                <Line type="monotone" dataKey="saldoAcumulado" name="Saldo Acumulado" stroke="#a78bfa" strokeWidth={2.5} dot={false} strokeDasharray="5 3" />
               </AreaChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
 
-      {/* Linha 4 - Tabelas Rápidas */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader className="py-3 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-600" />
+      {/* Tabelas de alertas */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Faturas vencendo */}
+        <Card className="shadow-sm overflow-hidden">
+          <CardHeader className="py-3 px-5 flex flex-row items-center justify-between bg-blue-50/50 dark:bg-blue-950/20 border-b">
+            <CardTitle className="text-sm font-bold flex items-center gap-2 text-blue-800 dark:text-blue-300">
+              <FileText className="w-4 h-4" />
               Faturas Vencendo Hoje
             </CardTitle>
-            <Badge variant="secondary" className="text-xs">{mockFaturasVencendo.length}</Badge>
+            <Badge className="bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/50 dark:text-blue-300 text-xs font-bold">{mockFaturasVencendo.length}</Badge>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="h-8 text-xs">Fatura</TableHead>
-                  <TableHead className="h-8 text-xs">Cliente</TableHead>
-                  <TableHead className="h-8 text-xs text-right">Valor</TableHead>
+                <TableRow className="hover:bg-transparent border-b bg-muted/20">
+                  <TableHead className="h-8 text-xs font-semibold text-muted-foreground px-4">Fatura</TableHead>
+                  <TableHead className="h-8 text-xs font-semibold text-muted-foreground">Cliente</TableHead>
+                  <TableHead className="h-8 text-xs font-semibold text-muted-foreground text-right px-4">Valor</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {mockFaturasVencendo.slice(0, 5).map((f) => (
-                  <TableRow key={f.id} className="h-10">
-                    <TableCell className="text-xs font-medium py-2">{f.fatura}</TableCell>
-                    <TableCell className="text-xs py-2">{f.cliente}</TableCell>
-                    <TableCell className="text-xs text-right font-medium py-2">{fmtFin(f.valor)}</TableCell>
+                  <TableRow key={f.id} className="h-11 hover:bg-blue-50/30 dark:hover:bg-blue-950/10 transition-colors">
+                    <TableCell className="text-xs font-semibold py-2 px-4 text-blue-700 dark:text-blue-400">{f.fatura}</TableCell>
+                    <TableCell className="text-xs py-2 font-medium text-foreground">{f.cliente}</TableCell>
+                    <TableCell className="text-xs text-right py-2 px-4 font-bold text-blue-700 dark:text-blue-400">{fmtFin(f.valor)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+            <div className="px-4 py-2.5 border-t bg-muted/10">
+              <p className="text-xs text-muted-foreground font-semibold">
+                Total: <span className="text-blue-700 dark:text-blue-400">{fmtFin(mockFaturasVencendo.reduce((a, b) => a + b.valor, 0))}</span>
+              </p>
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="py-3 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-red-600" />
+        {/* Pagamentos programados */}
+        <Card className="shadow-sm overflow-hidden">
+          <CardHeader className="py-3 px-5 flex flex-row items-center justify-between bg-red-50/50 dark:bg-red-950/20 border-b">
+            <CardTitle className="text-sm font-bold flex items-center gap-2 text-red-800 dark:text-red-300">
+              <DollarSign className="w-4 h-4" />
               Pagamentos Programados
             </CardTitle>
-            <Badge variant="secondary" className="text-xs">{mockPagamentosProgramados.length}</Badge>
+            <Badge className="bg-red-100 text-red-700 border-red-200 dark:bg-red-900/50 dark:text-red-300 text-xs font-bold">{mockPagamentosProgramados.length}</Badge>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="h-8 text-xs">Doc</TableHead>
-                  <TableHead className="h-8 text-xs">Fornecedor</TableHead>
-                  <TableHead className="h-8 text-xs text-right">Valor</TableHead>
+                <TableRow className="hover:bg-transparent border-b bg-muted/20">
+                  <TableHead className="h-8 text-xs font-semibold text-muted-foreground px-4">Doc</TableHead>
+                  <TableHead className="h-8 text-xs font-semibold text-muted-foreground">Fornecedor</TableHead>
+                  <TableHead className="h-8 text-xs font-semibold text-muted-foreground text-right px-4">Valor</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {mockPagamentosProgramados.slice(0, 5).map((p) => (
-                  <TableRow key={p.id} className="h-10">
-                    <TableCell className="text-xs font-medium py-2">{p.doc}</TableCell>
-                    <TableCell className="text-xs py-2">{p.fornecedor}</TableCell>
-                    <TableCell className="text-xs text-right font-medium py-2 text-red-600">{fmtFin(p.valor)}</TableCell>
+                  <TableRow key={p.id} className="h-11 hover:bg-red-50/30 dark:hover:bg-red-950/10 transition-colors">
+                    <TableCell className="text-xs font-semibold py-2 px-4 font-mono text-muted-foreground">{p.doc}</TableCell>
+                    <TableCell className="text-xs py-2 font-medium text-foreground">{p.fornecedor}</TableCell>
+                    <TableCell className="text-xs text-right py-2 px-4 font-bold text-red-600 dark:text-red-400">{fmtFin(p.valor)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+            <div className="px-4 py-2.5 border-t bg-muted/10">
+              <p className="text-xs text-muted-foreground font-semibold">
+                Total: <span className="text-red-600 dark:text-red-400">{fmtFin(mockPagamentosProgramados.reduce((a, b) => a + b.valor, 0))}</span>
+              </p>
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="py-3 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Truck className="w-4 h-4 text-orange-600" />
+        {/* OS sem fatura */}
+        <Card className="shadow-sm overflow-hidden">
+          <CardHeader className="py-3 px-5 flex flex-row items-center justify-between bg-amber-50/50 dark:bg-amber-950/20 border-b">
+            <CardTitle className="text-sm font-bold flex items-center gap-2 text-amber-800 dark:text-amber-300">
+              <Truck className="w-4 h-4" />
               OS sem Fatura Gerada
             </CardTitle>
-            <Badge variant="secondary" className="text-xs">{mockOSSemFatura.length}</Badge>
+            <Badge className="bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/50 dark:text-amber-300 text-xs font-bold animate-pulse">{mockOSSemFatura.length}</Badge>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="h-8 text-xs">OS</TableHead>
-                  <TableHead className="h-8 text-xs">Cliente</TableHead>
-                  <TableHead className="h-8 text-xs text-right">Valor</TableHead>
+                <TableRow className="hover:bg-transparent border-b bg-muted/20">
+                  <TableHead className="h-8 text-xs font-semibold text-muted-foreground px-4">OS</TableHead>
+                  <TableHead className="h-8 text-xs font-semibold text-muted-foreground">Cliente</TableHead>
+                  <TableHead className="h-8 text-xs font-semibold text-muted-foreground text-right px-4">Valor</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {mockOSSemFatura.slice(0, 5).map((os) => (
-                  <TableRow key={os.id} className="h-10">
-                    <TableCell className="text-xs font-medium py-2">{os.os}</TableCell>
-                    <TableCell className="text-xs py-2">{os.cliente}</TableCell>
-                    <TableCell className="text-xs text-right font-medium py-2">{fmtFin(os.valor)}</TableCell>
+                  <TableRow key={os.id} className="h-11 hover:bg-amber-50/30 dark:hover:bg-amber-950/10 transition-colors">
+                    <TableCell className="text-xs font-semibold py-2 px-4 text-amber-700 dark:text-amber-400">{os.os}</TableCell>
+                    <TableCell className="text-xs py-2 font-medium text-foreground">{os.cliente}</TableCell>
+                    <TableCell className="text-xs text-right py-2 px-4 font-bold text-foreground">{fmtFin(os.valor)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+            <div className="px-4 py-2.5 border-t bg-muted/10">
+              <p className="text-xs text-muted-foreground font-semibold">
+                Pendente: <span className="text-amber-700 dark:text-amber-400">{fmtFin(mockOSSemFatura.reduce((a, b) => a + b.valor, 0))}</span>
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
