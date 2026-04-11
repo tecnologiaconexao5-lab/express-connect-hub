@@ -3,7 +3,8 @@ import {
   Search, Plus, FileText, Star, Copy, Edit, Trash2, LayoutTemplate, Briefcase, 
   ChevronDown, Filter, CalendarDays, BarChart, Tags, Grid3X3, List, Bookmark, 
   Clock, Archive, Download, Share2, Eye, MoreHorizontal, Palette, RefreshCw,
-  Building2, Presentation, Table2, FileCheck, FileX, Check, X, Image, Wand2
+  Building2, Presentation, Table2, FileCheck, FileX, Check, X, Image, Wand2,
+  Save, Send
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,9 +22,9 @@ interface ListaPropostasProps {
   onEditar: (proposta: any) => void;
 }
 
-type Categoria = "todas" | "institucionais" | "comerciais" | "tabelas" | "apresentacoes" | "modelos" | "personalizadas" | "favoritas" | "recentes" | "arquivadas";
+type Categoria = "todas" | "institucionais" | "comerciais" | "tabelas" | "apresentacoes" | "modelos" | "personalizadas" | "favoritas" | "recentes" | "guardadas" | "arquivadas";
 type Visualizacao = "lista" | "cards" | "biblioteca";
-type FiltroRapido = "todos" | "padrao" | "personalizado" | "institucional" | "comercial" | "tabela" | "apresentacao" | "favorito" | "recente" | "ativo" | "arquivado";
+type FiltroRapido = "todos" | "padrao" | "personalizado" | "institucional" | "comercial" | "tabela" | "apresentacao" | "favorito" | "recente" | "guardada" | "exportada" | "ativo" | "arquivado";
 
 interface Proposta {
   id: string;
@@ -36,6 +37,11 @@ interface Proposta {
   status: "rascunho" | "enviada" | "aprovada" | "rejeitada" | "expirada";
   favorita: boolean;
   arquivada: boolean;
+  guardadaNaBiblioteca: boolean;
+  dataGuardada: string | null;
+  totalExportacoes: number;
+  ultimaExportacaoEm: string | null;
+  origemDaGuardada: string | null;
   categoria: string;
   responsavel: string;
   versao: number;
@@ -52,6 +58,7 @@ interface Proposta {
 
 const categorias: { value: Categoria; label: string; icon: any }[] = [
   { value: "todas", label: "Todas", icon: FileText },
+  { value: "guardadas", label: "Guardadas", icon: Save },
   { value: "institucionais", label: "Institucionais", icon: Building2 },
   { value: "comerciais", label: "Comerciais", icon: Briefcase },
   { value: "tabelas", label: "Tabelas", icon: Table2 },
@@ -73,6 +80,8 @@ const filtrosRapidos: { value: FiltroRapido; label: string }[] = [
   { value: "apresentacao", label: "Apresentação" },
   { value: "favorito", label: "Favorito" },
   { value: "recente", label: "Recente" },
+  { value: "guardada", label: "Guardada" },
+  { value: "exportada", label: "Exportada" },
   { value: "ativo", label: "Ativo" },
   { value: "arquivado", label: "Arquivado" },
 ];
@@ -90,6 +99,7 @@ const getStatusColor = (status: string) => {
 
 const getCategoriaProposta = (p: Proposta): Categoria => {
   if (p.arquivada) return "arquivadas";
+  if (p.guardadaNaBiblioteca) return "guardadas";
   if (p.favorita) return "favoritas";
   if (p.tipo === "personalizada") {
     if (p.cliente) return "personalizadas";
@@ -111,10 +121,10 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
   const [propostas, setPropostas] = useState<Proposta[]>(
     mockPropostas.map((p, idx) => ({
       ...p,
-      arquivada: p.status === "expirada",
+      arquivada: p.status === "expirada" || p.arquivada || false,
       categoria: p.tipo === "modelo" ? "Modelo Base" : "Comercial",
       responsavel: ["Diego", "Carlos", "Mariana", "Roberto"][idx % 4],
-      versao: Math.floor(Math.random() * 5) + 1,
+      versao: p.versao || Math.floor(Math.random() * 5) + 1,
       visualizacoes: Math.floor(Math.random() * 100) + 10,
       tags: ["frete", "dedicado", "spot"].slice(0, Math.floor(Math.random() * 3)),
       historico: [
@@ -128,6 +138,8 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
   const [showPersonalizarDialog, setShowPersonalizarDialog] = useState(false);
   const [showRenomearDialog, setShowRenomearDialog] = useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
+  const [showExportSuccess, setShowExportSuccess] = useState(false);
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
   const toggleFavorita = (id: string) => {
     setPropostas(prev => prev.map(p => p.id === id ? { ...p, favorita: !p.favorita } : p));
@@ -145,13 +157,83 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
       tipo: "personalizada",
       status: "rascunho",
       favorita: false,
+      guardadaNaBiblioteca: false,
+      dataGuardada: null,
+      totalExportacoes: 0,
+      ultimaExportacaoEm: null,
       versao: 1,
       visualizacoes: 0,
       criadoEm: new Date().toISOString(),
       atualizadoEm: new Date().toISOString(),
       modeloOrigemId: p.id,
+      historico: [
+        ...p.historico,
+        { data: new Date().toISOString(), acao: "Duplicado", usuario: "Sistema" },
+      ],
     };
     setPropostas(prev => [nova, ...prev]);
+  };
+
+  const guardarNaBiblioteca = (p: Proposta) => {
+    const jaGuardada = propostas.find(prop => prop.origemDaGuardada === p.id && prop.guardadaNaBiblioteca);
+    
+    if (jaGuardada) {
+      setPropostas(prev => prev.map(prop => 
+        prop.id === jaGuardada.id 
+          ? { ...prop, dataGuardada: new Date().toISOString(), atualizadaEm: new Date().toISOString() }
+          : prop
+      ));
+    } else {
+      const copia: Proposta = {
+        ...p,
+        id: `guardada-${Date.now()}`,
+        titulo: `${p.titulo} (Cópia)`,
+        tipo: "modelo",
+        status: "aprovada",
+        favorita: false,
+        guardadaNaBiblioteca: true,
+        dataGuardada: new Date().toISOString(),
+        totalExportacoes: 0,
+        ultimaExportacaoEm: null,
+        origemDaGuardada: p.id,
+        versao: 1,
+        visualizacoes: 0,
+        criadoEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+        historico: [
+          ...p.historico,
+          { data: new Date().toISOString(), acao: "Guardada na Biblioteca", usuario: "Sistema" },
+        ],
+      };
+      setPropostas(prev => [copia, ...prev]);
+    }
+    setShowSaveSuccess(true);
+    setTimeout(() => setShowSaveSuccess(false), 3000);
+  };
+
+  const exportarProposta = (p: Proposta,同時Guardar: boolean = false) => {
+    setPropostas(prev => prev.map(prop => {
+      if (prop.id === p.id) {
+        const now = new Date().toISOString();
+        return {
+          ...prop,
+          totalExportacoes: prop.totalExportacoes + 1,
+          ultimaExportacaoEm: now,
+          historico: [
+            ...prop.historico,
+            { data: now, acao: `Exportação #${prop.totalExportacoes + 1}`, usuario: "Sistema" },
+          ],
+        };
+      }
+      return prop;
+    }));
+
+    if (同時Guardar) {
+      guardarNaBiblioteca(p);
+    }
+
+    setShowExportSuccess(true);
+    setTimeout(() => setShowExportSuccess(false), 3000);
   };
 
   const filtradas = useMemo(() => {
@@ -177,6 +259,39 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
         result = result.filter(p => p.favorita);
         break;
       case "recente":
+        result = result.sort((a, b) => new Date(b.atualizadoEm).getTime() - new Date(a.atualizadoEm).getTime()).slice(0, 10);
+        break;
+      case "guardada":
+        result = result.filter(p => p.guardadaNaBiblioteca);
+        break;
+      case "exportada":
+        result = result.filter(p => p.totalExportacoes > 0);
+        break;
+      case "arquivado":
+        result = result.filter(p => p.arquivada);
+        break;
+      case "ativo":
+        result = result.filter(p => !p.arquivada);
+        break;
+      case "padrao":
+        result = result.filter(p => p.tipo === "modelo" && !p.cliente);
+        break;
+      case "personalizado":
+        result = result.filter(p => p.tipo === "personalizada" && p.cliente);
+        break;
+      case "institucional":
+        result = result.filter(p => p.subtitulo?.toLowerCase().includes("institucional") || p.categoria === "Institucional");
+        break;
+      case "comercial":
+        result = result.filter(p => p.categoria === "Comercial");
+        break;
+      case "tabela":
+        result = result.filter(p => p.subtitulo?.toLowerCase().includes("tabela") || p.categoria === "Tabela de Preços");
+        break;
+      case "apresentacao":
+        result = result.filter(p => p.subtitulo?.toLowerCase().includes("apresentação"));
+        break;
+    }
         result = result.sort((a, b) => new Date(b.atualizadoEm).getTime() - new Date(a.atualizadoEm).getTime()).slice(0, 10);
         break;
       case "arquivado":
@@ -214,6 +329,8 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
       modelos: propostas.filter(p => p.tipo === "modelo").length,
       personalizadas: propostas.filter(p => p.tipo === "personalizada" && p.cliente).length,
       favoritas: propostas.filter(p => p.favorita).length,
+      guardadas: propostas.filter(p => p.guardadaNaBiblioteca).length,
+      exportadas: propostas.filter(p => p.totalExportacoes > 0).length,
       maisAcessadas: [...propostas].sort((a, b) => b.visualizacoes - a.visualizacoes).slice(0, 3),
       recentes: [...propostas].sort((a, b) => new Date(b.atualizadoEm).getTime() - new Date(a.atualizadoEm).getTime()).slice(0, 5),
       prontasEnvio: propostas.filter(p => p.status === "aprovada").length,
@@ -365,6 +482,28 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
                 </div>
               </CardContent>
             </Card>
+            <Card className="bg-gradient-to-br from-cyan-50 to-cyan-100 border-cyan-200">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-cyan-700 font-medium">Guardadas</p>
+                    <p className="text-xl font-bold text-cyan-800">{estatisticas.guardadas}</p>
+                  </div>
+                  <Save className="w-6 h-6 text-cyan-500" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-orange-700 font-medium">Exportadas</p>
+                    <p className="text-xl font-bold text-orange-800">{estatisticas.exportadas}</p>
+                  </div>
+                  <Send className="w-6 h-6 text-orange-500" />
+                </div>
+              </CardContent>
+            </Card>
             <Card className="bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200">
               <CardContent className="p-3">
                 <div className="flex items-center justify-between">
@@ -405,6 +544,7 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
                       <TableHead>Categoria</TableHead>
                       <TableHead>Segmento</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Exp.</TableHead>
                       <TableHead>Versão</TableHead>
                       <TableHead>Atualizado</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
@@ -463,6 +603,14 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
                               </Badge>
                             </TableCell>
                             <TableCell>
+                              <div className="flex items-center gap-1">
+                                {p.totalExportacoes > 0 && (
+                                  <Send className="w-3 h-3 text-orange-500" />
+                                )}
+                                <span className="text-xs text-slate-500">{p.totalExportacoes}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
                               <span className="text-xs text-slate-500">v{p.versao}.0</span>
                             </TableCell>
                             <TableCell>
@@ -495,12 +643,19 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
                                     <Edit className="w-4 h-4 mr-2" /> Renomear
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => exportarProposta(p, false)}>
+                                    <Download className="w-4 h-4 mr-2" /> Exportar PDF
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => guardarNaBiblioteca(p)}>
+                                    <Save className="w-4 h-4 mr-2" /> Guardar na Biblioteca
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => exportarProposta(p, true)}>
+                                    <Send className="w-4 h-4 mr-2" /> Exportar e Guardar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
                                   <DropdownMenuItem onClick={() => toggleFavorita(p.id)}>
                                     <Star className="w-4 h-4 mr-2" />
                                     {p.favorita ? "Desfavoritar" : "Favoritar"}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem>
-                                    <Download className="w-4 h-4 mr-2" /> Exportar PDF
                                   </DropdownMenuItem>
                                   <DropdownMenuItem>
                                     <Share2 className="w-4 h-4 mr-2" /> Compartilhar Link
@@ -691,6 +846,22 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Toast de Exportação */}
+      {showExportSuccess && (
+        <div className="fixed bottom-4 right-4 bg-emerald-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4">
+          <Download className="w-5 h-5" />
+          <span>Proposta exportada com sucesso!</span>
+        </div>
+      )}
+
+      {/* Toast de Guardar */}
+      {showSaveSuccess && (
+        <div className="fixed bottom-4 right-4 bg-cyan-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4">
+          <Save className="w-5 h-5" />
+          <span>Proposta salva na biblioteca!</span>
+        </div>
+      )}
     </div>
   );
 }
