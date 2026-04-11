@@ -247,7 +247,7 @@ export default function ContratoPrestadorModal({
           if (logoUrl) {
             try {
               doc.addImage(logoUrl, 'PNG', margin, 5, 40, 20);
-            } catch (e) { /* erro ignorado */ }
+            } catch (e) {}
           }
           
           doc.setFillColor(primaryColor.r, primaryColor.g, primaryColor.b);

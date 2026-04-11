@@ -35,7 +35,7 @@ export default function Fiscal() {
          { id: 1, numero: "105001", chave: "352610123...4501", emitente: "Matriz SP", tomador: "Tech Solutions", valor: 1450.00, cfop: "5351", data_emissao: new Date().toISOString(), status: "Autorizado" },
          { id: 2, numero: "105000", chave: "352610123...4400", emitente: "Matriz SP", tomador: "Indústria Global", valor: 850.50, cfop: "6352", data_emissao: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString(), status: "Cancelado" },
       ]);
-    } catch { /* erro ignorado */ }
+    } catch {}
   };
 
   const fetchMdfes = async () => {
@@ -46,7 +46,7 @@ export default function Fiscal() {
          { id: 1, numero: "5020", data: new Date().toISOString(), prestador_veiculo: "João Silva - ABC1D23", uf: "SP -> RJ", cte_vinculados: 4, status: "Aberto" },
          { id: 2, numero: "5019", data: new Date().toISOString(), prestador_veiculo: "Carlos Souza - DEF4E56", uf: "SP", cte_vinculados: 1, status: "Encerrado" },
       ]);
-    } catch { /* erro ignorado */ }
+    } catch {}
   };
 
   const fetchNfses = async () => {
@@ -56,7 +56,7 @@ export default function Fiscal() {
       else setNfses([
          { id: 1, numero: "90001", cliente: "Tech Solutions", valor: 1450.00, servico: "14.01", data_emissao: new Date().toISOString(), status: "Autorizado" },
       ]);
-    } catch { /* erro ignorado */ }
+    } catch {}
   };
 
   return (

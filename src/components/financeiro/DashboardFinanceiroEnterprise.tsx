@@ -76,96 +76,46 @@ interface KPICardProps {
   icon: React.ElementType;
   color: string;
   trend?: number;
-  variant?: "default" | "gradient-blue" | "gradient-green" | "gradient-red" | "gradient-purple" | "gradient-amber" | "gradient-slate" | "gradient-cyan";
 }
 
-const KPICard = ({ title, value, subValue, icon: Icon, color, trend, variant = "default" }: KPICardProps) => {
-  const gradientClass: Record<string, string> = {
-    "default": "bg-card border-l-4",
-    "gradient-blue": "bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 text-white border-none shadow-blue-700/20",
-    "gradient-green": "bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 text-white border-none shadow-emerald-700/20",
-    "gradient-red": "bg-gradient-to-br from-red-500 via-red-600 to-red-700 text-white border-none shadow-red-700/20",
-    "gradient-purple": "bg-gradient-to-br from-purple-500 via-purple-600 to-purple-700 text-white border-none shadow-purple-700/20",
-    "gradient-amber": "bg-gradient-to-br from-amber-500 via-orange-500 to-orange-600 text-white border-none shadow-orange-700/20",
-    "gradient-slate": "bg-gradient-to-br from-slate-600 via-slate-700 to-slate-800 text-white border-none shadow-slate-700/20",
-    "gradient-cyan": "bg-gradient-to-br from-cyan-500 via-cyan-600 to-cyan-700 text-white border-none shadow-cyan-700/20",
-  };
-
-  const isGradient = variant !== "default";
-  const gradientColor = gradientClass[variant] || gradientClass.default;
-
-  return (
-    <Card className={`${gradientColor} shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1`}>
-      <CardContent className="p-5 flex items-center justify-between">
-        <div className="flex-1">
-          <p className={`text-xs font-bold uppercase tracking-wider ${isGradient ? "text-white/80" : "text-muted-foreground"}`}>{title}</p>
-          <p className={`text-2xl font-black mt-2 tracking-tight ${isGradient ? "text-white" : ""}`}>{value}</p>
-          {subValue && (
-            <p className={`text-xs font-medium mt-1.5 ${isGradient ? "text-white/70" : "text-muted-foreground"}`}>{subValue}</p>
-          )}
-          {trend !== undefined && (
-            <p className={`text-xs font-bold mt-3 flex items-center gap-1.5 ${trend >= 0 ? (isGradient ? "text-green-300" : "text-green-600") : (isGradient ? "text-red-300" : "text-red-600")}`}>
-              {trend >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingUp className="w-3.5 h-3.5 rotate-180" />}
-              <span>{fmtPct(trend)}</span>
-              <span className={isGradient ? "text-white/60" : "text-muted-foreground"}>vs mês ant.</span>
-            </p>
-          )}
-        </div>
-        <div className={`p-3.5 rounded-2xl ${isGradient ? "bg-white/15 backdrop-blur-sm" : "bg-muted"}`}>
-          <Icon className="w-6 h-6" style={isGradient ? { color: "white" } : { color }} />
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
-
-const safeSupabase = (): any => {
-  try {
-    return supabase;
-  } catch {
-    return null;
-  }
-};
+const KPICard = ({ title, value, subValue, icon: Icon, color, trend }: KPICardProps) => (
+  <Card className="border-l-4" style={{ borderLeftColor: color }}>
+    <CardContent className="p-4 flex items-center justify-between">
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase">{title}</p>
+        <p className="text-2xl font-bold" style={{ color }}>{value}</p>
+        {subValue && <p className="text-[10px] text-muted-foreground mt-1">{subValue}</p>}
+        {trend !== undefined && (
+          <p className={`text-xs font-semibold mt-1 ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {trend >= 0 ? '↑' : '↓'} {fmtPct(trend)} vs mês ant.
+          </p>
+        )}
+      </div>
+      <div className="p-3 bg-muted rounded-full">
+        <Icon className="w-5 h-5" style={{ color }} />
+      </div>
+    </CardContent>
+  </Card>
+);
 
 export default function DashboardFinanceiroEnterprise() {
   const [receber, setReceber] = useState<any[]>([]);
   const [pagar, setPagar] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
   }, []);
 
   const fetchData = async () => {
-    setLoading(true);
-    const sb = safeSupabase();
-    
-    if (!sb) {
-      setReceber(mockFaturasVencendo.map(f => ({...f, status: 'a vencer'})));
-      setPagar(mockPagamentosProgramados.map(f => ({...f, status: 'a vencer'})));
-      setLoading(false);
-      return;
-    }
+    try {
+      const { data: rcv } = await supabase.from("financeiro_receber").select("*").order("vencimento", { ascending: true });
+      if (rcv) setReceber(rcv);
+    } catch { setReceber(mockFaturasVencendo.map(f => ({...f, status: 'a vencer'}))); }
     
     try {
-      const { data: rcv, error: rcvError } = await sb.from("financeiro_receber").select("*").order("vencimento", { ascending: true });
-      if (rcvError) throw rcvError;
-      if (rcv && rcv.length > 0) setReceber(rcv);
-      else setReceber(mockFaturasVencendo.map(f => ({...f, status: 'a vencer'})));
-    } catch {
-      setReceber(mockFaturasVencendo.map(f => ({...f, status: 'a vencer'})));
-    }
-    
-    try {
-      const { data: pgr, error: pgrError } = await sb.from("financeiro_pagar").select("*").order("vencimento", { ascending: true });
-      if (pgrError) throw pgrError;
-      if (pgr && pgr.length > 0) setPagar(pgr);
-      else setPagar(mockPagamentosProgramados.map(f => ({...f, status: 'a vencer'})));
-    } catch {
-      setPagar(mockPagamentosProgramados.map(f => ({...f, status: 'a vencer'})));
-    } finally {
-      setLoading(false);
-    }
+      const { data: pgr } = await supabase.from("financeiro_pagar").select("*").order("vencimento", { ascending: true });
+      if (pgr) setPagar(pgr);
+    } catch { setPagar(mockPagamentosProgramados.map(f => ({...f, status: 'a vencer'}))); }
   };
 
   const variacaoReceita = ((mockKPIs.receitaMes - mockKPIs.receitaMesAnterior) / mockKPIs.receitaMesAnterior) * 100;

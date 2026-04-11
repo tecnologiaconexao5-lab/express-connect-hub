@@ -27,7 +27,6 @@ import MargemOperacional from "@/components/financeiro/MargemOperacional";
 import DateRangePicker from "@/components/ui/DateRangePicker";
 import ContasBancarias from "@/components/financeiro/ContasBancarias";
 import ReciboRapido from "@/components/financeiro/ReciboRapido";
-import ContasReceberEnterprise from "@/components/financeiro/ContasReceberEnterprise";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -167,7 +166,7 @@ export default function Financeiro() {
          { id: 2, fatura: "FAT-0038", cliente: "Indústria Global", os_vinculadas: "OS-380", competencia: "09/2026", vencimento: new Date(new Date().setDate(new Date().getDate() - 2)).toISOString(), valor: 8200.50, status: "vencida" },
          { id: 3, fatura: "FAT-0035", cliente: "Comércio Varejo", os_vinculadas: "OS-350, OS-355", competencia: "09/2026", vencimento: new Date(new Date().setDate(new Date().getDate() - 10)).toISOString(), valor: 5400.00, status: "paga" }
       ]);
-} catch { /* erro ignorado */ }
+    } catch { }
   };
 
   const fetchPagar = async () => {
@@ -177,12 +176,18 @@ export default function Financeiro() {
         const prestadores = data.filter((d: any) => d.tipo === "prestador");
         const outros = data.filter((d: any) => d.tipo === "outro");
         setPagarPrestadores(prestadores);
+        setPagarOutros(outros);
+      } else {
+        setPagarPrestadores([
+          { id: 1, doc: "NF-8599", fornecedor: "João Transporte (Prestador)", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 3)).toISOString(), valor: 1200.00, status: "a vencer", tipo: "prestador" },
+          { id: 2, doc: "NF-8600", fornecedor: "Maria Freitas - ME", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 5)).toISOString(), valor: 8500.00, status: "a vencer", tipo: "prestador", os: "OS-4821" },
+        ]);
         setPagarOutros([
           { id: 3, doc: "NF-902", fornecedor: "Companhia de Energia", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 10)).toISOString(), valor: 4500.00, status: "a vencer", tipo: "outro", categoria: "Energia elétrica" },
           { id: 4, doc: "BOLETO-001", fornecedor: "Locação de Galpão", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString(), valor: 15000.00, status: "a vencer", tipo: "outro", categoria: "Aluguel", recorrente: true },
         ]);
       }
-    } catch { /* erro ignorado */ }
+    } catch { }
   };
 
   const fetchLancamentos = async () => {
@@ -193,7 +198,7 @@ export default function Financeiro() {
          { id: 1, data: new Date().toISOString(), descricao: "Recebimento FAT-0035", categoria: "Receita Faturamento", tipo: "entrada", valor: 5400.00 },
          { id: 2, data: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString(), descricao: "Pagamento Prestador Carlos", categoria: "Custo Operacional", tipo: "saida", valor: 850.00 },
       ]);
-    } catch { /* erro ignorado */ }
+    } catch { }
   };
 
   const filtrarDoc = (lista: any[], busca: string) => lista.filter(i => JSON.stringify(i).toLowerCase().includes(busca.toLowerCase()));
@@ -256,7 +261,6 @@ export default function Financeiro() {
 
         {/* --- CONTAS A RECEBER --- */}
         <TabsContent value="receber" className="space-y-4 pt-4">
-<<<<<<< HEAD
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
              <StatCard title="Total a Receber" value={fmtFin(filtrarDoc(receber, "").reduce((acc, i) => acc + (i.status !== "paga" && i.status !== "cancelada" ? i.valor : 0), 0))} icon={DollarSign} color="#2563eb" />
              <StatCard title="Vencido" value={fmtFin(filtrarDoc(receber, "").reduce((acc, i) => acc + (i.status === "vencida" ? i.valor : 0), 0))} icon={ArrowDownRight} color="#dc2626" />
@@ -308,10 +312,8 @@ export default function Financeiro() {
                  </TableBody>
                </Table>
              </CardContent>
-            </Card>
-         </TabsContent>
-           <ContasReceberEnterprise />
-</TabsContent>
+           </Card>
+        </TabsContent>
 
         {/* --- CONTAS A PAGAR --- */}
         <TabsContent value="pagar" className="space-y-4 pt-4">
