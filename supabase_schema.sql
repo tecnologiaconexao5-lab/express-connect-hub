@@ -65,7 +65,33 @@ CREATE TABLE IF NOT EXISTS ocorrencias ( id uuid DEFAULT uuid_generate_v4() PRIM
 -- FINANCEIRO
 CREATE TABLE IF NOT EXISTS financeiro_receber ( id uuid DEFAULT uuid_generate_v4() PRIMARY KEY, fatura text, cliente_id uuid REFERENCES clientes(id), os_id uuid REFERENCES ordens_servico(id), valor numeric, competencia text, vencimento date, status text DEFAULT 'a vencer', created_at timestamp with time zone DEFAULT now() );
 CREATE TABLE IF NOT EXISTS financeiro_pagar ( id uuid DEFAULT uuid_generate_v4() PRIMARY KEY, documento text, prestador_id uuid REFERENCES prestadores(id), valor numeric, competencia text, vencimento date, status text DEFAULT 'a vencer', created_at timestamp with time zone DEFAULT now() );
-CREATE TABLE IF NOT EXISTS lancamentos_financeiros ( id uuid DEFAULT uuid_generate_v4() PRIMARY KEY, data date, descricao text, categoria text, tipo text, valor numeric, conta_contabil text, created_at timestamp with time zone DEFAULT now() );
+CREATE TABLE IF NOT EXISTS lancamentos_financeiros ( 
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY, 
+  data date, 
+  descricao text, 
+  categoria text, 
+  tipo text, 
+  valor numeric, 
+  conta_contabil text, 
+  unidade_id uuid REFERENCES unidades(id), 
+  centro_custo_id uuid REFERENCES centros_custo(id), 
+  realizado boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now() 
+);
+CREATE TABLE IF NOT EXISTS saldos_financeiros ( 
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY, 
+  data date NOT NULL, 
+  valor numeric NOT NULL, 
+  created_at timestamp with time zone DEFAULT now() 
+);
+CREATE TABLE IF NOT EXISTS centros_resultado ( 
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY, 
+  nome text NOT NULL, 
+  codigo text, 
+  tipo text, 
+  ativo boolean DEFAULT true, 
+  created_at timestamp with time zone DEFAULT now() 
+);
 
 -- FISCAL
 CREATE TABLE IF NOT EXISTS cte ( id uuid DEFAULT uuid_generate_v4() PRIMARY KEY, os_id uuid REFERENCES ordens_servico(id), numero text, chave_acesso text, tomador_id uuid REFERENCES clientes(id), valor numeric, cfop text, data_emissao timestamp with time zone, status text, created_at timestamp with time zone DEFAULT now() );
