@@ -292,33 +292,6 @@ export default function ListaPropostas({ onNovaProposta, onEditar }: ListaPropos
         result = result.filter(p => p.subtitulo?.toLowerCase().includes("apresentação"));
         break;
     }
-        result = result.sort((a, b) => new Date(b.atualizadoEm).getTime() - new Date(a.atualizadoEm).getTime()).slice(0, 10);
-        break;
-      case "arquivado":
-        result = result.filter(p => p.arquivada);
-        break;
-      case "ativo":
-        result = result.filter(p => !p.arquivada);
-        break;
-      case "padrao":
-        result = result.filter(p => p.tipo === "modelo" && !p.cliente);
-        break;
-      case "personalizado":
-        result = result.filter(p => p.tipo === "personalizada" && p.cliente);
-        break;
-      case "institucional":
-        result = result.filter(p => p.subtitulo?.toLowerCase().includes("institucional") || p.categoria === "Institucional");
-        break;
-      case "comercial":
-        result = result.filter(p => p.categoria === "Comercial");
-        break;
-      case "tabela":
-        result = result.filter(p => p.subtitulo?.toLowerCase().includes("tabela") || p.categoria === "Tabela de Preços");
-        break;
-      case "apresentacao":
-        result = result.filter(p => p.subtitulo?.toLowerCase().includes("apresentação"));
-        break;
-    }
 
     return result.sort((a, b) => new Date(b.atualizadoEm).getTime() - new Date(a.atualizadoEm).getTime());
   }, [propostas, busca, categoria, filtroRapido]);
