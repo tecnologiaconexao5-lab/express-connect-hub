@@ -560,10 +560,10 @@ export default function PortalCliente() {
                 {/* Cards Metrics */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {[
-                    {label: "Pedidos Ativos", value: metricos.ativos, icon: Package, color: "from-purple-500 to-purple-600", change: +metricos.comparacaoDia, desc: "vsOntem"},
-                    {label: "SLA no Prazo", value: `${metricos.slaMedio}%`, icon: Clock, color: "from-emerald-500 to-emerald-600", change: 5, desc: "vsontem"},
-                    {label: "Em Rota", value: metricos.emRota, icon: Truck, color: "from-orange-500 to-orange-600", change: -2, desc: "vsontem"},
-                    {label: "Taxa de Sucesso", value: `${metricos.taxaSucesso}%`, icon: CheckCircle, color: "from-blue-500 to-blue-600", change: 8, desc: "vsontem"},
+                    {label: "Pedidos Ativos", value: metricas?.ativos ?? 0, icon: Package, color: "from-purple-500 to-purple-600", change: metricas?.comparacaoDia ?? 0, desc: "vsOntem"},
+                    {label: "SLA no Prazo", value: `${metricas?.slaMedio ?? 0}%`, icon: Clock, color: "from-emerald-500 to-emerald-600", change: 5, desc: "vsontem"},
+                    {label: "Em Rota", value: metricas?.emRota ?? 0, icon: Truck, color: "from-orange-500 to-orange-600", change: -2, desc: "vsontem"},
+                    {label: "Taxa de Sucesso", value: `${metricas?.taxaSucesso ?? 0}%`, icon: CheckCircle, color: "from-blue-500 to-blue-600", change: 8, desc: "vsontem"},
                   ].map((card, idx) => (
                     <Card key={idx} className="bg-slate-800/50 border-slate-700/50 backdrop-blur">
                       <CardContent className="p-5">
