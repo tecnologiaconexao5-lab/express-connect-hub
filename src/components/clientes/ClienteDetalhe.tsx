@@ -118,23 +118,46 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
     try {
       setIsSaving(true);
       const isUpdate = !!c.id;
-      const dataToSave = { ...c };
       
-      let query;
-      if (isUpdate) {
-        query = supabase.from("clientes").update(dataToSave).eq("id", c.id);
-      } else {
-        query = supabase.from("clientes").insert([dataToSave]);
+      const forbiddenFields = ['id', 'enderecos', 'tabelas', 'contratos', 'created_at', 'user_id'];
+      const dataToSave: Record<string, any> = {};
+      
+      for (const [key, value] of Object.entries(c)) {
+        if (!forbiddenFields.includes(key) && value !== undefined) {
+          dataToSave[key] = value;
+        }
       }
 
-      const { error } = await query;
+      console.log("[ClienteDetalhe] Payload dikirim ke Supabase:", JSON.stringify(dataToSave, null, 2));
+
+      let result;
+      if (isUpdate) {
+        result = await supabase.from("clientes").update(dataToSave).eq("id", c.id).select();
+      } else {
+        result = await supabase.from("clientes").insert([dataToSave]).select();
+      }
+
+      const { data, error } = result;
+
+      if (error) {
+        console.error("[ClienteDetalhe] Erro Supabase:", error.message, error.details, error.hint);
+        toast.error(`Erro ao persistir: ${error.message}`);
+        return;
+      }
+
+      console.log("[ClienteDetalhe] Sukses simpan, response:", data);
       
-      if (error) throw error;
-      
+      const savedCliente = data?.[0];
+      if (!savedCliente) {
+        console.error("[ClienteDetalhe] Response kosong meski tidak ada error");
+        toast.error("Erro: response kosong dari Supabase");
+        return;
+      }
+
       toast.success(isNew ? "Cliente cadastrado com sucesso!" : "Cliente atualizado com sucesso!");
       onBack();
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      console.error("[ClienteDetalhe] Erro catch:", error?.message || error);
       toast.error("Erro ao persistir cliente no Supabase.");
     } finally {
       setIsSaving(false);
