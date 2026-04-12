@@ -28,7 +28,30 @@ CREATE TABLE IF NOT EXISTS usuarios (
 );
 
 CREATE TABLE IF NOT EXISTS clientes (
-  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY, razao_social text, cnpj text, segmento text, porte text, status text DEFAULT 'ativo', user_id uuid REFERENCES usuarios(id), created_at timestamp with time zone DEFAULT now()
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY, 
+  razao_social text NOT NULL, 
+  nome_fantasia text, 
+  cnpj text NOT NULL, 
+  ie text, 
+  segmento text, 
+  porte text, 
+  status text DEFAULT 'ativo', 
+  contato_principal text, 
+  telefone text, 
+  whatsapp text, 
+  email text, 
+  site text, 
+  responsavel_operacional text, 
+  responsavel_financeiro text, 
+  responsavel_comercial text, 
+  observacoes text, 
+  origem_comercial text, 
+  exige_agendamento boolean DEFAULT false, 
+  exige_sla boolean DEFAULT false, 
+  exige_portal boolean DEFAULT false, 
+  aceita_api boolean DEFAULT false, 
+  user_id uuid REFERENCES usuarios(id), 
+  created_at timestamp with time zone DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS client_addresses ( id uuid DEFAULT uuid_generate_v4() PRIMARY KEY, cliente_id uuid REFERENCES clientes(id), tipo text, cep text, logradouro text, numero text, bairro text, cidade text, uf text, padrao boolean DEFAULT false, created_at timestamp with time zone DEFAULT now() );
