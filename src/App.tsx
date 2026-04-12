@@ -53,6 +53,7 @@ const App = () => (
           <Route path="/rastrear/:codigo" element={<Tracking />} />
           <Route path="/t/:codigo" element={<Tracking />} />
           <Route path="/rastrear" element={<Tracking />} />
+          <Route path="/portal-cliente" element={<PortalCliente />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
@@ -78,7 +79,6 @@ const App = () => (
             <Route path="/governanca" element={<Governanca />} />
             <Route path="/ia-automacoes" element={<IAAutomacoes />} />
             <Route path="/monitor-api" element={<MonitorIntegracoes />} />
-            <Route path="/portal-cliente" element={<PortalCliente />} />
             <Route path="/app-prestador" element={<AppPrestador />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
             <Route path="/comunicacao" element={<Comunicacao />} />
