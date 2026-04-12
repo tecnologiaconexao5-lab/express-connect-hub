@@ -31,6 +31,19 @@ const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", cur
 const fmtData = (d: string) => new Date(d).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 const fmtHora = (d: string) => new Date(d).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
+const formatStatus = (s: string | undefined) => {
+  const map: Record<string, string> = {
+    programacao: "Programado",
+    coleta: "Em Coleta",
+    saiu_para_rota: "Saiu para Rota",
+    em_rota: "Em Rota",
+    entregue: "Entregue",
+    atrasada: "Atrasado",
+    problema: "Com Problema",
+  };
+  return map[s || ''] || s || "Pendente";
+};
+
 interface Entrega {
   id: string;
   numero: string;
@@ -221,6 +234,77 @@ export default function PortalCliente() {
   const carregarDados = useCallback(async () => {
     setLoading(true);
     try {
+      // Fetch data from Supabase
+      const [{ data: entregasData }, { data: faturasData }, { data: ocorrenciasData }] = await Promise.all([
+        supabase.from('ordens_servico').select('*').order('created_at', { ascending: false }).limit(50),
+        supabase.from('financeiro_receber').select('*').order('vencimento', { ascending: false }).limit(20),
+        supabase.from('ocorrencias').select('*').order('created_at', { ascending: false }).limit(20),
+      ]);
+
+      if (entregasData && entregasData.length > 0) {
+        // Transform Supabase data to PortalCliente format
+        const entregasTransformadas = entregasData.map((os: any) => ({
+          id: os.id,
+          numero: os.numero || `OS-${os.id.slice(0, 8)}`,
+          status: os.status || 'programacao',
+          status_label: formatStatus(os.status),
+          origem: { cep: '', rua: '', numero: '', bairro: '', cidade: os.filial_origem || 'N/A', uf: '' },
+          destino: { cep: '', rua: '', numero: '', bairro: '', cidade: os.cidade_destino || 'N/A', uf: '' },
+          previsao: os.data_previsao || new Date().toISOString(),
+          created_at: os.created_at,
+          valor_frete: os.valor_frete || 0,
+          peso: os.peso || 0,
+          volumes: os.volumes || 1,
+          mercadoria: os.mercadoria || 'Mercadoria',
+          cliente_nome: os.cliente_nome || 'Cliente',
+          destinatario: undefined,
+          prestador: undefined,
+          historico: [],
+          sla: os.sla || 100,
+        }));
+        setEntregas(entregasTransformadas);
+      } else {
+        setEntregas(generateMockEntregas());
+      }
+
+      if (faturasData && faturasData.length > 0) {
+        const faturasTransformadas = faturasData.map((f: any) => ({
+          id: f.id,
+          fatura: f.fatura || `FAT-${f.id.slice(0, 4)}`,
+          competencia: f.competencia || new Date().toLocaleString('pt-BR', { month: '2-digit', year: 'numeric' }),
+          os_vinculadas: [f.os_id?.slice(0, 8) || ''],
+          vencimento: f.vencimento,
+          valor: f.valor || 0,
+          status: f.status === 'pago' ? 'paga' : f.status === 'vencida' ? 'vencida' : 'a_vencer',
+        }));
+        setFaturas(faturasTransformadas);
+      } else {
+        setFaturas(generateMockFaturas());
+      }
+
+      if (ocorrenciasData && ocorrenciasData.length > 0) {
+        const ocorrenciasTransformadas = ocorrenciasData.map((o: any) => ({
+          id: o.id,
+          tipo: o.tipo || 'outro',
+          descricao: o.descricao || '',
+          status: o.status || 'pendente',
+          prioridade: o.severidade === 'alta' ? 'alta' : 'media',
+          created_at: o.created_at,
+        }));
+        setOcorrencias(ocorrenciasTransformadas);
+      } else {
+        setOcorrencias(generateMockOcorrencias());
+      }
+
+      // Load mock data for other sections
+      setAlertas(generateMockAlertas());
+      setNotificacoes(generateMockNotificacoes());
+      setAvaliacoes(generateMockAvaliacoes());
+      setEnderecosFavoritos(generateMockEnderecos());
+      setRoteirizacao(generateMockRoteirizacao());
+    } catch (error) {
+      console.error('Erro ao carregar dados do Supabase:', error);
+      // Fallback to mock data
       setEntregas(generateMockEntregas());
       setAlertas(generateMockAlertas());
       setFaturas(generateMockFaturas());
@@ -229,7 +313,7 @@ export default function PortalCliente() {
       setAvaliacoes(generateMockAvaliacoes());
       setEnderecosFavoritos(generateMockEnderecos());
       setRoteirizacao(generateMockRoteirizacao());
-    } catch (error) {}
+    }
     setLoading(false);
   }, []);
 
