@@ -89,24 +89,48 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       setIsLoading(true);
       // Ensure we have an ID for updates, or let Supabase generate one for inserts
       const isUpdate = !!initial?.id;
-      const dataToSave = { ...p };
       
-      let query;
-      if (isUpdate) {
-        query = supabase.from('prestadores').update(dataToSave).eq('id', p.id);
-      } else {
-        query = supabase.from('prestadores').insert([dataToSave]);
+      const payload: Record<string, any> = {};
+      for (const [k, v] of Object.entries(p)) {
+        if (v !== undefined) {
+          payload[k] = v;
+        }
       }
 
-      const { error } = await query;
+      payload.updated_at = new Date().toISOString();
+      if (!isUpdate) {
+        payload.created_at = new Date().toISOString();
+      }
+
+      console.log("Payload enviado:", payload);
+
+      const { data: user } = await supabase.auth.getUser();
+      console.log("USER:", user);
       
-      if (error) throw error;
+      let result;
+      if (isUpdate) {
+        result = await supabase.from('prestadores').update(payload).eq('id', p.id).select();
+      } else {
+        result = await supabase.from('prestadores').insert([payload]).select();
+      }
+
+      const { data, error } = result;
+      
+      if (error) {
+        console.error("SUPABASE ERROR:", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
       
       toast.success(isNew ? "Prestador cadastrado com sucesso!" : "Prestador atualizado com sucesso!");
       onBack();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao salvar prestador:", error);
-      toast.error("Erro ao salvar dados no Supabase. Verifique a configuração da rede ou do banco de dados.");
+      toast.error(`Erro ao salvar dados no Supabase: \${error?.message || 'Verifique o console'}`);
     } finally {
       setIsLoading(false);
     }

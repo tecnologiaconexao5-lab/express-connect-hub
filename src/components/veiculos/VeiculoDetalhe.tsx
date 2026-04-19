@@ -70,19 +70,47 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
     try {
       setIsSaving(true);
       const isUpdate = !!v.id;
-      const dataToSave = { ...v, placa: v.placa.toUpperCase() };
-      if (!isUpdate) dataToSave.id = String(Date.now());
       
-      let query;
-      if (isUpdate) query = supabase.from("veiculos").update(dataToSave).eq("id", v.id);
-      else query = supabase.from("veiculos").insert([dataToSave]);
+      const payload: Record<string, any> = {};
+      for (const [k, val] of Object.entries({ ...v, placa: v.placa.toUpperCase() })) {
+        if (val !== undefined) {
+          payload[k] = val;
+        }
+      }
 
-      const { error } = await query;
-      if (error) throw error;
+      payload.updated_at = new Date().toISOString();
+      if (!isUpdate) {
+        payload.id = String(Date.now());
+        payload.created_at = new Date().toISOString();
+      }
+
+      console.log("Payload enviado:", payload);
+
+      const { data: user } = await supabase.auth.getUser();
+      console.log("USER:", user);
+
+      let result;
+      if (isUpdate) {
+        result = await supabase.from("veiculos").update(payload).eq("id", v.id).select();
+      } else {
+        result = await supabase.from("veiculos").insert([payload]).select();
+      }
+
+      const { data, error } = result;
+
+      if (error) {
+        console.error("SUPABASE ERROR:", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
       
       toast.success(isNew ? "Veículo cadastrado!" : "Veículo atualizado!");
       onBack();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Supabase failed, saving to local storage fallback:", error);
       const isUpdate = !!v.id;
       const dataToSave = { ...v, placa: v.placa.toUpperCase() };
