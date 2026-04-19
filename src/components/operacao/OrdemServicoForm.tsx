@@ -207,16 +207,36 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     setIsSaving(true);
     try {
       const isNovo = !data.id;
-      const { id, enderecos, historico, ...dbPayload } = data;
+      const { id, enderecos, historico, ...rawPayload } = data;
+
+      const dbPayload: Record<string, any> = {};
+      for (const [k, v] of Object.entries(rawPayload)) {
+        if (v !== undefined) dbPayload[k] = v;
+      }
+      
+      dbPayload.updated_at = new Date().toISOString();
+      if (isNovo) {
+        dbPayload.created_at = new Date().toISOString();
+      }
+
+      console.log("Payload enviado:", dbPayload);
+      const { data: user } = await supabase.auth.getUser();
+      console.log("USER:", user);
       
       let resId = id;
       if (isNovo) {
         const { data: res, error } = await supabase.from("ordens_servico").insert([dbPayload]).select();
-        if (error) throw error;
+        if (error) {
+           console.error("SUPABASE ERROR:", { message: error.message, details: error.details, hint: error.hint, code: error.code });
+           throw error;
+        }
         resId = res?.[0]?.id;
       } else {
-        const { error } = await supabase.from("ordens_servico").update(dbPayload).eq("id", id);
-        if (error) throw error;
+        const { error } = await supabase.from("ordens_servico").update(dbPayload).eq("id", id).select();
+        if (error) {
+           console.error("SUPABASE ERROR:", { message: error.message, details: error.details, hint: error.hint, code: error.code });
+           throw error;
+        }
       }
 
       // Sync Enderecos in a real scenario here. For mock/simplicity, we rely on the parent or ignore `os_enderecos` separate sync if using JSON in Supabase.

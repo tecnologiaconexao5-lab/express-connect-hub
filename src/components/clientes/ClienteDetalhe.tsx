@@ -119,33 +119,41 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
       setIsSaving(true);
       const isUpdate = !!c.id;
       
-      const forbiddenFields = ['id', 'enderecos', 'tabelas', 'contratos', 'created_at', 'user_id'];
-      const dataToSave: Record<string, any> = {};
-      
-      for (const [key, value] of Object.entries(c)) {
-        if (!forbiddenFields.includes(key) && value !== undefined) {
-          dataToSave[key] = value;
-        }
+      const payload: Record<string, any> = {
+        razao_social: c.razao_social,
+        nome_fantasia: c.nome_fantasia || (c as any).nomeFantasia || c.razao_social,
+        cnpj: c.cnpj,
+        ie: c.ie || null,
+        updated_at: new Date().toISOString()
+      };
+
+      if (!isUpdate) {
+        payload.created_at = new Date().toISOString();
       }
 
-      console.log("[ClienteDetalhe] Payload dikirim ke Supabase:", JSON.stringify(dataToSave, null, 2));
+      console.log("[ClienteDetalhe] Payload enviado ao Supabase:", JSON.stringify(payload, null, 2));
 
       let result;
       if (isUpdate) {
-        result = await supabase.from("clientes").update(dataToSave).eq("id", c.id).select();
+        result = await supabase.from("clientes").update(payload).eq("id", c.id).select();
       } else {
-        result = await supabase.from("clientes").insert([dataToSave]).select();
+        result = await supabase.from("clientes").insert([payload]).select();
       }
 
       const { data, error } = result;
 
       if (error) {
-        console.error("[ClienteDetalhe] Erro Supabase:", error.message, error.details, error.hint);
-        toast.error(`Erro ao persistir: ${error.message}`);
+        console.error("====== ERRO REAL DO SUPABASE ======");
+        console.error("Payload enviado:", payload);
+        console.error("Mensagem (error.message):", error.message);
+        console.error("Detalhes (error.details):", error.details);
+        console.error("Dica (error.hint):", error.hint);
+        console.error("===================================");
+        toast.error(`Falha no banco: ${error.message} - Dica: ${error.hint || 'Nenhuma dica disponível'}`);
         return;
       }
 
-      console.log("[ClienteDetalhe] Sukses simpan, response:", data);
+      console.log("[ClienteDetalhe] Persistência sucedida, result:", data);
       
       const savedCliente = data?.[0];
       if (!savedCliente) {
