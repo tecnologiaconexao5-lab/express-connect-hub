@@ -23,10 +23,10 @@ const CLASSIFICACAO_TERMICA = ["seco", "refrigerado", "isotérmico"];
 
 const defaultVeiculo: Partial<Veiculo> = {
   status: "Ativo",
-  tipo_veiculo: "",
+  tipoVeiculo: "",
   subcategoria: "",
-  tipo_carroceria: "",
-  classificacao_termica: ""
+  tipoCarroceria: "",
+  classificacaoTermica: ""
 };
 
 const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
@@ -63,7 +63,7 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
   };
 
   const handleSave = async () => {
-    if (!v.placa || !v.tipo_veiculo) {
+    if (!v.placa || !v.tipoVeiculo) {
       toast.error("Placa e Tipo de Veículo são obrigatórios.");
       return;
     }
@@ -73,13 +73,6 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
       const isUpdate = !!v.id;
       
       const payload = isUpdate ? toVeiculoUpdate({ ...v, placa: v.placa.toUpperCase() }) : toVeiculoInsert({ ...v, placa: v.placa.toUpperCase() });
-      
-      if (!isUpdate) payload.id = String(Date.now());
-
-      console.log("Payload enviado:", payload);
-
-      const { data: user } = await supabase.auth.getUser();
-      console.log("USER:", user);
 
       let result;
       if (isUpdate) {
@@ -97,27 +90,15 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
           hint: error.hint,
           code: error.code
         });
-        throw error;
+        toast.error(`Erro ao ${isUpdate ? 'atualizar' : 'cadastrar'}: ${error.message}`);
+        return;
       }
       
       toast.success(isNew ? "Veículo cadastrado!" : "Veículo atualizado!");
       onBack();
     } catch (error: any) {
-      console.error("Supabase failed, saving to local storage fallback:", error);
-      const isUpdate = !!v.id;
-      const dataToSave = { ...v, placa: v.placa.toUpperCase() };
-      if (!isUpdate) dataToSave.id = String(Date.now());
-
-      const localData = localStorage.getItem("veiculos_fallback");
-      let parsed = localData ? JSON.parse(localData) : [];
-      if (isUpdate) {
-        parsed = parsed.map((vec: any) => vec.id === v.id ? dataToSave : vec);
-      } else {
-        parsed.unshift(dataToSave);
-      }
-      localStorage.setItem("veiculos_fallback", JSON.stringify(parsed));
-      toast.success(isNew ? "Veículo cadastrado localmente!" : "Veículo atualizado localmente!");
-      onBack();
+      console.error("Erro ao salvar veículo:", error);
+      toast.error("Erro ao salvar veículo");
     } finally {
       setIsSaving(false);
     }
@@ -154,7 +135,7 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
               </div>
               <div>
                 <Label>Tipo de Veículo*</Label>
-                <Select value={v.tipo_veiculo || ""} onValueChange={val => handleChange("tipo_veiculo", val)}>
+                <Select value={v.tipoVeiculo || ""} onValueChange={val => handleChange("tipoVeiculo", val)}>
                   <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                   <SelectContent>{TIPOS_VEICULO.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                 </Select>
@@ -168,14 +149,14 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
               </div>
               <div>
                 <Label>Tipo de Carroceria</Label>
-                <Select value={v.tipo_carroceria || ""} onValueChange={val => handleChange("tipo_carroceria", val)}>
+                <Select value={v.tipoCarroceria || ""} onValueChange={val => handleChange("tipoCarroceria", val)}>
                   <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                   <SelectContent>{TIPOS_CARROCERIA.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
                 <Label>Classificação Térmica</Label>
-                <Select value={v.classificacao_termica || ""} onValueChange={val => handleChange("classificacao_termica", val)}>
+                <Select value={v.classificacao_termica || ""} onValueChange={val => handleChange("classificacaoTermica", val)}>
                   <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                   <SelectContent>{CLASSIFICACAO_TERMICA.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                 </Select>
@@ -188,15 +169,15 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
             <CardContent className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               <div><Label>Marca</Label><Input value={v.marca || ""} onChange={e => handleChange("marca", e.target.value)} /></div>
               <div><Label>Modelo</Label><Input value={v.modelo || ""} onChange={e => handleChange("modelo", e.target.value)} /></div>
-              <div><Label>Ano Fab.</Label><Input type="number" value={v.ano_fabricacao || ""} onChange={e => handleChange("ano_fabricacao", e.target.value)} /></div>
-              <div><Label>Ano Mod.</Label><Input type="number" value={v.ano_modelo || ""} onChange={e => handleChange("ano_modelo", e.target.value)} /></div>
+              <div><Label>Ano Fab.</Label><Input type="number" value={v.ano_fabricacao || ""} onChange={e => handleChange("anoFabricacao", parseInt(e.target.value) || 0)} /></div>
+              <div><Label>Ano Mod.</Label><Input type="number" value={v.ano_modelo || ""} onChange={e => handleChange("anoModelo", parseInt(e.target.value) || 0)} /></div>
               <div><Label>Cor</Label><Input value={v.cor || ""} onChange={e => handleChange("cor", e.target.value)} /></div>
               <div><Label>RENAVAM</Label><Input value={v.renavam || ""} onChange={e => handleChange("renavam", e.target.value)} /></div>
               <div className="col-span-2"><Label>Chassi</Label><Input value={v.chassi || ""} onChange={e => handleChange("chassi", e.target.value)} /></div>
               
-              <div><Label>Capac. (kg)</Label><Input type="number" value={v.capacidade_kg || ""} onChange={e => handleChange("capacidade_kg", e.target.value)} /></div>
-              <div><Label>Capac. (m³)</Label><Input type="number" value={v.capacidade_m3 || ""} onChange={e => handleChange("capacidade_m3", e.target.value)} /></div>
-              <div><Label>Comprim. (m)</Label><Input type="number" value={v.comprimento || ""} onChange={e => handleChange("comprimento", e.target.value)} /></div>
+              <div><Label>Capac. (kg)</Label><Input type="number" value={v.capacidade_kg || ""} onChange={e => handleChange("capacidadeKg", parseFloat(e.target.value) || 0)} /></div>
+              <div><Label>Capac. (m³)</Label><Input type="number" value={v.capacidade_m3 || ""} onChange={e => handleChange("capacidadeM3", parseFloat(e.target.value) || 0)} /></div>
+              <div><Label>Comprim. (m)</Label><Input type="number" value={v.comprimento || ""} onChange={e => handleChange("comprimento", parseFloat(e.target.value) || 0)} /></div>
               <div><Label>Largura (m)</Label><Input type="number" value={v.largura || ""} onChange={e => handleChange("largura", e.target.value)} /></div>
               <div><Label>Altura (m)</Label><Input type="number" value={v.altura || ""} onChange={e => handleChange("altura", e.target.value)} /></div>
               <div><Label>Qtd Pallets</Label><Input type="number" value={v.qtd_pallets || ""} onChange={e => handleChange("qtd_pallets", e.target.value)} /></div>

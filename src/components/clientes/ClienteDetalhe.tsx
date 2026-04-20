@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Plus, CheckCircle, Save, Calendar, Copy, MapPin, Trash2, Edit, AlertTriangle, FileText, Download, Eye } from "lucide-react";
+import { ArrowLeft, Plus, CheckCircle, Save, Calendar, Copy, MapPin, Trash2, Edit, AlertTriangle, FileText, Download, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Cliente } from "./types";
 import { EnderecoCompleto } from "@/components/ui/EnderecoCompleto";
 import { toClienteInsert, toClienteUpdate, fromClienteRow, ClienteRow } from "@/lib/dbMappers";
+import { buscarCEP, limparCEP, validarCEP, CEPResponse } from "@/services/cepService";
 
 interface Filial {
   id: string;
@@ -60,10 +61,10 @@ interface Props {
 
 const defaultCliente: Partial<Cliente> = {
   status: "Ativo",
-  exige_agendamento: false,
-  exige_sla: false,
-  exige_portal: false,
-  aceita_api: false,
+  exigeAgendamento: false,
+  exigeSla: false,
+  exigePortal: false,
+  aceitaApi: false,
 };
 
 const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
@@ -86,6 +87,32 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
   const [enderecos, setEnderecos] = useState<Array<{id: string; tipo_endereco: string; cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string}>>([]);
   const [modalEnderecoOpen, setModalEnderecoOpen] = useState(false);
   const [novoEndereco, setNovoEndereco] = useState<{tipo_endereco: string; cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string}>({tipo_endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", uf: ""});
+  const [cepLoading, setCepLoading] = useState(false);
+
+  const handleCEPBlur = async () => {
+    const cepDigitado = novoEndereco.cep.replace(/\D/g, '');
+    if (cepDigitado.length !== 8) return;
+    if (novoEndereco.logradouro || novoEndereco.bairro || novoEndereco.cidade) return;
+    
+    setCepLoading(true);
+    const resultado = await buscarCEP(novoEndereco.cep);
+    
+    if ('logradouro' in resultado) {
+      setNovoEndereco(prev => ({
+        ...prev,
+        logradouro: resultado.logradouro,
+        bairro: resultado.bairro,
+        cidade: resultado.cidade,
+        uf: resultado.estado,
+        ...(resultado.complemento ? { complemento: resultado.complemento } : {})
+      }));
+      toast.success('Endereço preenchido automaticamente.');
+    } else {
+      toast.warning(resultado.message);
+    }
+    setCepLoading(false);
+  };
+
   const [debugInfo, setDebugInfo] = useState<{
     url: string;
     tabela: string;
@@ -191,7 +218,7 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
   };
 
   const handleSave = async () => {
-    if (!c.razao_social || !c.cnpj) {
+    if (!c.razaoSocial || !c.cnpj) {
       toast.error("Razão Social e CNPJ são obrigatórios");
       return;
     }
@@ -355,7 +382,7 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="w-5 h-5" /></Button>
           <div>
-            <h2 className="text-2xl font-bold">{isNew ? "Novo Cliente" : c.razao_social || "Detalhes do Cliente"}</h2>
+            <h2 className="text-2xl font-bold">{isNew ? "Novo Cliente" : c.razaoSocial || "Detalhes do Cliente"}</h2>
             <p className="text-sm text-muted-foreground">{c.cnpj ? `CNPJ: ${c.cnpj}` : 'Preencha os dados abaixo'}</p>
           </div>
         </div>
@@ -381,8 +408,8 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
           <Card>
             <CardHeader><CardTitle className="text-base text-primary">Identificação Principal</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-4">
-              <div className="md:col-span-2"><Label>Razão Social*</Label><Input value={c.razao_social || ""} onChange={e => handleChange("razao_social", e.target.value)} /></div>
-              <div className="md:col-span-2"><Label>Nome Fantasia</Label><Input value={c.nome_fantasia || ""} onChange={e => handleChange("nome_fantasia", e.target.value)} /></div>
+              <div className="md:col-span-2"><Label>Razão Social*</Label><Input value={c.razaoSocial || ""} onChange={e => handleChange("razaoSocial", e.target.value)} /></div>
+              <div className="md:col-span-2"><Label>Nome Fantasia</Label><Input value={c.nomeFantasia || ""} onChange={e => handleChange("nomeFantasia", e.target.value)} /></div>
               <div><Label>CNPJ*</Label><Input value={c.cnpj || ""} onChange={e => handleChange("cnpj", e.target.value)} placeholder="00.000.000/0000-00" /></div>
               <div><Label>Inscrição Estadual (IE)</Label><Input value={c.ie || ""} onChange={e => handleChange("ie", e.target.value)} /></div>
               <div>
@@ -405,16 +432,16 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
           <Card>
             <CardHeader><CardTitle className="text-base text-primary">Contatos e Comunicação</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div><Label>Contato Principal</Label><Input value={c.contato_principal || ""} onChange={e => handleChange("contato_principal", e.target.value)} /></div>
+              <div><Label>Contato Principal</Label><Input value={c.contatoPrincipal || ""} onChange={e => handleChange("contatoPrincipal", e.target.value)} /></div>
               <div><Label>Telefone Fixo</Label><Input value={c.telefone || ""} onChange={e => handleChange("telefone", e.target.value)} /></div>
               <div><Label>WhatsApp</Label><Input value={c.whatsapp || ""} onChange={e => handleChange("whatsapp", e.target.value)} /></div>
               <div><Label>E-mail Corporativo</Label><Input value={c.email || ""} onChange={e => handleChange("email", e.target.value)} /></div>
               <div><Label>Site Institucional</Label><Input value={c.site || ""} onChange={e => handleChange("site", e.target.value)} /></div>
               <div><Label>Origem Comercial</Label><Input value={c.origem_comercial || ""} onChange={e => handleChange("origem_comercial", e.target.value)} placeholder="Ex: Indicações, Prospecção" /></div>
               
-              <div><Label>Resp. Operacional</Label><Input value={c.responsavel_operacional || ""} onChange={e => handleChange("responsavel_operacional", e.target.value)} /></div>
-              <div><Label>Resp. Financeiro</Label><Input value={c.responsavel_financeiro || ""} onChange={e => handleChange("responsavel_financeiro", e.target.value)} /></div>
-              <div><Label>Resp. Comercial</Label><Input value={c.responsavel_comercial || ""} onChange={e => handleChange("responsavel_comercial", e.target.value)} /></div>
+              <div><Label>Resp. Operacional</Label><Input value={c.responsavelOperacional || ""} onChange={e => handleChange("responsavelOperacional", e.target.value)} /></div>
+              <div><Label>Resp. Financeiro</Label><Input value={c.responsavelFinanceiro || ""} onChange={e => handleChange("responsavelFinanceiro", e.target.value)} /></div>
+              <div><Label>Resp. Comercial</Label><Input value={c.responsavelComercial || ""} onChange={e => handleChange("responsavelComercial", e.target.value)} /></div>
               
               <div className="md:col-span-3"><Label>Observações Gerais</Label><Textarea value={c.observacoes || ""} onChange={e => handleChange("observacoes", e.target.value)} rows={3} /></div>
             </CardContent>
@@ -423,10 +450,10 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
           <Card>
             <CardHeader><CardTitle className="text-base text-primary">Parametrizações Operacionais</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 bg-muted/30 rounded-lg">
-              <div className="flex items-center space-x-2"><Switch checked={!!c.exige_agendamento} onCheckedChange={v => handleChange("exige_agendamento", v)} /><Label>Exige Agendamento</Label></div>
-              <div className="flex items-center space-x-2"><Switch checked={!!c.exige_sla} onCheckedChange={v => handleChange("exige_sla", v)} /><Label>Exige SLA Específico</Label></div>
-              <div className="flex items-center space-x-2"><Switch checked={!!c.exige_portal} onCheckedChange={v => handleChange("exige_portal", v)} /><Label>Exige Portal do Cliente</Label></div>
-              <div className="flex items-center space-x-2"><Switch checked={!!c.aceita_api} onCheckedChange={v => handleChange("aceita_api", v)} /><Label>Aceita Integração API</Label></div>
+              <div className="flex items-center space-x-2"><Switch checked={!!c.exigeAgendamento} onCheckedChange={v => handleChange("exigeAgendamento", v)} /><Label>Exige Agendamento</Label></div>
+              <div className="flex items-center space-x-2"><Switch checked={!!c.exigeSla} onCheckedChange={v => handleChange("exigeSla", v)} /><Label>Exige SLA Específico</Label></div>
+              <div className="flex items-center space-x-2"><Switch checked={!!c.exigePortal} onCheckedChange={v => handleChange("exigePortal", v)} /><Label>Exige Portal do Cliente</Label></div>
+              <div className="flex items-center space-x-2"><Switch checked={!!c.aceitaApi} onCheckedChange={v => handleChange("aceitaApi", v)} /><Label>Aceita Integração API</Label></div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -804,7 +831,23 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
                   <SelectContent><SelectItem value="Matriz">Matriz</SelectItem><SelectItem value="Filial">Filial</SelectItem><SelectItem value="Cobraça">Cobrança</SelectItem><SelectItem value="Entrega">Entrega</SelectItem><SelectItem value="Coleta">Coleta</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div><Label>CEP</Label><Input value={novoEndereco.cep} onChange={e => setNovoEndereco({...novoEndereco, cep: e.target.value})} placeholder="00000-000" /></div>
+              <div><Label>CEP</Label>
+                  <div className="relative">
+                    <Input 
+                      value={novoEndereco.cep} 
+                      onChange={e => {
+                        const v = e.target.value.replace(/\D/g, '');
+                        const formatted = v.length > 5 ? v.replace(/^(\d{5})(\d)/, '$1-$2') : v;
+                        setNovoEndereco({...novoEndereco, cep: formatted});
+                      }}
+                      onBlur={handleCEPBlur}
+                      placeholder="00000-000" 
+                      maxLength={9}
+                      className={cepLoading ? "pr-8" : ""}
+                    />
+                    {cepLoading && <Loader2 className="absolute right-2 top-2.5 w-4 h-4 animate-spin text-slate-400" />}
+                  </div>
+                </div>
             </div>
             <div><Label>Logradouro</Label><Input value={novoEndereco.logradouro} onChange={e => setNovoEndereco({...novoEndereco, logradouro: e.target.value})} placeholder="Rua, Av., etc." /></div>
             <div className="grid grid-cols-2 gap-4">
