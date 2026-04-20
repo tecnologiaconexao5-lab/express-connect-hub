@@ -462,17 +462,24 @@ await supabase.from("financeiro_pagar").insert([{
                     <Field label="Fim (Janela)"><Input type="time" value={end.janelaFim} readOnly={readOnly} onChange={(e) => { const t = [...data.enderecos]; t[idx].janelaFim = e.target.value; update("enderecos", t); }} /></Field>
                   </div>
                   
-                  {readOnly ? (
-                    <Field label="Endereço Completo Cadastrado"><Input value={end.endereco} readOnly /></Field>
-                  ) : (
+{readOnly ? (
+                     <Field label="Endereço Completo Cadastrado"><Input value={end.logradouro ? `${end.logradouro}, ${end.numero || 'S/N'} - ${end.bairro}, ${end.cidade}/${end.estado}` : end.endereco} readOnly /></Field>
+                   ) : (
                     <EnderecoCompleto 
                       label="Dados do Endereço (ViaCEP)" 
                       value={{
-                        cep: "", logradouro: end.endereco, numero: "", complemento: "", bairro: "", cidade: "", estado: "", referencia: end.instrucoes
+                        cep: end.cep || "", logradouro: end.logradouro || "", numero: end.numero || "", complemento: end.complemento || "", bairro: end.bairro || "", cidade: end.cidade || "", estado: end.estado || "", referencia: end.instrucoes || ""
                       } as any}
                       onChange={(obj) => {
                          const t = [...data.enderecos];
-                         t[idx].endereco = `${obj.logradouro}, ${obj.numero} ${obj.complemento ? ' - ' + obj.complemento : ''} - ${obj.bairro}, ${obj.cidade}/${obj.estado} - CEP: ${obj.cep}`;
+                         t[idx].endereco = obj.logradouro ? `${obj.logradouro}, ${obj.numero} ${obj.complemento ? ' - ' + obj.complemento : ''} - ${obj.bairro}, ${obj.cidade}/${obj.estado}` : (end.nomeLocal || "");
+                         t[idx].cep = obj.cep;
+                         t[idx].logradouro = obj.logradouro;
+                         t[idx].numero = obj.numero;
+                         t[idx].complemento = obj.complemento;
+                         t[idx].bairro = obj.bairro;
+                         t[idx].cidade = obj.cidade;
+                         t[idx].estado = obj.estado;
                          t[idx].instrucoes = obj.referencia || "";
                          update("enderecos", t);
                       }}

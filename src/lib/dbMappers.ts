@@ -189,6 +189,7 @@ export const toPrestadorInsert = (form: Partial<PrestadorForm>): Record<string, 
   const d: Record<string, unknown> = {};
   const has = (v: unknown) => v !== undefined && v !== null && v !== "";
 
+  if (has(form.foto)) d.foto = String(form.foto);
   if (has(form.nomeCompleto)) d.nome_completo = String(form.nomeCompleto);
   if (has(form.cpfCnpj)) d.cpf_cnpj = String(form.cpfCnpj);
   if (has(form.telefone)) d.telefone = String(form.telefone);
@@ -222,6 +223,7 @@ export const toPrestadorUpdate = (form: Partial<PrestadorForm>): Record<string, 
   const d: Record<string, unknown> = {};
   const has = (v: unknown) => v !== undefined && v !== null && v !== "";
 
+  if (has(form.foto)) d.foto = String(form.foto);
   if (has(form.nomeCompleto)) d.nome_completo = String(form.nomeCompleto);
   if (has(form.cpfCnpj)) d.cpf_cnpj = String(form.cpfCnpj);
   if (has(form.telefone)) d.telefone = String(form.telefone);

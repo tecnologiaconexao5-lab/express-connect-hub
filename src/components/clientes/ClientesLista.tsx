@@ -49,7 +49,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
   };
 
   const filtered = clientes.filter((c) =>
-    (c.razao_social?.toLowerCase() || "").includes(busca.toLowerCase()) || 
+    (c.razaoSocial?.toLowerCase() || "").includes(busca.toLowerCase()) || 
     (c.cnpj || "").includes(busca)
   );
 
@@ -98,10 +98,10 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                   <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelect(c.id)}>
                     <TableCell>
                       <Avatar className="w-8 h-8">
-                        <AvatarFallback className="text-xs bg-muted">{(c.razao_social || "?").charAt(0)}</AvatarFallback>
+                        <AvatarFallback className="text-xs bg-muted">{(c.razaoSocial || "?").charAt(0)}</AvatarFallback>
                       </Avatar>
                     </TableCell>
-                    <TableCell className="font-medium text-sm">{c.razao_social}</TableCell>
+                    <TableCell className="font-medium text-sm">{c.razaoSocial}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{c.cnpj}</TableCell>
                     <TableCell className="text-sm">{c.segmento || "—"}</TableCell>
                     <TableCell className="text-sm">{c.cidade ? `${c.cidade}/${c.uf}` : "—"}</TableCell>
@@ -110,7 +110,7 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
                         {c.status || "Ativo"}
                       </span>
                     </TableCell>
-                    <TableCell className="text-sm font-semibold">{c.num_os_mes || 0}</TableCell>
+                    <TableCell className="text-sm font-semibold">{c.numOsMes || 0}</TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={(e) => { e.stopPropagation(); onSelect(c.id); }}><Edit className="w-4 h-4" /></Button>
                     </TableCell>

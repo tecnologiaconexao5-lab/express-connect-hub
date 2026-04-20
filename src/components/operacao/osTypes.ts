@@ -41,6 +41,13 @@ export interface OSEndereco {
   tipo: "coleta" | "entrega" | "apoio" | "devolucao" | "retorno";
   nomeLocal: string;
   endereco: string;
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  estado?: string;
   referencia: string;
   instrucoes: string;
   contato: string;

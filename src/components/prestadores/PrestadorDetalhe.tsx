@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Camera, Sparkles } from "lucide-react";
+import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Camera, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -17,10 +18,14 @@ import { supabase } from "@/lib/supabase";
 import {
   Prestador, TIPO_PARCEIRO_LABEL, TIPO_PARCEIRO_COR, STATUS_LABEL, STATUS_COR,
   TIPO_VEICULO_LABEL, TipoParceiro, StatusPrestador, TipoVeiculo, StatusDocumento,
+  VeiculoPrestador,
 } from "./types";
 import { DocumentoAnalyzer } from "@/components/documentos/AnaliseDocumentoIA";
 import ContratoPrestadorModal from "./ContratoPrestadorModal";
 import { toPrestadorInsert, toPrestadorUpdate } from "@/lib/dbMappers";
+import { buscarCEP } from "@/services/cepService";
+
+const BUCKET_PRESTADORES = "prestadores";
 
 interface Props {
   prestador?: Prestador;
@@ -75,6 +80,14 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const [isLoading, setIsLoading] = useState(false);
   const [docToAnalyze, setDocToAnalyze] = useState<string | null>(null);
   const [modalContratoOpen, setModalContratoOpen] = useState(false);
+  const [modalVeiculoOpen, setModalVeiculoOpen] = useState(false);
+  const [novoVeiculo, setNovoVeiculo] = useState<Partial<VeiculoPrestador>>({
+    tipoVeiculo: "fiorino",
+    status: "ativo"
+  });
+  const [isUploading, setIsUploading] = useState(false);
+  const [docUploadProgress, setDocUploadProgress] = useState<Record<string, boolean>>({});
+  const [fotoPreview, setFotoPreview] = useState<string | null>(initial?.foto || null);
 
   // Helper to handle input changes
   const handleChange = (field: keyof Prestador, value: any) => {
@@ -83,6 +96,183 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
 
   const handleChangeAddress = (field: string, value: string) => {
     setP(prev => ({ ...prev, endereco: { ...prev.endereco, [field]: value } as any }));
+  };
+
+  const [cepLoading, setCepLoading] = useState(false);
+
+  const handleCEPBlur = async (e: React.FocusEvent<HTMLInputElement>) => {
+    const cepValue = e.target.value.replace(/\D/g, '');
+    if (cepValue.length !== 8) return;
+    if (p.endereco?.rua || p.endereco?.bairro || p.endereco?.cidade) return;
+
+    setCepLoading(true);
+    const resultado = await buscarCEP(cepValue);
+
+    if ('logradouro' in resultado) {
+      setP(prev => ({
+        ...prev,
+        endereco: {
+          ...prev.endereco,
+          rua: resultado.logradouro || prev.endereco?.rua,
+          bairro: resultado.bairro || prev.endereco?.bairro,
+          cidade: resultado.cidade || prev.endereco?.cidade,
+          estado: resultado.estado || prev.endereco?.estado,
+          ...(resultado.complemento ? { complemento: resultado.complemento } : {})
+        } as any
+      }));
+      toast.success('Endereço preenchido automaticamente.');
+    } else {
+      toast.warning(resultado.message);
+    }
+    setCepLoading(false);
+  };
+
+  const handleFotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Selecione apenas imagens");
+      return;
+    }
+
+    const prestadorId = p.id || `temp_${Date.now()}`;
+    const fileName = `foto_${prestadorId}_${Date.now()}.${file.type.split("/")[1]}`;
+
+    try {
+      setIsUploading(true);
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(BUCKET_PRESTADORES)
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) {
+        console.error("Upload error:", uploadError);
+        toast.error("Erro ao fazer upload da imagem");
+        return;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from(BUCKET_PRESTADORES)
+        .getPublicUrl(uploadData.path);
+
+      const fotoUrl = urlData.publicUrl;
+      setFotoPreview(fotoUrl);
+      setP(prev => ({ ...prev, foto: fotoUrl }));
+      toast.success("Foto atualizada!");
+    } catch (error) {
+      console.error("Erro ao fazer upload:", error);
+      toast.error("Erro ao fazer upload da imagem");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDocUpload = async (tipoDocumento: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const prestadorId = p.id;
+    if (!prestadorId) {
+      toast.error("Salve o prestador primeiro para upload de documentos");
+      return;
+    }
+
+    const fileName = `doc_${prestadorId}_${tipoDocumento.replace(/\s+/g, "_")}_${Date.now()}.${file.name.split(".").pop()}`;
+
+    try {
+      setDocUploadProgress(prev => ({ ...prev, [tipoDocumento]: true }));
+      setIsUploading(true);
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(BUCKET_PRESTADORES)
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) {
+        console.error("Upload error:", uploadError);
+        toast.error(`Erro ao fazer upload do ${tipoDocumento}`);
+        return;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from(BUCKET_PRESTADORES)
+        .getPublicUrl(uploadData.path);
+
+      const docUrl = urlData.publicUrl;
+      const { error: dbError } = await supabase.from("documentos_prestadores").insert({
+        prestador_id: prestadorId,
+        tipo: tipoDocumento,
+        arquivo: docUrl,
+        created_at: new Date().toISOString()
+      });
+
+      if (dbError) {
+        console.error("DB error:", dbError);
+      }
+
+      const currentDocs = p.documentos || [];
+      const updatedDocs = currentDocs.some(d => d.tipo === tipoDocumento)
+        ? currentDocs.map(d => d.tipo === tipoDocumento ? { ...d, arquivo: docUrl, status: "valido" as const } : d)
+        : [...currentDocs, { tipo: tipoDocumento, arquivo: docUrl, status: "valido" as const }];
+      setP(prev => ({ ...prev, documentos: updatedDocs }));
+      toast.success(`${tipoDocumento} enviado!`);
+    } catch (error) {
+      console.error("Erro ao fazer upload:", error);
+      toast.error(`Erro ao fazer upload do ${tipoDocumento}`);
+    } finally {
+      setDocUploadProgress(prev => ({ ...prev, [tipoDocumento]: false }));
+      setIsUploading(false);
+    }
+  };
+
+  const handleAddVeiculo = async (veiculoData: Partial<VeiculoPrestador>) => {
+    const prestadorId = p.id;
+    if (!prestadorId) {
+      toast.error("Salve o prestador primeiro para adicionar veículo");
+      return;
+    }
+
+    try {
+      const { data: veiculoResult, error: veiculoError } = await supabase.from("veiculos_prestadores").insert({
+        prestador_id: prestadorId,
+        veiculo_id: veiculoData.id,
+        placa: veiculoData.placa,
+        tipo: veiculoData.tipoVeiculo,
+        capacidade_kg: veiculoData.capacidadeKg,
+        status: "Ativo",
+        created_at: new Date().toISOString()
+      }).select();
+
+      if (veiculoError) {
+        console.error("Erro ao vincular veículo:", veiculoError);
+        toast.error("Erro ao adicionar veículo");
+        return;
+      }
+
+      const currentVeiculos = p.veiculos || [];
+      const newVeiculo: VeiculoPrestador = {
+        id: veiculoData.id || `temp_${Date.now()}`,
+        tipoVeiculo: veiculoData.tipoVeiculo || "outro",
+        subcategoria: "outro",
+        tipoCarroceria: "outro",
+        classificacaoTermica: "seco",
+        placa: veiculoData.placa || "",
+        renavam: veiculoData.renavam || "",
+        marca: veiculoData.marca || "",
+        modelo: veiculoData.modelo || "",
+        ano: veiculoData.ano || 2024,
+        cor: "",
+        capacidadeKg: veiculoData.capacidadeKg || 0,
+        capacidadeM3: 0,
+        proprietario: "",
+        status: "ativo"
+      };
+      setP(prev => ({ ...prev, veiculos: [...currentVeiculos, newVeiculo] }));
+      setModalVeiculoOpen(false);
+      toast.success("Veículo adicionado!");
+    } catch (error) {
+      console.error("Erro ao adicionar veículo:", error);
+      toast.error("Erro ao adicionar veículo");
+    }
   };
 
   const handleSave = async () => {
@@ -209,13 +399,29 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             <Card>
               <CardHeader className="pb-3"><CardTitle className="text-sm">Endereço</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div><Label className="text-xs">CEP</Label><Input defaultValue={p.endereco?.cep} placeholder="00000-000" /></div>
-                <div className="lg:col-span-2"><Label className="text-xs">Rua</Label><Input defaultValue={p.endereco?.rua} /></div>
-                <div><Label className="text-xs">Número</Label><Input defaultValue={p.endereco?.numero} /></div>
-                <div><Label className="text-xs">Complemento</Label><Input defaultValue={p.endereco?.complemento} /></div>
-                <div><Label className="text-xs">Bairro</Label><Input defaultValue={p.endereco?.bairro} /></div>
-                <div><Label className="text-xs">Cidade</Label><Input defaultValue={p.endereco?.cidade} /></div>
-                <div><Label className="text-xs">Estado</Label><Input defaultValue={p.endereco?.estado} /></div>
+                <div><Label className="text-xs">CEP</Label>
+                  <div className="relative">
+                    <Input 
+                      value={p.endereco?.cep || ''} 
+                      onChange={e => {
+                        const v = e.target.value.replace(/\D/g, '');
+                        const formatted = v.length > 5 ? v.replace(/^(\d{5})(\d)/, '$1-$2') : v;
+                        handleChangeAddress('cep', formatted);
+                      }}
+                      onBlur={handleCEPBlur}
+                      placeholder="00000-000" 
+                      maxLength={9}
+                      className={cepLoading ? "pr-8" : ""}
+                    />
+                    {cepLoading && <Loader2 className="absolute right-2 top-2.5 w-4 h-4 animate-spin text-slate-400" />}
+                  </div>
+                </div>
+                <div className="lg:col-span-2"><Label className="text-xs">Rua</Label><Input value={p.endereco?.rua || ''} onChange={e => handleChangeAddress('rua', e.target.value)} /></div>
+                <div><Label className="text-xs">Número</Label><Input value={p.endereco?.numero || ''} onChange={e => handleChangeAddress('numero', e.target.value)} /></div>
+                <div><Label className="text-xs">Complemento</Label><Input value={p.endereco?.complemento || ''} onChange={e => handleChangeAddress('complemento', e.target.value)} /></div>
+                <div><Label className="text-xs">Bairro</Label><Input value={p.endereco?.bairro || ''} onChange={e => handleChangeAddress('bairro', e.target.value)} /></div>
+                <div><Label className="text-xs">Cidade</Label><Input value={p.endereco?.cidade || ''} onChange={e => handleChangeAddress('cidade', e.target.value)} /></div>
+                <div><Label className="text-xs">Estado</Label><Input value={p.endereco?.estado || ''} onChange={e => handleChangeAddress('estado', e.target.value)} /></div>
               </CardContent>
             </Card>
 
@@ -309,10 +515,25 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                           }}
                         />
                       )}
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        className="hidden"
+                        id={`doc-upload-${tipo}`}
+                        onChange={(e) => handleDocUpload(tipo, e)}
+                        disabled={docUploadProgress[tipo]}
+                      />
                       <div className="flex items-center gap-2 mt-2">
-                        <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
-                          <Upload className="w-3 h-3" /> Upload
-                        </Button>
+                        <label
+                          htmlFor={`doc-upload-${tipo}`}
+                          className={`flex items-center gap-1 px-2 py-1 rounded border cursor-pointer text-xs h-7 ${docUploadProgress[tipo] ? "bg-muted cursor-wait" : "hover:bg-muted"}`}
+                        >
+                          {docUploadProgress[tipo] ? (
+                            <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Upload className="w-3 h-3" />
+                          )} Upload
+                        </label>
                         <Button 
                           variant="outline" 
                           size="sm" 
@@ -333,8 +554,8 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           {/* ABA 3 - VEÍCULOS */}
           <TabsContent value="veiculos" className="space-y-4 mt-4">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">{p.veiculos?.length || 0} veículo(s) vinculado(s)</span>
-              <Button size="sm" className="gap-1.5"><Plus className="w-4 h-4" /> Adicionar Veículo</Button>
+              <span className="text-sm font-medium">{p.veiculos?.length || 0} veículo(s) vinculada(s)</span>
+              <Button size="sm" className="gap-1.5" onClick={() => setModalVeiculoOpen(true)}><Plus className="w-4 h-4" /> Adicionar Veículo</Button>
             </div>
             {(p.veiculos || []).map((v) => (
               <Card key={v.id}>
@@ -560,12 +781,28 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           <Card>
             <CardContent className="p-5 flex flex-col items-center text-center">
               <div className="relative mb-3">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  id="foto-upload"
+                  onChange={handleFotoUpload}
+                  disabled={isUploading}
+                />
                 <Avatar className="w-28 h-28 border-4 border-muted">
-                  <AvatarFallback className="text-2xl bg-muted">{p.nomeCompleto?.split(" ").map((n) => n[0]).slice(0, 2).join("") || "?"}</AvatarFallback>
+                  {fotoPreview ? (
+                    <img src={fotoPreview} alt="Foto" className="w-full h-full object-cover rounded-full" />
+                  ) : (
+                    <AvatarFallback className="text-2xl bg-muted">{p.nomeCompleto?.split(" ").map((n) => n[0]).slice(0, 2).join("") || "?"}</AvatarFallback>
+                  )}
                 </Avatar>
-                <button className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md">
+                <label
+                  htmlFor="foto-upload"
+                  className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md cursor-pointer hover:bg-primary/90"
+                >
                   <Camera className="w-4 h-4" />
-                </button>
+                  {isUploading && <span className="absolute inset-0 flex items-center justify-center bg-primary/50 rounded-full"><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /></span>}
+                </label>
               </div>
               {p.status && (
                 <div className="flex flex-col items-center gap-2">
@@ -633,6 +870,79 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             prestador={p}
          />
       )}
+
+      <Dialog open={modalVeiculoOpen} onOpenChange={setModalVeiculoOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Adicionar Veículo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label className="text-xs">Placa</Label>
+              <Input
+                value={novoVeiculo.placa || ""}
+                onChange={(e) => setNovoVeiculo(prev => ({ ...prev, placa: e.target.value.toUpperCase() }))}
+                placeholder="ABC-1234"
+                maxLength={8}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Tipo de Veículo</Label>
+              <Select
+                value={novoVeiculo.tipoVeiculo || "fiorino"}
+                onValueChange={(val) => setNovoVeiculo(prev => ({ ...prev, tipoVeiculo: val as TipoVeiculo }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(TIPO_VEICULO_LABEL).map(([k, l]) => (
+                    <SelectItem key={k} value={k}>{l}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Marca</Label>
+              <Input
+                value={novoVeiculo.marca || ""}
+                onChange={(e) => setNovoVeiculo(prev => ({ ...prev, marca: e.target.value }))}
+                placeholder="Ex: Fiat"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Modelo</Label>
+              <Input
+                value={novoVeiculo.modelo || ""}
+                onChange={(e) => setNovoVeiculo(prev => ({ ...prev, modelo: e.target.value }))}
+                placeholder="Ex: Fiorino"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Ano</Label>
+              <Input
+                type="number"
+                value={novoVeiculo.ano || ""}
+                onChange={(e) => setNovoVeiculo(prev => ({ ...prev, ano: parseInt(e.target.value) || 2024 }))}
+                placeholder="2024"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Capacidade (kg)</Label>
+              <Input
+                type="number"
+                value={novoVeiculo.capacidadeKg || ""}
+                onChange={(e) => setNovoVeiculo(prev => ({ ...prev, capacidadeKg: parseInt(e.target.value) || 0 }))}
+                placeholder="500"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setModalVeiculoOpen(false)}>Cancelar</Button>
+              <Button className="flex-1" onClick={() => handleAddVeiculo(novoVeiculo)} disabled={!novoVeiculo.placa}>
+                Adicionar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

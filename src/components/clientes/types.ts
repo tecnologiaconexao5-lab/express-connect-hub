@@ -1,13 +1,13 @@
 export interface Cliente {
   id: string;
-  razao_social: string;
-  nome_fantasia?: string;
+  razaoSocial: string;
+  nomeFantasia?: string;
   cnpj: string;
   ie?: string;
   segmento?: string;
   porte?: string;
   status: string;
-  contato_principal?: string;
+  contatoPrincipal?: string;
   telefone?: string;
   whatsapp?: string;
   email?: string;
@@ -15,16 +15,16 @@ export interface Cliente {
   cidade?: string;
   uf?: string;
   logo?: string;
-  num_os_mes?: number;
-  responsavel_operacional?: string;
-  responsavel_financeiro?: string;
-  responsavel_comercial?: string;
+  numOsMes?: number;
+  responsavelOperacional?: string;
+  responsavelFinanceiro?: string;
+  responsavelComercial?: string;
   observacoes?: string;
-  origem_comercial?: string;
-  exige_agendamento: boolean;
-  exige_sla: boolean;
-  exige_portal: boolean;
-  aceita_api: boolean;
+  origemComercial?: string;
+  exigeAgendamento: boolean;
+  exigeSla: boolean;
+  exigePortal: boolean;
+  aceitaApi: boolean;
   enderecos?: EnderecoCliente[];
   tabelas?: TabelaCliente[];
   contratos?: ContratoCliente[];
@@ -42,10 +42,10 @@ export interface EnderecoCliente {
   cidade: string;
   estado: string;
   referencia?: string;
-  contato_local?: string;
-  telefone_local?: string;
+  contatoLocal?: string;
+  telefoneLocal?: string;
   instrucoes?: string;
-  janela_padrao?: string;
+  janelaPadrao?: string;
   restricoes?: string;
   agendamento: boolean;
 }
@@ -53,8 +53,16 @@ export interface EnderecoCliente {
 export interface TabelaCliente {
   id?: string;
   nome: string;
-  vigencia_fim?: string;
-  tipo_cobranca?: string;
+  vigenciaFim?: string;
+  tipoCobranca?: string;
+}
+
+export interface ContratoCliente {
+  id?: string;
+  numero: string;
+  vigenciaInicio: string;
+  vigenciaFim: string;
+  reajuste?: string;
 }
 
 export interface ContratoCliente {
