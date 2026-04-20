@@ -237,7 +237,7 @@ export default function PortalCliente() {
       // Fetch data from Supabase
       const [{ data: entregasData }, { data: faturasData }, { data: ocorrenciasData }] = await Promise.all([
         supabase.from('ordens_servico').select('*').order('created_at', { ascending: false }).limit(50),
-        supabase.from('financeiro_receber').select('*').order('vencimento', { ascending: false }).limit(20),
+        supabase.from('financeiro_receber').select('*').order('data_vencimento', { ascending: false }).limit(20),
         supabase.from('ocorrencias').select('*').order('created_at', { ascending: false }).limit(20),
       ]);
 

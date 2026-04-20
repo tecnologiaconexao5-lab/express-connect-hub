@@ -1,0 +1,772 @@
+-- ============================================================
+-- EXPRESS CONNECT HUB - SCHEMA COMPLETO SUPABASE
+-- Gerado automaticamente a partir do Frontend Lovable
+-- ============================================================
+
+-- ============================================================
+-- 1. TABELA: clientes
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.clientes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    razao_social TEXT NOT NULL,
+    nome_fantasia TEXT,
+    cnpj TEXT NOT NULL UNIQUE,
+    ie TEXT,
+    segmento TEXT,
+    porte TEXT,
+    status TEXT DEFAULT 'Ativo',
+    contato_principal TEXT,
+    telefone TEXT,
+    whatsapp TEXT,
+    email TEXT,
+    site TEXT,
+    cidade TEXT,
+    uf TEXT,
+    logo TEXT,
+    num_os_mes INTEGER DEFAULT 0,
+    responsavel_operacional TEXT,
+    responsavel_financeiro TEXT,
+    responsavel_comercial TEXT,
+    observacoes TEXT,
+    origem_comercial TEXT,
+    exige_agendamento BOOLEAN DEFAULT false,
+    exige_sla BOOLEAN DEFAULT false,
+    exige_portal BOOLEAN DEFAULT false,
+    aceita_api BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.clientes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.clientes FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 2. TABELA: veiculos
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.veiculos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    placa TEXT NOT NULL,
+    tipo_veiculo TEXT NOT NULL,
+    subcategoria TEXT,
+    marca TEXT,
+    modelo TEXT,
+    ano_fabricacao INTEGER,
+    ano_modelo INTEGER,
+    cor TEXT,
+    renavam TEXT,
+    chassi TEXT,
+    capacidade_kg NUMERIC(10,2),
+    capacidade_m3 NUMERIC(10,2),
+    comprimento NUMERIC(10,2),
+    largura NUMERIC(10,2),
+    altura NUMERIC(10,2),
+    qtd_pallets INTEGER,
+    tipo_carroceria TEXT,
+    classificacao_termica TEXT,
+    rastreador TEXT,
+    seguro_apolice TEXT,
+    validade_documental DATE,
+    prestador_vinculado TEXT,
+    unidade TEXT,
+    custo_km NUMERIC(10,2),
+    custo_diaria NUMERIC(10,2),
+    status TEXT DEFAULT 'Ativo',
+    observacoes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.veiculos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.veiculos FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 3. TABELA: prestadores
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.prestadores (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    foto TEXT,
+    nome_completo TEXT NOT NULL,
+    nome_fantasia TEXT,
+    cpf_cnpj TEXT NOT NULL UNIQUE,
+    rg_ie TEXT,
+    data_nascimento DATE,
+    telefone TEXT,
+    whatsapp TEXT,
+    email TEXT,
+    tipo_parceiro TEXT DEFAULT 'autonomo',
+    status TEXT DEFAULT 'analise',
+    
+    -- Endereco (JSON)
+    endereco JSONB DEFAULT '{}',
+    
+    regiao_principal TEXT,
+    regioes_secundarias TEXT[],
+    origem_cadastro TEXT,
+    indicacao TEXT,
+    disponibilidade TEXT,
+    turnos_preferenciais TEXT,
+    restricoes_operacionais TEXT,
+    aceita_refrigerada BOOLEAN DEFAULT false,
+    aceita_urbana BOOLEAN DEFAULT false,
+    aceita_dedicada BOOLEAN DEFAULT false,
+    aceita_esporadica BOOLEAN DEFAULT false,
+    
+    -- Contatos de emergencia (JSON)
+    contatos_emergencia JSONB DEFAULT '[]',
+    
+    -- Documentos (JSON)
+    documentos JSONB DEFAULT '[]',
+    
+    -- Veiculos (JSON)
+    veiculos JSONB DEFAULT '[]',
+    
+    -- Dados bancarios
+    banco TEXT,
+    agencia TEXT,
+    conta TEXT,
+    digito TEXT,
+    tipo_conta TEXT,
+    favorecido TEXT,
+    cpf_cnpj_favorecido TEXT,
+    chave_pix TEXT,
+    tipo_chave_pix TEXT,
+    
+    -- Valores
+    valor_diaria NUMERIC(10,2),
+    valor_km NUMERIC(10,2),
+    valor_saida NUMERIC(10,2),
+    fixo_mensal NUMERIC(10,2),
+    valor_ajudante NUMERIC(10,2),
+    valor_espera NUMERIC(10,2),
+    valor_reentrega NUMERIC(10,2),
+    valor_devolucao NUMERIC(10,2),
+    
+    -- Pagamento
+    periodicidade_pagamento TEXT,
+    prazo_pagamento TEXT,
+    forma_preferencial_pagamento TEXT,
+    conta_contabil TEXT,
+    centro_custo TEXT,
+    retencoes TEXT,
+    conferenci_manual BOOLEAN DEFAULT false,
+    observacoes_financeiras TEXT,
+    
+    -- Qualidade
+    score_interno NUMERIC(3,2) DEFAULT 0,
+    avaliacao_operacional TEXT,
+    qtd_operacoes INTEGER DEFAULT 0,
+    indice_aceite NUMERIC(5,2) DEFAULT 0,
+    indice_comparecimento NUMERIC(5,2) DEFAULT 0,
+    indice_entrega_prazo NUMERIC(5,2) DEFAULT 0,
+    
+    -- Historico (JSON)
+    historico_ocorrencias JSONB DEFAULT '[]',
+    historico_bloqueios JSONB DEFAULT '[]',
+    historico_alteracoes JSONB DEFAULT '[]',
+    
+    data_cadastro DATE,
+    data_aprovacao DATE,
+    ultima_atualizacao TIMESTAMPTZ,
+    ultimo_usuario TEXT,
+    observacoes_torre TEXT,
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.prestadores ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.prestadores FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 4. TABELA: ordens_servico
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.ordens_servico (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    numero TEXT NOT NULL UNIQUE,
+    data DATE,
+    cliente TEXT,
+    unidade TEXT,
+    centro_custo TEXT,
+    orcamento_origem TEXT,
+    prestador TEXT,
+    veiculo_alocado TEXT,
+    tipo_operacao TEXT,
+    modalidade TEXT DEFAULT 'esporadico',
+    prioridade TEXT DEFAULT 'normal',
+    status TEXT DEFAULT 'rascunho',
+    responsavel TEXT,
+    ref_cliente TEXT,
+    pedido_interno TEXT,
+    sla_operacao TEXT,
+    observacoes_gerais TEXT,
+    
+    -- Flags operacionais
+    comprovante_obrigatorio BOOLEAN DEFAULT true,
+    cte_obrigatorio BOOLEAN DEFAULT false,
+    xml_obrigatorio BOOLEAN DEFAULT false,
+    operacao_dedicada BOOLEAN DEFAULT false,
+    
+    -- Carga
+    carga_tipo TEXT,
+    carga_descricao TEXT,
+    volumes INTEGER DEFAULT 0,
+    peso NUMERIC(10,2) DEFAULT 0,
+    cubagem NUMERIC(10,2) DEFAULT 0,
+    pallets INTEGER DEFAULT 0,
+    valor_declarado NUMERIC(10,2) DEFAULT 0,
+    qtd_notas INTEGER DEFAULT 0,
+    carga_refrigerada BOOLEAN DEFAULT false,
+    carga_ajudante BOOLEAN DEFAULT false,
+    carga_fragil BOOLEAN DEFAULT false,
+    carga_empilhavel BOOLEAN DEFAULT false,
+    carga_risco BOOLEAN DEFAULT false,
+    conferencia_obrigatoria BOOLEAN DEFAULT false,
+    equipamento_obrigatorio TEXT,
+    condicao_transporte TEXT,
+    
+    -- Veiculo
+    veiculo_tipo TEXT,
+    veiculo_subcategoria TEXT,
+    veiculo_carroceria TEXT,
+    veiculo_termica TEXT DEFAULT 'seco',
+    is_reserva BOOLEAN DEFAULT false,
+    retorno_obrigatorio BOOLEAN DEFAULT false,
+    
+    -- Programacao
+    data_programada DATE,
+    janela_operacional TEXT,
+    previsao_inicio TIMESTAMPTZ,
+    previsao_termino TIMESTAMPTZ,
+    tipo_escala TEXT,
+    instrucoes_operacionais TEXT,
+    observacao_torre TEXT,
+    
+    -- Financeiro
+    tabela_aplicada TEXT,
+    valor_cliente NUMERIC(10,2) DEFAULT 0,
+    custo_prestador NUMERIC(10,2) DEFAULT 0,
+    pedagio NUMERIC(10,2) DEFAULT 0,
+    ajudante NUMERIC(10,2) DEFAULT 0,
+    adicionais NUMERIC(10,2) DEFAULT 0,
+    descontos NUMERIC(10,2) DEFAULT 0,
+    reembolso_previsto NUMERIC(10,2) DEFAULT 0,
+    conta_contabil TEXT,
+    centro_custo_fin TEXT,
+    status_faturamento TEXT DEFAULT 'a faturar',
+    status_pagamento TEXT DEFAULT 'a pagar',
+    
+    -- Comunicacao
+    email_destinatario TEXT,
+    whatsapp_destinatario TEXT,
+    notificar_destinatario BOOLEAN DEFAULT true,
+    eventos_tracker TEXT DEFAULT 'principais',
+    
+    -- Enderecos (JSON)
+    enderecos JSONB DEFAULT '[]',
+    
+    -- Historico (JSON)
+    historico JSONB DEFAULT '[]',
+    
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.ordens_servico ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.ordens_servico FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 5. TABELA: os_historico
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.os_historico (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    os_id UUID REFERENCES public.ordens_servico(id) ON DELETE CASCADE,
+    acao TEXT NOT NULL,
+    status_novo TEXT,
+    usuario TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.os_historico ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.os_historico FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 6. TABELA: orcamentos
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.orcamentos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    numero TEXT NOT NULL UNIQUE,
+    cliente TEXT NOT NULL,
+    cliente_cnpj TEXT,
+    unidade TEXT,
+    centro_custo TEXT,
+    responsavel TEXT,
+    data_emissao DATE,
+    validade DATE,
+    tipo_operacao TEXT,
+    modalidade TEXT DEFAULT 'esporadico',
+    prioridade TEXT DEFAULT 'normal',
+    pedido_interno TEXT,
+    observacoes_gerais TEXT,
+    status TEXT DEFAULT 'rascunho',
+    
+    -- Carga (JSON)
+    carga JSONB DEFAULT '{}',
+    
+    -- Veiculo (JSON)
+    veiculo JSONB DEFAULT '{}',
+    
+    -- Valores (JSON)
+    valores JSONB DEFAULT '{}',
+    
+    -- Historico (JSON)
+    historico JSONB DEFAULT '[]',
+    
+    motivo_reprovacao TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.orcamentos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.orcamentos FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 7. TABELA: orcamento_enderecos
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.orcamento_enderecos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    orcamento_id UUID REFERENCES public.orcamentos(id) ON DELETE CASCADE,
+    tipo TEXT,
+    sequencia INTEGER,
+    endereco TEXT,
+    cidade TEXT,
+    uf TEXT,
+    cep TEXT,
+    contato TEXT,
+    telefone TEXT,
+    instrucoes TEXT,
+    janela_inicio TEXT,
+    janela_fim TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.orcamento_enderecos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.orcamento_enderecos FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 8. TABELA: tabelas_valores
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.tabelas_valores (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome TEXT NOT NULL,
+    descricao TEXT,
+    tipo TEXT,
+    status TEXT DEFAULT 'Ativo',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.tabelas_valores ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.tabelas_valores FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 9. TABELA: financeiro_receber
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.financeiro_receber (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    os_id UUID REFERENCES public.ordens_servico(id) ON DELETE SET NULL,
+    cliente TEXT,
+    descricao TEXT NOT NULL,
+    valor NUMERIC(10,2) DEFAULT 0,
+    vencimento DATE,
+    data_vencimento DATE,
+    data_emissao DATE,
+    data_pagamento DATE,
+    status TEXT DEFAULT 'aberto',
+    categoria TEXT,
+    plano_conta_id TEXT,
+    centro_resultado_id TEXT,
+    forma_recebimento TEXT,
+    conta_financeira_id TEXT,
+    observacoes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.financeiro_receber ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.financeiro_receber FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 10. TABELA: financeiro_pagar
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.financeiro_pagar (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    os_id UUID REFERENCES public.ordens_servico(id) ON DELETE SET NULL,
+    prestador TEXT,
+    descricao TEXT NOT NULL,
+    valor NUMERIC(10,2) DEFAULT 0,
+    vencimento DATE,
+    data_vencimento DATE,
+    data_emissao DATE,
+    data_pagamento DATE,
+    status TEXT DEFAULT 'aberto',
+    categoria TEXT,
+    plano_conta_id TEXT,
+    centro_resultado_id TEXT,
+    forma_pagamento TEXT,
+    conta_pagadora_id TEXT,
+    numero_boleto TEXT,
+    codigo_barras TEXT,
+    observacoes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.financeiro_pagar ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.financeiro_pagar FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 11. TABELA: lancamentos_financeiros
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.lancamentos_financeiros (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tipo TEXT NOT NULL,
+    categoria TEXT,
+    descricao TEXT,
+    valor NUMERIC(10,2) DEFAULT 0,
+    data DATE,
+    conta_id TEXT,
+    plano_conta_id TEXT,
+    centro_resultado_id TEXT,
+    observacoes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.lancamentos_financeiros ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.lancamentos_financeiros FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 12. TABELA: integration_logs
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.integration_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    servico TEXT NOT NULL,
+    tipo TEXT,
+    status TEXT,
+    mensagem TEXT,
+    erro TEXT,
+    dados JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.integration_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.integration_logs FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 13. TABELA: cte
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.cte (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    numero TEXT,
+    serie TEXT,
+    chave TEXT,
+    data_emissao DATE,
+    emitente TEXT,
+    tomador TEXT,
+    destinatario TEXT,
+    valor NUMERIC(10,2),
+    status TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.cte ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.cte FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 14. TABELA: mdfe
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.mdfe (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    numero TEXT,
+    chave TEXT,
+    data DATE,
+    emitente TEXT,
+    valor NUMERIC(10,2),
+    status TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.mdfe ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.mdfe FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 15. TABELA: nfse
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.nfse (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    numero TEXT,
+    serie TEXT,
+    data_emissao DATE,
+    prestador TEXT,
+    tomador TEXT,
+    valor NUMERIC(10,2),
+    status TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.nfse ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.nfse FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 16. TABELA: combustivel_precos
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.combustivel_precos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tipo_combustivel TEXT NOT NULL,
+    preco NUMERIC(10,3) NOT NULL,
+    posto TEXT,
+    data DATE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.combustivel_precos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.combustivel_precos FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 17. TABELA: comunicacao_destinatarios
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.comunicacao_destinatarios (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome TEXT,
+    telefone TEXT,
+    email TEXT,
+    tipo TEXT,
+    ativo BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.comunicacao_destinatarios ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.comunicacao_destinatarios FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 18. TABELA: comunicacao_templates
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.comunicacao_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome TEXT NOT NULL,
+    conteudo TEXT,
+    ativo BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.comunicacao_templates ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.comunicacao_templates FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 19. TABELA: inbox_mensagens
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.inbox_mensagens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    remetente TEXT,
+    destinatario TEXT,
+    assunto TEXT,
+    conteudo TEXT,
+    lida BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.inbox_mensagens ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.inbox_mensagens FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 20. TABELA: aniversarios_log
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.aniversarios_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tipo TEXT,
+    mensagem TEXT,
+    destinatarios TEXT[],
+    enviado BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.aniversarios_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.aniversarios_log FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 21. TABELA: candidatos
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.candidatos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    nome_completo TEXT NOT NULL,
+    nome_fantasia TEXT,
+    cpf_cnpj TEXT NOT NULL UNIQUE,
+    rg_ie TEXT,
+    data_nasc DATE,
+    telefone TEXT,
+    whatsapp TEXT,
+    email TEXT,
+    tipo_veiculo TEXT,
+    regiao TEXT,
+    status TEXT DEFAULT 'pendente',
+    obs TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.candidatos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.candidatos FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 22. TABELA: homologacoes
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.homologacoes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    candidato_id UUID REFERENCES public.candidatos(id) ON DELETE CASCADE,
+    data_homologacao DATE,
+    status TEXT,
+    obs TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.homologacoes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.homologacoes FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 23. TABELA: candidato_interacoes
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.candidato_interacoes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    candidato_id UUID REFERENCES public.candidatos(id) ON DELETE CASCADE,
+    tipo TEXT,
+    descricao TEXT,
+    usuario TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.candidato_interacoes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.candidato_interacoes FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 24. TABELA: reservas_banco
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.reservas_banco (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    candidato_id UUID REFERENCES public.candidatos(id) ON DELETE CASCADE,
+    data_reserva DATE,
+    status TEXT DEFAULT 'pendente',
+    tipo_veiculo TEXT,
+    regiao TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.reservas_banco ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.reservas_banco FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 25. TABELA: documento_analises
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.documento_analises (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    prestador_id UUID REFERENCES public.prestadores(id) ON DELETE CASCADE,
+    tipo TEXT NOT NULL,
+    arquivo TEXT,
+    dados JSONB,
+    validade DATE,
+    status TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.documento_analises ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.documento_analises FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 26. TABELA: activity_logs
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.activity_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario TEXT,
+    acao TEXT NOT NULL,
+    tabela TEXT,
+    registro_id TEXT,
+    dados JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.activity_logs FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- 27. TABELA: ia_logs
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.ia_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    servico TEXT NOT NULL,
+    tipo TEXT,
+    modelo TEXT,
+    input JSONB,
+    output JSONB,
+    tokens INTEGER,
+    duracao_ms INTEGER,
+    status TEXT,
+    erro TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.ia_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all for authenticated users" ON public.ia_logs FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- INDICES ADICIONAIS (OPTMIZACOES)
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_clientes_cnpj ON public.clientes(cnpj);
+CREATE INDEX IF NOT EXISTS idx_clientes_status ON public.clientes(status);
+CREATE INDEX IF NOT EXISTS idx_veiculos_placa ON public.veiculos(placa);
+CREATE INDEX IF NOT EXISTS idx_prestadores_cpf_cnpj ON public.prestadores(cpf_cnpj);
+CREATE INDEX IF NOT EXISTS idx_prestadores_status ON public.prestadores(status);
+CREATE INDEX IF NOT EXISTS idx_ordens_servico_numero ON public.ordens_servico(numero);
+CREATE INDEX IF NOT EXISTS idx_ordens_servico_status ON public.ordens_servico(status);
+CREATE INDEX IF NOT EXISTS idx_ordens_servico_cliente ON public.ordens_servico(cliente);
+CREATE INDEX IF NOT EXISTS idx_orcamentos_numero ON public.orcamentos(numero);
+CREATE INDEX IF NOT EXISTS idx_financeiro_receber_vencimento ON public.financeiro_receber(vencimento);
+CREATE INDEX IF NOT EXISTS idx_financeiro_pagar_vencimento ON public.financeiro_pagar(vencimento);
+CREATE INDEX IF NOT EXISTS idx_integration_logs_created ON public.integration_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cte_data_emissao ON public.cte(data_emissao DESC);
+CREATE INDEX IF NOT EXISTS idx_mdfe_data ON public.mdfe(data DESC);
+CREATE INDEX IF NOT EXISTS idx_nfse_data_emissao ON public.nfse(data_emissao DESC);
+
+-- ============================================================
+-- FUNCTIONS (Triggers automaticos)
+-- ============================================================
+
+-- Function para atualizar updated_at automaticamente
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Triggers para updated_at em todas as tabelas principais
+CREATE TRIGGER update_clientes_updated_at BEFORE UPDATE ON public.clientes FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER update_veiculos_updated_at BEFORE UPDATE ON public.veiculos FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER update_prestadores_updated_at BEFORE UPDATE ON public.prestadores FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER update_ordens_servico_updated_at BEFORE UPDATE ON public.ordens_servico FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER update_orcamentos_updated_at BEFORE UPDATE ON public.orcamentos FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER update_tabolas_valores_updated_at BEFORE UPDATE ON public.tabelas_valores FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER update_financeiro_receber_updated_at BEFORE UPDATE ON public.financeiro_receber FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER update_financeiro_pagar_updated_at BEFORE UPDATE ON public.financeiro_pagar FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER update_lancamentos_financeiros_updated_at BEFORE UPDATE ON public.lancamentos_financeiros FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER update_candidatos_updated_at BEFORE UPDATE ON public.candidatos FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER update_reservas_banco_updated_at BEFORE UPDATE ON public.reservas_banco FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ============================================================
+-- FIM DO SCHEMA
+-- ============================================================

@@ -75,22 +75,22 @@ export default function FluxoCaixaEnterprise() {
 
       const { data: receberData } = await supabase
         .from("financeiro_receber")
-        .select("id, fatura, cliente_id, valor, competencia, vencimento, status")
-        .gte("vencimento", dataInicioPeriodo.toISOString().split('T')[0])
-        .lte("vencimento", dataFimPeriodo.toISOString().split('T')[0]);
+        .select("id, fatura, cliente_id, valor, competencia, data_vencimento, status")
+        .gte("data_vencimento", dataInicioPeriodo.toISOString().split('T')[0])
+        .lte("data_vencimento", dataFimPeriodo.toISOString().split('T')[0]);
 
       const { data: pagarData } = await supabase
         .from("financeiro_pagar")
-        .select("id, documento, prestador_id, valor, competencia, vencimento, status")
-        .gte("vencimento", dataInicioPeriodo.toISOString().split('T')[0])
-        .lte("vencimento", dataFimPeriodo.toISOString().split('T')[0]);
+        .select("id, documento, prestador_id, valor, competencia, data_vencimento, status")
+        .gte("data_vencimento", dataInicioPeriodo.toISOString().split('T')[0])
+        .lte("data_vencimento", dataFimPeriodo.toISOString().split('T')[0]);
 
       const hojeStr = hoje.toISOString().split('T')[0];
 
       const lancamentosProcessados: LancamentoFinanceiro[] = [];
 
       receberData?.forEach((r: any) => {
-        const vencimentoStr = r.vencimento ? new Date(r.vencimento).toISOString().split('T')[0] : "";
+        const vencimentoStr = r.data_vencimento ? new Date(r.data_vencimento).toISOString().split('T')[0] : "";
         lancamentosProcessados.push({
           id: r.id,
           data: vencimentoStr,
@@ -103,7 +103,7 @@ export default function FluxoCaixaEnterprise() {
       });
 
       pagarData?.forEach((p: any) => {
-        const vencimentoStr = p.vencimento ? new Date(p.vencimento).toISOString().split('T')[0] : "";
+        const vencimentoStr = p.data_vencimento ? new Date(p.data_vencimento).toISOString().split('T')[0] : "";
         lancamentosProcessados.push({
           id: p.id,
           data: vencimentoStr,

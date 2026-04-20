@@ -20,6 +20,7 @@ import CompartilharRastreioModal from "./CompartilharRastreioModal";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
+import { toOSInsert, toOSUpdate } from "@/lib/dbMappers";
 
 interface SugestaoVeiculo {
   tipo: string;
@@ -245,27 +246,27 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
       // FINANCEIRO INTEGRADO (PROBLEMA 4)
       if (data.status === "finalizada") {
          try {
-           await supabase.from("financeiro_receber").insert([{ 
-               descricao: `Faturamento OS ${data.numero} - ${data.cliente}`,
-               valor: data.valorCliente || 0,
-               vencimento: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split("T")[0],
-               os_id: resId || data.id,
-               cliente: data.cliente,
-               status: "aberto"
-           }]);
+await supabase.from("financeiro_receber").insert([{ 
+                descricao: `Faturamento OS ${data.numero} - ${data.cliente}`,
+                valor: data.valorCliente || 0,
+                data_vencimento: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split("T")[0],
+                os_id: resId || data.id,
+                cliente: data.cliente,
+                status: "aberto"
+            }]);
          } catch(e) {}
       }
       
       if (data.prestador && !os?.prestador) {
          try {
-           await supabase.from("financeiro_pagar").insert([{
-               descricao: `Pagamento Viagem OS ${data.numero} - ${data.prestador}`,
-               valor: data.custoPrestador || 0,
-               vencimento: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString().split("T")[0],
-               os_id: resId || data.id,
-               prestador: data.prestador,
-               status: "aberto"
-           }]);
+await supabase.from("financeiro_pagar").insert([{
+                descricao: `Pagamento Viagem OS ${data.numero} - ${data.prestador}`,
+                valor: data.custoPrestador || 0,
+                data_vencimento: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString().split("T")[0],
+                os_id: resId || data.id,
+                prestador: data.prestador,
+                status: "aberto"
+            }]);
          } catch(e) {}
       }
 

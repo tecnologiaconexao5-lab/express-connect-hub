@@ -216,7 +216,7 @@ export default function Financeiro() {
 
   const fetchReceber = async () => {
     try {
-      const { data, error } = await supabase.from("financeiro_receber").select("*").order("vencimento", { ascending: true });
+      const { data, error } = await supabase.from("financeiro_receber").select("*").order("data_vencimento", { ascending: true });
       if (error) throw error;
       if (data && data.length > 0) {
         setReceber(data);
@@ -238,7 +238,7 @@ export default function Financeiro() {
 
   const fetchPagar = async () => {
     try {
-      const { data, error } = await supabase.from("financeiro_pagar").select("*").order("vencimento", { ascending: true });
+      const { data, error } = await supabase.from("financeiro_pagar").select("*").order("data_vencimento", { ascending: true });
       if (error) throw error;
       if (data && data.length > 0) {
         const prestadores = data.filter((d: any) => d.tipo === "prestador");

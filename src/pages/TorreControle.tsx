@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { supabase } from "@/lib/supabase";
 import MapboxMap from "@/components/MapboxMap";
 import { useTheme } from "@/hooks/useTheme";
+import { fromOSRow, OSRow } from "@/lib/dbMappers";
 
 interface OSRecord {
   id: string;
@@ -37,19 +38,27 @@ const TorreControle = () => {
   const fetchData = async () => {
     try {
       // Mocked data fetch since the DB is being structured
-      const { data: osData } = await supabase.from("ordens_servico").select("*").order("numero", { ascending: false }).limit(50);
+      const { data: osData, error } = await supabase.from("ordens_servico").select("*").order("numero", { ascending: false }).limit(50);
       
-      const ordens = (osData || []) as OSRecord[];
-      setOsAtivas(ordens);
+      if (error) {
+        if (error.code === "42P01") {
+          setOsAtivas([]);
+          return;
+        }
+        throw error;
+      }
+      
+      const listaOS = osData ? (osData as OSRow[]).map((item) => fromOSRow(item)) : [];
+      setOsAtivas(listaOS as OSRecord[]);
 
       const agora = new Date().getTime();
       
       setStats({
-        emRota: ordens.filter(o => o.status === "saiu para rota" || o.status === "em operacao").length || 14,
-        aguardandoAceite: ordens.filter(o => o.status === "aguardando parceiro").length || 5,
-        comOcorrencia: ordens.filter(o => o.status === "com ocorrencia").length || 2,
-        atrasadas: ordens.filter(o => o.previsaoTermino && new Date(o.previsaoTermino).getTime() < agora).length || 3,
-        concluidasHoje: ordens.filter(o => o.status === "finalizada").length || 8,
+        emRota: listaOS.filter(o => o.status === "saiu para rota" || o.status === "em operacao").length || 14,
+        aguardandoAceite: listaOS.filter(o => o.status === "aguardando parceiro").length || 5,
+        comOcorrencia: listaOS.filter(o => o.status === "com ocorrencia").length || 2,
+        atrasadas: listaOS.filter(o => o.previsaoTermino && new Date(o.previsaoTermino).getTime() < agora).length || 3,
+        concluidasHoje: listaOS.filter(o => o.status === "finalizada").length || 8,
         semComprovante: 4 // mock
       });
 
