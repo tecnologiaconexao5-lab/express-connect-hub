@@ -121,12 +121,12 @@ export default function DashboardFinanceiroEnterprise() {
 
   const fetchData = async () => {
     try {
-      const { data: rcv } = await supabase.from("financeiro_receber").select("*").order("vencimento", { ascending: true });
+      const { data: rcv } = await supabase.from("financeiro_receber").select("*").order("data_vencimento", { ascending: true });
       if (rcv) setReceber(rcv);
     } catch { setReceber(mockFaturasVencendo.map(f => ({...f, status: 'a vencer'}))); }
 
     try {
-      const { data: pgr } = await supabase.from("financeiro_pagar").select("*").order("vencimento", { ascending: true });
+      const { data: pgr } = await supabase.from("financeiro_pagar").select("*").order("data_vencimento", { ascending: true });
       if (pgr) setPagar(pgr);
     } catch { setPagar(mockPagamentosProgramados.map(f => ({...f, status: 'a vencer'}))); }
   };

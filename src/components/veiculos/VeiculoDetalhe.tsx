@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Veiculo } from "./types";
+import { toVeiculoInsert, toVeiculoUpdate, fromVeiculoRow, VeiculoRow } from "@/lib/dbMappers";
 
 interface Props {
   veiculoId?: string;
@@ -43,7 +44,7 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
     try {
       const { data, error } = await supabase.from("veiculos").select("*").eq("id", veiculoId).single();
       if (error) throw error;
-      if (data) setV(data as Partial<Veiculo>);
+      if (data) setV(fromVeiculoRow(data as VeiculoRow) as Partial<Veiculo>);
     } catch (error) {
       console.error("Erro ao buscar no Supabase, tentando localStorage:", error);
       const localData = localStorage.getItem("veiculos_fallback");
@@ -71,18 +72,9 @@ const VeiculoDetalhe = ({ veiculoId, onBack }: Props) => {
       setIsSaving(true);
       const isUpdate = !!v.id;
       
-      const payload: Record<string, any> = {};
-      for (const [k, val] of Object.entries({ ...v, placa: v.placa.toUpperCase() })) {
-        if (val !== undefined) {
-          payload[k] = val;
-        }
-      }
-
-      payload.updated_at = new Date().toISOString();
-      if (!isUpdate) {
-        payload.id = String(Date.now());
-        payload.created_at = new Date().toISOString();
-      }
+      const payload = isUpdate ? toVeiculoUpdate({ ...v, placa: v.placa.toUpperCase() }) : toVeiculoInsert({ ...v, placa: v.placa.toUpperCase() });
+      
+      if (!isUpdate) payload.id = String(Date.now());
 
       console.log("Payload enviado:", payload);
 

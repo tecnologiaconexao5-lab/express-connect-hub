@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { OrdemServico, OSStatus, STATUS_CORES } from "./osTypes";
 import OrdemServicoForm from "./OrdemServicoForm";
+import { fromOSRow, OSRow } from "@/lib/dbMappers";
 
 const OrdensServicoLista = () => {
   const [ordens, setOrdens] = useState<OrdemServico[]>([]);
@@ -35,10 +36,22 @@ const OrdensServicoLista = () => {
     try {
       setIsLoading(true);
       const { data, error } = await supabase.from("ordens_servico").select("*").order("numero", { ascending: false });
-      if (error) throw error;
-      setOrdens((data as any) || []);
+      if (error) {
+        if (error.code === "42P01") {
+          setOrdens([]);
+          return;
+        }
+        throw error;
+      }
+      if (data && data.length > 0) {
+        const normalizados = (data as OSRow[]).map((item) => fromOSRow(item));
+        setOrdens(normalizados as OrdemServico[]);
+      } else {
+        setOrdens([]);
+      }
     } catch (e: any) {
       if (e.code !== "42P01") toast.error("Erro ao buscar ordens de serviço.");
+      setOrdens([]);
     } finally {
       setIsLoading(false);
     }

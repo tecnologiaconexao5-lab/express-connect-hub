@@ -20,6 +20,7 @@ import {
 } from "./types";
 import { DocumentoAnalyzer } from "@/components/documentos/AnaliseDocumentoIA";
 import ContratoPrestadorModal from "./ContratoPrestadorModal";
+import { toPrestadorInsert, toPrestadorUpdate } from "@/lib/dbMappers";
 
 interface Props {
   prestador?: Prestador;
@@ -87,26 +88,12 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const handleSave = async () => {
     try {
       setIsLoading(true);
-      // Ensure we have an ID for updates, or let Supabase generate one for inserts
       const isUpdate = !!initial?.id;
-      
-      const payload: Record<string, any> = {};
-      for (const [k, v] of Object.entries(p)) {
-        if (v !== undefined) {
-          payload[k] = v;
-        }
-      }
 
-      payload.updated_at = new Date().toISOString();
-      if (!isUpdate) {
-        payload.created_at = new Date().toISOString();
-      }
+      const payload = isUpdate ? toPrestadorUpdate(p) : toPrestadorInsert(p);
 
       console.log("Payload enviado:", payload);
 
-      const { data: user } = await supabase.auth.getUser();
-      console.log("USER:", user);
-      
       let result;
       if (isUpdate) {
         result = await supabase.from('prestadores').update(payload).eq('id', p.id).select();
@@ -123,14 +110,15 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
           hint: error.hint,
           code: error.code
         });
-        throw error;
+        toast.error(`Erro ao salvar: ${error.message}`);
+        return;
       }
       
       toast.success(isNew ? "Prestador cadastrado com sucesso!" : "Prestador atualizado com sucesso!");
       onBack();
     } catch (error: any) {
       console.error("Erro ao salvar prestador:", error);
-      toast.error(`Erro ao salvar dados no Supabase: \${error?.message || 'Verifique o console'}`);
+      toast.error("Erro ao salvar dados no Supabase");
     } finally {
       setIsLoading(false);
     }
@@ -180,14 +168,13 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
             <Card>
               <CardHeader className="pb-3"><CardTitle className="text-sm">Identificação</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div><Label className="text-xs">Nome completo / Razão social</Label><Input defaultValue={p.nomeCompleto} /></div>
-                <div><Label className="text-xs">Nome fantasia</Label><Input defaultValue={p.nomeFantasia} /></div>
-                <div><Label className="text-xs">CPF / CNPJ</Label><Input defaultValue={p.cpfCnpj} /></div>
-                <div><Label className="text-xs">RG / IE</Label><Input defaultValue={p.rgIe} /></div>
-                <div><Label className="text-xs">Data de nascimento</Label><Input type="date" defaultValue={p.dataNascimento} /></div>
-                <div><Label className="text-xs">Telefone principal</Label><Input defaultValue={p.telefone} /></div>
-                <div><Label className="text-xs">WhatsApp</Label><Input defaultValue={p.whatsapp} /></div>
-                <div><Label className="text-xs">E-mail</Label><Input defaultValue={p.email} /></div>
+                <div><Label className="text-xs">Nome completo / Razão social</Label><Input value={p.nomeCompleto || ""} onChange={(e) => handleChange('nomeCompleto', e.target.value)} /></div>
+                <div><Label className="text-xs">CPF / CNPJ</Label><Input value={p.cpfCnpj || ""} onChange={(e) => handleChange('cpfCnpj', e.target.value)} /></div>
+                <div><Label className="text-xs">RG</Label><Input value={p.rgIe || ""} onChange={(e) => handleChange('rgIe', e.target.value)} /></div>
+                <div><Label className="text-xs">Data de nascimento</Label><Input type="date" value={p.dataNascimento || ""} onChange={(e) => handleChange('dataNascimento', e.target.value)} /></div>
+                <div><Label className="text-xs">Telefone principal</Label><Input value={p.telefone || ""} onChange={(e) => handleChange('telefone', e.target.value)} /></div>
+                <div><Label className="text-xs">WhatsApp</Label><Input value={p.whatsapp || ""} onChange={(e) => handleChange('whatsapp', e.target.value)} /></div>
+                <div><Label className="text-xs">E-mail</Label><Input value={p.email || ""} onChange={(e) => handleChange('email', e.target.value)} /></div>
               </CardContent>
             </Card>
 
@@ -237,19 +224,19 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
               <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-xs">Região principal</Label>
-                  <Select defaultValue={p.regiaoPrincipal}>
+                  <Select value={p.regiaoPrincipal || ""} onValueChange={(val) => handleChange('regiaoPrincipal', val)}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
                       {["Grande SP", "ABC Paulista", "Interior SP", "Litoral SP", "Rio de Janeiro", "Belo Horizonte", "Paraná", "Santa Catarina"].map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-                <div><Label className="text-xs">Regiões secundárias</Label><Input defaultValue={p.regioesSecundarias?.join(", ")} /></div>
-                <div><Label className="text-xs">Origem do cadastro</Label><Input defaultValue={p.origemCadastro} /></div>
-                <div><Label className="text-xs">Indicação</Label><Input defaultValue={p.indicacao} /></div>
-                <div><Label className="text-xs">Disponibilidade padrão</Label><Input defaultValue={p.disponibilidade} /></div>
-                <div><Label className="text-xs">Turnos preferenciais</Label><Input defaultValue={p.turnosPreferenciais} /></div>
-                <div className="md:col-span-2"><Label className="text-xs">Restrições operacionais</Label><Textarea defaultValue={p.restricoesOperacionais} rows={2} /></div>
+                <div><Label className="text-xs">Regiões secundárias</Label><Input value={p.regioesSecundarias?.join(", ") || ""} onChange={(e) => handleChange('regioesSecundarias', e.target.value.split(",").map(s => s.trim()).filter(Boolean))} /></div>
+                <div><Label className="text-xs">Origem do cadastro</Label><Input value={p.origemCadastro || ""} onChange={(e) => handleChange('origemCadastro', e.target.value)} /></div>
+                <div><Label className="text-xs">Indicação</Label><Input value={p.indicacao || ""} onChange={(e) => handleChange('indicacao', e.target.value)} /></div>
+                <div><Label className="text-xs">Disponibilidade padrão</Label><Input value={p.disponibilidade || ""} onChange={(e) => handleChange('disponibilidade', e.target.value)} /></div>
+                <div><Label className="text-xs">Turnos preferenciais</Label><Input value={p.turnosPreferenciais || ""} onChange={(e) => handleChange('turnosPreferenciais', e.target.value)} /></div>
+                <div className="md:col-span-2"><Label className="text-xs">Restrições operacionais</Label><Textarea value={p.restricoesOperacionais || ""} onChange={(e) => handleChange('restricoesOperacionais', e.target.value)} rows={2} /></div>
               </CardContent>
             </Card>
 

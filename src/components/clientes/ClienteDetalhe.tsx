@@ -15,6 +15,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Cliente } from "./types";
 import { EnderecoCompleto } from "@/components/ui/EnderecoCompleto";
+import { toClienteInsert, toClienteUpdate, fromClienteRow, ClienteRow } from "@/lib/dbMappers";
 
 interface Filial {
   id: string;
@@ -82,26 +83,106 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
   const [novoCC, setNovoCC] = useState<Partial<CentroCusto>>({});
   const [novoDepto, setNovoDepto] = useState<Partial<Departamento>>({});
   const [novoContrato, setNovoContrato] = useState<Partial<Contrato>>({});
+  const [enderecos, setEnderecos] = useState<Array<{id: string; tipo_endereco: string; cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string}>>([]);
+  const [modalEnderecoOpen, setModalEnderecoOpen] = useState(false);
+  const [novoEndereco, setNovoEndereco] = useState<{tipo_endereco: string; cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string}>({tipo_endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", uf: ""});
+  const [debugInfo, setDebugInfo] = useState<{
+    url: string;
+    tabela: string;
+    operacao: string;
+    testeTecnico: { success: boolean; message?: string; details?: string; hint?: string; code?: string; count?: number; requestUrl?: string; requestMethod?: string; responseStatus?: number; responseBody?: unknown };
+    saveResult: { success: boolean; message?: string; details?: string; hint?: string; code?: string; requestUrl?: string; requestMethod?: string; responseStatus?: number; responseBody?: unknown };
+    payload: object;
+  } | null>(null);
+  
+  const mapCause = (code?: string, testeSuccess?: boolean): string => {
+    if (!code) {
+      if (!testeSuccess) return "conexão/projeto/url incorreta";
+      return "erro desconhecido";
+    }
+    const map: Record<string, string> = {
+      "42P01": "tabela não encontrada",
+      "42703": "coluna inexistente",
+      "23502": "campo obrigatório ausente",
+      "22P02": "tipo inválido",
+      "P0001": "trigger/function falhou",
+      "42501": "policy/RLS/permissão negada"
+    };
+    return map[code] || "erro Supabase (code: " + code + ")";
+  };
+  
+  const getConclusao = (testeSuccess: boolean, saveSuccess: boolean, code?: string): string => {
+    if (saveSuccess) return "✅ Cadastro salvo com sucesso";
+    if (!testeSuccess) return "❌ Falha por conexão/projeto/url incorreta";
+    if (code === "42P01") return "❌ Falha por tabela não encontrada";
+    if (code === "42703") return "❌ Falha por coluna inexistente";
+    if (code === "23502") return "❌ Falha por campo obrigatório ausente";
+    if (code === "22P02") return "❌ Falha por tipo de dado inválido";
+    if (code === "42501") return "❌ Falha por policy/permissão";
+    if (code === "P0001") return "❌ Falha por trigger/function";
+    return "❌ Falha por causa ainda não mapeada";
+  };
+  
+  const copyDiagnostico = async () => {
+    if (!debugInfo) return;
+    const d = debugInfo;
+    const texto = [
+      `=== DIAGNÓSTICO SUPABASE - CLIENTES ===`,
+      `url: ${d.url}`,
+      `fallback: ${!import.meta.env.VITE_SUPABASE_URL ? "SIM" : "NÃO"}`,
+      `tabela: ${d.tabela}`,
+      `operação: ${d.operacao}`,
+      `teste técnico: ${d.testeTecnico.success ? "OK" : "FALHOU"}`,
+      `save: ${d.saveResult.success ? "OK" : "FALHOU"}`,
+      `code: ${d.saveResult.code || "N/A"}`,
+      `cause_provavel: ${mapCause(d.saveResult.code, d.testeTecnico.success)}`,
+      `message: ${d.saveResult.message || "OK"}`,
+      `=== FIM ===`
+    ].join("\n");
+    await navigator.clipboard.writeText(texto);
+    toast.success("Diagnóstico copiado!");
+  };
 
   useEffect(() => {
     if (clienteId) {
       fetchCliente();
+      fetchEnderecos();
     }
   }, [clienteId]);
 
   const fetchCliente = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.from("clientes").select("*").eq("id", clienteId).single();
-      if (error) throw error;
+      const TABLE_NAME = "clientes";
+      console.log(`[ClienteDetalhe] FETCH - Buscando ID: ${clienteId} da tabela: ${TABLE_NAME}`);
+      const { data, error } = await supabase.from(TABLE_NAME).select("*").eq("id", clienteId).single();
+      if (error) {
+        console.error(`[ClienteDetalhe] Erro no fetch da '${TABLE_NAME}':`, error.message);
+        throw error;
+      }
+      console.log(`[ClienteDetalhe] Fetch OK da '${TABLE_NAME}':`, data);
       if (data) {
-        setC(data as Partial<Cliente>);
+        setC(fromClienteRow(data as ClienteRow) as Partial<Cliente>);
       }
     } catch (error) {
-      console.error(error);
+      console.error("[ClienteDetalhe] Erro catch fetch:", error);
       toast.error("Erro ao carregar detalhes do cliente.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchEnderecos = async () => {
+    if (!clienteId) return;
+    try {
+      const { data, error } = await supabase
+        .from("enderecos_clientes")
+        .select("*")
+        .eq("cliente_id", clienteId);
+      if (error) throw error;
+      setEnderecos(data || []);
+    } catch (error: any) {
+      console.error("Erro ao buscar endereços:", error.message);
     }
   };
 
@@ -119,41 +200,84 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
       setIsSaving(true);
       const isUpdate = !!c.id;
       
-      const payload: Record<string, any> = {
-        razao_social: c.razao_social,
-        nome_fantasia: c.nome_fantasia || (c as any).nomeFantasia || c.razao_social,
-        cnpj: c.cnpj,
-        ie: c.ie || null,
-        updated_at: new Date().toISOString()
+      const TABLE_NAME = "clientes";
+      console.log(`[ClienteDetalhe] INICIO - Tabela: ${TABLE_NAME}, Operacao: ${isUpdate ? 'UPDATE' : 'INSERT'}`);
+      
+      console.log(`%c🔍 TESTE TÉCNICO: Verificando acesso a tabela '${TABLE_NAME}'...`, "color: blue; font-weight: bold;");
+      const teste = await supabase.from(TABLE_NAME).select("*", { head: true, count: "exact" });
+      const testeResult = {
+        success: !teste.error,
+        message: teste.error?.message,
+        details: teste.error?.details,
+        hint: teste.error?.hint,
+        code: teste.error?.code,
+        count: teste.count
       };
-
-      if (!isUpdate) {
-        payload.created_at = new Date().toISOString();
+      if (teste.error) {
+        console.error(`[ClienteDetalhe] ERRO no teste técnico da tabela '${TABLE_NAME}':`);
+        console.error("  message:", teste.error.message);
+        console.error("  details:", teste.error.details);
+        console.error("  hint:", teste.error.hint);
+        console.error("  code:", teste.error.code);
+      } else {
+        console.log(`[ClienteDetalhe] ✅ Teste técnico OK - Count: ${teste.count}`);
       }
+      
+      setDebugInfo({
+        url: debugUrl,
+        tabela: TABLE_NAME,
+        operacao: isUpdate ? "UPDATE" : "INSERT",
+        testeTecnico: testeResult,
+        saveResult: { success: true },
+        payload: {}
+      });
+      
+      const payload = isUpdate ? toClienteUpdate(c) : toClienteInsert(c);
 
-      console.log("[ClienteDetalhe] Payload enviado ao Supabase:", JSON.stringify(payload, null, 2));
+      console.log(`[ClienteDetalhe] Payload enviado para '${TABLE_NAME}':`, JSON.stringify(payload, null, 2));
 
       let result;
       if (isUpdate) {
-        result = await supabase.from("clientes").update(payload).eq("id", c.id).select();
+        result = await supabase.from(TABLE_NAME).update(payload).eq("id", c.id).select();
       } else {
-        result = await supabase.from("clientes").insert([payload]).select();
+        result = await supabase.from(TABLE_NAME).insert([payload]).select();
       }
 
       const { data, error } = result;
 
       if (error) {
-        console.error("====== ERRO REAL DO SUPABASE ======");
-        console.error("Payload enviado:", payload);
-        console.error("Mensagem (error.message):", error.message);
-        console.error("Detalhes (error.details):", error.details);
-        console.error("Dica (error.hint):", error.hint);
-        console.error("===================================");
+        console.error(`====== ERRO SUPABASE '${TABLE_NAME}' ======`);
+        console.error("Mensagem:", error.message);
+        console.error("Detalhes:", error.details);
+        console.error("Hint:", error.hint);
+        console.error("Code:", error.code);
+        console.error("Payload que falhou:", JSON.stringify(payload, null, 2));
+        console.error("==================================");
+        
+        setDebugInfo(prev => prev ? {
+          ...prev,
+          saveResult: {
+            success: false,
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code
+          },
+          payload
+        } : null);
+        
         toast.error(`Falha no banco: ${error.message} - Dica: ${error.hint || 'Nenhuma dica disponível'}`);
         return;
       }
 
-      console.log("[ClienteDetalhe] Persistência sucedida, result:", data);
+      console.log(`%c[ClienteDetalhe] ✅ OPERAÇÃO ${isUpdate ? 'UPDATE' : 'INSERT'} CONCLUÍDA NA TABELA '${TABLE_NAME}'`, "color: green; font-weight: bold;");
+      console.log(`[ClienteDetalhe] Resultado:`, data);
+      
+      setDebugInfo(prev => prev ? {
+        ...prev,
+        saveResult: { success: true },
+        payload
+      } : null);
       
       const savedCliente = data?.[0];
       if (!savedCliente) {
@@ -165,7 +289,10 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
       toast.success(isNew ? "Cliente cadastrado com sucesso!" : "Cliente atualizado com sucesso!");
       onBack();
     } catch (error: any) {
-      console.error("[ClienteDetalhe] Erro catch:", error?.message || error);
+      console.error("[ClienteDetalhe] Erro Catch (inesperado):", error);
+      console.error("Error message:", error?.message);
+      console.error("Error details:", error?.details);
+      console.error("Error hint:", error?.hint);
       toast.error("Erro ao persistir cliente no Supabase.");
     } finally {
       setIsSaving(false);
@@ -174,8 +301,55 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
 
   if (isLoading) return <div className="p-10 text-center animate-pulse">Carregando dados do cliente...</div>;
 
+  const debugUrl = import.meta.env.VITE_SUPABASE_URL;
+
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
+      {/* Painel de Debug Temporário */}
+      {debugInfo && (
+        <div className="bg-slate-900 text-slate-200 p-3 rounded-md text-xs font-mono">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="font-bold text-yellow-400">PAINEL TÉCNICO DEBUG</span>
+            <button onClick={copyDiagnostico} className="text-blue-400 hover:text-blue-300 ml-2">[Copiar diagnóstico]</button>
+            <button onClick={() => setDebugInfo(null)} className="ml-auto text-slate-400 hover:text-white">✕</button>
+          </div>
+          <div className={"font-bold text-lg mb-2 " + (debugInfo.saveResult.success ? "text-green-400" : "text-red-400")}>
+            {getConclusao(debugInfo.testeTecnico.success, debugInfo.saveResult.success, debugInfo.saveResult.code)}
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <span className="text-slate-400">URL:</span><span>{debugUrl.substring(0, 35)}...</span>
+            <span className="text-slate-400">Fallback:</span><span className={!import.meta.env.VITE_SUPABASE_URL ? "text-red-400" : "text-green-400"}>{!import.meta.env.VITE_SUPABASE_URL ? "SIM" : "NÃO"}</span>
+            <span className="text-slate-400">Tabela:</span><span>{debugInfo.tabela}</span>
+            <span className="text-slate-400">Operação:</span><span className={debugInfo.operacao === "INSERT" ? "text-green-400" : "text-blue-400"}>{debugInfo.operacao}</span>
+            <span className="text-slate-400">Teste Técnico:</span><span className={debugInfo.testeTecnico.success ? "text-green-400" : "text-red-400"}>{debugInfo.testeTecnico.success ? `OK (${debugInfo.testeTecnico.count})` : "FALHOU"}</span>
+            <span className="text-slate-400">TesteMét:</span><span>{debugInfo.testeTecnico.requestMethod || 'N/A'}</span>
+            <span className="text-slate-400">TesteURL:</span><span className="text-xs">{debugInfo.testeTecnico.requestUrl ? new URL(debugInfo.testeTecnico.requestUrl).pathname : 'N/A'}</span>
+            <span className="text-slate-400">Save:</span><span className={debugInfo.saveResult.success ? "text-green-400" : "text-red-400"}>{debugInfo.saveResult.success ? "OK" : "FALHOU"}</span>
+            <span className="text-slate-400">SaveMét:</span><span>{debugInfo.saveResult.requestMethod || 'N/A'}</span>
+            <span className="text-slate-400">SaveURL:</span><span className="text-xs">{debugInfo.saveResult.requestUrl ? new URL(debugInfo.saveResult.requestUrl).pathname : 'N/A'}</span>
+            <span className="text-slate-400">Status:</span><span className={debugInfo.saveResult.responseStatus && debugInfo.saveResult.responseStatus >= 400 ? "text-red-400" : "text-green-400"}>{debugInfo.saveResult.responseStatus || 'N/A'}</span>
+          </div>
+          {!debugInfo.saveResult.success && (
+            <div className="mt-2 pt-2 border-t border-slate-700">
+              <div className="text-yellow-400 font-bold">Cause provável:</div>
+              <div className="text-orange-400">{mapCause(debugInfo.saveResult.code, debugInfo.testeTecnico.success)}</div>
+              <div className="text-red-400 font-bold mt-1 mb-1">Code:</div>
+              <div className="text-slate-300">{debugInfo.saveResult.code || "N/A"}</div>
+              <div className="text-red-400 font-bold mt-1 mb-1">Erro details:</div>
+              <div className="text-slate-300">{debugInfo.saveResult.details || "N/A"}</div>
+              <div className="text-yellow-400 font-bold mt-1 mb-1">Hint:</div>
+              <div className="text-slate-300">{debugInfo.saveResult.hint || "N/A"}</div>
+              <div className="text-yellow-400 font-bold mt-1 mb-1">Response Body:</div>
+              <pre className="text-slate-300 overflow-x-auto text-xs">{JSON.stringify(debugInfo.saveResult.responseBody, null, 2)}</pre>
+            </div>
+          )}
+          <div className="mt-2 pt-2 border-t border-slate-700">
+            <div className="text-yellow-400 font-bold mb-1">Payload Enviado:</div>
+            <pre className="text-slate-300 overflow-x-auto">{JSON.stringify(debugInfo.payload, null, 2)}</pre>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between border-b pb-4">
         <div className="flex items-center gap-3">
@@ -264,14 +438,38 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
                 <CardTitle className="text-base text-primary">Múltiplos Endereços</CardTitle>
                 <CardDescription>Gerencie matriz, filiais e pontos de coleta/entrega do cliente.</CardDescription>
               </div>
-              <Button size="sm" variant="outline" className="gap-2"><Plus className="w-4 h-4" /> Adicionar Endereço</Button>
+              <Button size="sm" variant="outline" className="gap-2" onClick={() => setModalEnderecoOpen(true)}><Plus className="w-4 h-4" /> Adicionar Endereço</Button>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-10 border rounded-lg bg-muted/10 border-dashed">
-                <MapPin className="w-8 h-8 mx-auto text-muted-foreground opacity-50 mb-3" />
-                <p className="text-sm font-medium">Nenhum endereço cadastrado</p>
-                <p className="text-xs text-muted-foreground mt-1 mb-4">Aperte o botão acima para inserir filiais ou locais de cobrança</p>
-              </div>
+              {enderecos.length === 0 ? (
+                <div className="text-center py-10 border rounded-lg bg-muted/10 border-dashed">
+                  <MapPin className="w-8 h-8 mx-auto text-muted-foreground opacity-50 mb-3" />
+                  <p className="text-sm font-medium">Nenhum endereço cadastrado</p>
+                  <p className="text-xs text-muted-foreground mt-1 mb-4">Clique no botão acima para adicionar</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {enderecos.map((end) => (
+                    <div key={end.id} className="p-4 border rounded-lg flex justify-between items-start">
+                      <div className="flex gap-3">
+                        <MapPin className="w-5 h-5 text-muted-foreground mt-1" />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">{end.tipo_endereco}</span>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{end.logradouro}, {end.numero}{end.complemento ? `, ${end.complemento}` : ""}</p>
+                          <p className="text-sm text-muted-foreground">{end.bairro} - {end.cidade}/{end.uf}</p>
+                          <p className="text-xs text-muted-foreground">{end.cep ? `CEP: ${end.cep}` : ""}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8"><Edit className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setEnderecos(enderecos.filter(e => e.id !== end.id))}><Trash2 className="w-4 h-4" /></Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -592,7 +790,69 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+
+      {/* Modal Novo Endereço */}
+      <Dialog open={modalEnderecoOpen} onOpenChange={setModalEnderecoOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>Novo Endereço</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Tipo de Endereço</Label>
+                <Select value={novoEndereco.tipo_endereco} onValueChange={v => setNovoEndereco({...novoEndereco, tipo_endereco: v})}>
+                  <SelectTrigger><SelectValue placeholder="Selecione"/></SelectTrigger>
+                  <SelectContent><SelectItem value="Matriz">Matriz</SelectItem><SelectItem value="Filial">Filial</SelectItem><SelectItem value="Cobraça">Cobrança</SelectItem><SelectItem value="Entrega">Entrega</SelectItem><SelectItem value="Coleta">Coleta</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div><Label>CEP</Label><Input value={novoEndereco.cep} onChange={e => setNovoEndereco({...novoEndereco, cep: e.target.value})} placeholder="00000-000" /></div>
+            </div>
+            <div><Label>Logradouro</Label><Input value={novoEndereco.logradouro} onChange={e => setNovoEndereco({...novoEndereco, logradouro: e.target.value})} placeholder="Rua, Av., etc." /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Número</Label><Input value={novoEndereco.numero} onChange={e => setNovoEndereco({...novoEndereco, numero: e.target.value})} /></div>
+              <div><Label>Complemento</Label><Input value={novoEndereco.complemento} onChange={e => setNovoEndereco({...novoEndereco, complemento: e.target.value})} placeholder="Sala, Andar, etc." /></div>
+            </div>
+            <div><Label>Bairro</Label><Input value={novoEndereco.bairro} onChange={e => setNovoEndereco({...novoEndereco, bairro: e.target.value})} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Cidade</Label><Input value={novoEndereco.cidade} onChange={e => setNovoEndereco({...novoEndereco, cidade: e.target.value})} /></div>
+              <div>
+                <Label>UF</Label>
+                <Select value={novoEndereco.uf} onValueChange={v => setNovoEndereco({...novoEndereco, uf: v})}>
+                  <SelectTrigger><SelectValue placeholder="UF"/></SelectTrigger>
+                  <SelectContent><SelectItem value="AC">AC</SelectItem><SelectItem value="AL">AL</SelectItem><SelectItem value="AP">AP</SelectItem><SelectItem value="AM">AM</SelectItem><SelectItem value="BA">BA</SelectItem><SelectItem value="CE">CE</SelectItem><SelectItem value="DF">DF</SelectItem><SelectItem value="ES">ES</SelectItem><SelectItem value="GO">GO</SelectItem><SelectItem value="MA">MA</SelectItem><SelectItem value="MT">MT</SelectItem><SelectItem value="MS">MS</SelectItem><SelectItem value="MG">MG</SelectItem><SelectItem value="PA">PA</SelectItem><SelectItem value="PB">PB</SelectItem><SelectItem value="PR">PR</SelectItem><SelectItem value="PE">PE</SelectItem><SelectItem value="PI">PI</SelectItem><SelectItem value="RJ">RJ</SelectItem><SelectItem value="RN">RN</SelectItem><SelectItem value="RS">RS</SelectItem><SelectItem value="RO">RO</SelectItem><SelectItem value="RR">RR</SelectItem><SelectItem value="SC">SC</SelectItem><SelectItem value="SP">SP</SelectItem><SelectItem value="SE">SE</SelectItem><SelectItem value="TO">TO</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setModalEnderecoOpen(false)}>Cancelar</Button>
+            <Button onClick={async () => {
+              try {
+                const payload = {
+                  cliente_id: clienteId,
+                  tipo_endereco: novoEndereco.tipo_endereco,
+                  cep: novoEndereco.cep,
+                  logradouro: novoEndereco.logradouro,
+                  numero: novoEndereco.numero,
+                  complemento: novoEndereco.complemento,
+                  bairro: novoEndereco.bairro,
+                  cidade: novoEndereco.cidade,
+                  uf: novoEndereco.uf
+                };
+                const { data, error } = await supabase.from("enderecos_clientes").insert([payload]).select();
+                if (error) throw error;
+                toast.success("Endereço adicionado!");
+                setModalEnderecoOpen(false);
+                setNovoEndereco({tipo_endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", uf: ""});
+                fetchEnderecos();
+              } catch (error: any) {
+                toast.error("Erro ao salvar endereço: " + error.message);
+              }
+            }}>Salvar Endereço</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      </div>
   );
 };
 

@@ -26,11 +26,22 @@ const ClientesLista = ({ onSelect, onNew }: Props) => {
   const fetchClientes = async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase.from("clientes").select("*").order("razao_social");
-      if (error) throw error;
+      const TABLE_NAME = "clientes";
+      console.log("CARREGANDO CLIENTES...");
+      const { data, error } = await supabase.from(TABLE_NAME).select("*").order("razao_social");
+      console.log("DATA:", data);
+      console.log("ERROR:", error);
+      if (error) {
+        console.error(`[ClientesLista] Erro no fetch da '${TABLE_NAME}':`, error.message);
+        console.error("  details:", error.details);
+        console.error("  hint:", error.hint);
+        console.error("  code:", error.code);
+        throw error;
+      }
+      console.log(`[ClientesLista] Fetch OK da '${TABLE_NAME}':`, data?.length, "registros");
       setClientes((data as Cliente[]) || []);
     } catch (error) {
-      console.error("Erro ao buscar clientes:", error);
+      console.error("[ClientesLista] Erro catch fetch:", error);
       toast.error("Erro ao carregar clientes.");
     } finally {
       setIsLoading(false);

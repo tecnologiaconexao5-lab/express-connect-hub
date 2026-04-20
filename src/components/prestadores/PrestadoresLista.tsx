@@ -10,6 +10,7 @@ import { Prestador, TIPO_PARCEIRO_LABEL, TIPO_PARCEIRO_COR, STATUS_LABEL, STATUS
 import { mockPrestadores } from "./mockPrestadores";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { fromPrestadorRow, PrestadorRow } from "@/lib/dbMappers";
 
 interface Props {
   onSelect: (p: Prestador) => void;
@@ -18,13 +19,16 @@ interface Props {
 
 const PAGE_SIZE = 10;
 
+const safeSplit = (value: unknown, separator: string) =>
+  String(value || "").split(separator).filter(Boolean);
+
+const getInitials = (name: string) => safeSplit(name, " ").map((n: string) => n[0]).slice(0, 2).join("");
+
 const PrestadoresLista = ({ onSelect, onNew }: Props) => {
   const [busca, setBusca] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [tipoFilter, setTipoFilter] = useState("todos");
   const [regiaoFilter, setRegiaoFilter] = useState("todos");
-  const [veiculoFilter, setVeiculoFilter] = useState("todos");
-  const [docFilter, setDocFilter] = useState("todos");
   const [scoreFilter, setScoreFilter] = useState("todos");
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
@@ -35,31 +39,48 @@ const PrestadoresLista = ({ onSelect, onNew }: Props) => {
     fetchPrestadores();
   }, []);
 
-  const fetchPrestadores = async () => {
+const fetchPrestadores = async () => {
     try {
       setIsLoading(true);
       const { data, error } = await supabase.from('prestadores').select('*');
-      if (error) throw error;
+      if (error) {
+        if (error.code === "42P01") {
+          console.log("Tabela prestadores não existe, usando dados mock.");
+          setPrestadores(mockPrestadores);
+          return;
+        }
+        throw error;
+      }
       if (data && data.length > 0) {
-        setPrestadores(data as Prestador[]);
+        const normalizados = (data as PrestadorRow[]).map((item) => {
+          const mapped = fromPrestadorRow(item);
+          return {
+            ...mapped,
+            veiculos: mapped.veiculos || [],
+            documentos: mapped.documentos || [],
+            contatosEmergencia: mapped.contatosEmergencia || [],
+          } as Prestador;
+        });
+        setPrestadores(normalizados as Prestador[]);
+      } else {
+        setPrestadores(mockPrestadores);
       }
     } catch (error) {
       console.error("Erro ao buscar prestadores:", error);
-      toast.error("Erro ao carregar dados do Supabase. Usando dados locais.");
+      setPrestadores(mockPrestadores);
     } finally {
       setIsLoading(false);
     }
   };
 
   const filtered = prestadores.filter((p) => {
-    if (busca && !p.nomeCompleto.toLowerCase().includes(busca.toLowerCase()) && !p.cpfCnpj.includes(busca)) return false;
+    const buscaLower = (busca || "").toLowerCase();
+    const nome = p.nomeCompleto || "";
+    const documento = p.cpfCnpj || "";
+    if (busca && !nome.toLowerCase().includes(buscaLower) && !documento.includes(busca)) return false;
     if (statusFilter !== "todos" && p.status !== statusFilter) return false;
     if (tipoFilter !== "todos" && p.tipoParceiro !== tipoFilter) return false;
     if (regiaoFilter !== "todos" && p.regiaoPrincipal !== regiaoFilter) return false;
-    if (veiculoFilter !== "todos" && !p.veiculos?.some((v) => v.tipoVeiculo === veiculoFilter)) return false;
-    if (docFilter === "vencido" && !p.documentos?.some((d) => d.status === "vencido")) return false;
-    if (docFilter === "vencendo" && !p.documentos?.some((d) => d.status === "vencendo")) return false;
-    if (docFilter === "pendente" && !p.documentos?.some((d) => d.status === "pendente")) return false;
     if (scoreFilter !== "todos") {
       const minScore = Number(scoreFilter);
       if (p.scoreInterno < minScore) return false;
@@ -71,14 +92,17 @@ const PrestadoresLista = ({ onSelect, onNew }: Props) => {
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const regioes = [...new Set(prestadores.map((p) => p.regiaoPrincipal))];
 
-  const renderStars = (score: number) => (
-    <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((s) => (
-        <Star key={s} className={`w-3.5 h-3.5 ${s <= Math.round(score) ? "fill-primary text-primary" : "text-muted-foreground/30"}`} />
-      ))}
-      <span className="text-xs text-muted-foreground ml-1">{score.toFixed(1)}</span>
-    </div>
-  );
+  const renderStars = (score?: number) => {
+    const safeScore = Number(score || 0);
+    return (
+      <div className="flex items-center gap-0.5">
+        {[1, 2, 3, 4, 5].map((s) => (
+          <Star key={s} className={`w-3.5 h-3.5 ${s <= Math.round(safeScore) ? "fill-primary text-primary" : "text-muted-foreground/30"}`} />
+        ))}
+        <span className="text-xs text-muted-foreground ml-1">{safeScore.toFixed(1)}</span>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -148,34 +172,6 @@ const PrestadoresLista = ({ onSelect, onNew }: Props) => {
               </Select>
             </div>
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Tipo veículo</label>
-              <Select value={veiculoFilter} onValueChange={(v) => { setVeiculoFilter(v); setPage(1); }}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="van">Van</SelectItem>
-                  <SelectItem value="truck">Truck</SelectItem>
-                  <SelectItem value="toco">Toco</SelectItem>
-                  <SelectItem value="carreta">Carreta</SelectItem>
-                  <SelectItem value="utilitario_leve">Utilitário</SelectItem>
-                  <SelectItem value="hr">HR</SelectItem>
-                  <SelectItem value="moto">Moto</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Documentação</label>
-              <Select value={docFilter} onValueChange={(v) => { setDocFilter(v); setPage(1); }}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="vencido">Vencido</SelectItem>
-                  <SelectItem value="vencendo">Vencendo</SelectItem>
-                  <SelectItem value="pendente">Pendente</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
               <label className="text-xs text-muted-foreground mb-1 block">Score mínimo</label>
               <Select value={scoreFilter} onValueChange={(v) => { setScoreFilter(v); setPage(1); }}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
@@ -212,16 +208,16 @@ const PrestadoresLista = ({ onSelect, onNew }: Props) => {
                 <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelect(p)}>
                   <TableCell>
                     <Avatar className="w-8 h-8">
-                      <AvatarFallback className="text-xs bg-muted">{p.nomeCompleto.split(" ").map((n) => n[0]).slice(0, 2).join("")}</AvatarFallback>
+                      <AvatarFallback className="text-xs bg-muted">{getInitials(p.nomeCompleto || "")}</AvatarFallback>
                     </Avatar>
                   </TableCell>
-                  <TableCell className="font-medium text-sm">{p.nomeFantasia || p.nomeCompleto}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{p.cpfCnpj}</TableCell>
-                  <TableCell><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${TIPO_PARCEIRO_COR[p.tipoParceiro]}`}>{TIPO_PARCEIRO_LABEL[p.tipoParceiro]}</span></TableCell>
-                  <TableCell><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_COR[p.status]}`}>{STATUS_LABEL[p.status]}</span></TableCell>
-                  <TableCell className="text-sm">{p.regiaoPrincipal}</TableCell>
+                  <TableCell className="font-medium text-sm">{p.nomeCompleto || "—"}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{p.cpfCnpj || "—"}</TableCell>
+                  <TableCell><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${TIPO_PARCEIRO_COR[p.tipoParceiro as keyof typeof TIPO_PARCEIRO_COR] || "bg-gray-200"}`}>{TIPO_PARCEIRO_LABEL[p.tipoParceiro as keyof typeof TIPO_PARCEIRO_LABEL] || "—"}</span></TableCell>
+                  <TableCell><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_COR[p.status as keyof typeof STATUS_COR] || "bg-gray-200"}`}>{STATUS_LABEL[p.status as keyof typeof STATUS_LABEL] || "—"}</span></TableCell>
+                  <TableCell className="text-sm">{p.regiaoPrincipal || "—"}</TableCell>
                   <TableCell>{renderStars(p.scoreInterno)}</TableCell>
-                  <TableCell className="text-sm">{p.veiculos?.[0] ? TIPO_VEICULO_LABEL[p.veiculos[0].tipoVeiculo] : "—"}</TableCell>
+                  <TableCell className="text-sm">—</TableCell>
                 </TableRow>
               ))}
               {paginated.length === 0 && (
