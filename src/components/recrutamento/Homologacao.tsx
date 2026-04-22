@@ -97,11 +97,34 @@ export function Homologacao() {
   const handleAtivar = async (candidatoId: string) => {
     setActivating(candidatoId);
     try {
-      const prestadorId = await ativarPrestador(candidatoId);
-      toast.success("Prestador ativado com sucesso!");
+      const { ativarPrestador: ativar } = await import("@/services/recrutamentoIntegracao");
+      const { data: candidato } = await supabase.from("candidatos").select("*").eq("id", candidatoId).single();
+      if (!candidato) throw new Error("Candidato não encontrado");
+
+      const resultado = await ativar({
+        id: candidato.id,
+        nome_completo: candidato.nome_completo,
+        cpf_cnpj: candidato.cpf,
+        telefone: candidato.telefone,
+        whatsapp: candidato.whatsapp,
+        email: candidato.email,
+        cidade: candidato.cidade,
+        uf: candidato.uf,
+        regiao: candidato.regiao,
+        tipo_veiculo: candidato.tipo_veiculo,
+        placa: candidato.placa,
+        status: candidato.status,
+        created_at: candidato.created_at,
+        score_perfil: 0,
+        prioridade: 0,
+      });
+
+      if (!resultado.success) throw new Error(resultado.mensagem);
+
+      toast.success(resultado.mensagem, { description: `ID: ${resultado.prestador_id}` });
       loadCandidatosAprovados();
     } catch (error) {
-      toast.error("Erro ao ativar prestador");
+      toast.error(`Erro ao ativar: ${error}`);
     } finally {
       setActivating(null);
     }

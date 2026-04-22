@@ -381,25 +381,53 @@ export async function ativarPrestador(candidatoId: string): Promise<string> {
 
   if (fetchError || !candidato) throw new Error("Candidato não encontrado");
 
-  const { data: prestador, error: prestadorError } = await supabase.from("prestadores").insert([{
+  const { ativarPrestador: ativar, checarDuplicidade } = await import("./recrutamentoIntegracao");
+
+  const existente = await checarDuplicidade({
+    id: candidato.id,
     nome_completo: candidato.nome_completo,
     cpf_cnpj: candidato.cpf,
     telefone: candidato.telefone,
     whatsapp: candidato.whatsapp,
     email: candidato.email,
-    tipoParceiro: "autonomo",
-    status: "ativo"
-  }]).select().single();
+    status: candidato.status,
+    created_at: candidato.created_at,
+    score_perfil: 0,
+    prioridade: 0,
+  });
 
-  if (prestadorError) throw prestadorError;
+  if (existente) {
+    console.log(`[ativarPrestador] Candidato ${candidatoId} já existe como prestador ${existente.prestador.id}`);
+    await supabase.from("candidatos").update({
+      status: "ativo",
+      prestador_id: existente.prestador.id,
+      updated_at: new Date().toISOString()
+    }).eq("id", candidatoId);
+    return existente.prestador.id;
+  }
 
-  await supabase.from("candidatos").update({
-    status: "ativo",
-    prestador_id: prestador.id,
-    updated_at: new Date().toISOString()
-  }).eq("id", candidatoId);
+  const resultado = await ativar({
+    id: candidato.id,
+    nome_completo: candidato.nome_completo,
+    cpf_cnpj: candidato.cpf,
+    telefone: candidato.telefone,
+    whatsapp: candidato.whatsapp,
+    email: candidato.email,
+    cidade: candidato.cidade,
+    uf: candidato.uf,
+    regiao: candidato.regiao,
+    tipo_veiculo: candidato.tipo_veiculo,
+    tipo_carroceria: candidato.tipo_carroceria,
+    placa: candidato.placa,
+    status: candidato.status,
+    created_at: candidato.created_at,
+    score_perfil: 0,
+    prioridade: 0,
+  });
 
-  await supabase.from("reservas_banco").update({ status: "ativo" }).eq("candidato_id", candidatoId);
+  if (!resultado.success) {
+    throw new Error(resultado.mensagem);
+  }
 
-  return prestador.id;
+  return resultado.prestador_id;
 }

@@ -14,13 +14,16 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { generateProfessionalPDF } from "@/lib/pdfGenerator";
-import { OrdemServico, OSEndereco, OSHistorico, STATUS_CORES, OSStatus } from "./osTypes";
+import { OrdemServico, OSEndereco, OSHistorico, OSCarga, STATUS_CORES, OSStatus } from "./osTypes";
 import { FavoritosDropdown, SaveFavoritoButton } from "@/components/enderecos/EnderecosFavoritos";
 import CompartilharRastreioModal from "./CompartilharRastreioModal";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
 import { toOSInsert, toOSUpdate } from "@/lib/dbMappers";
+import { calcularDistancia } from "@/services/maps";
+import type { DistanceResult } from "@/services/maps/types";
+import { dispatchAutomacao, montarEventoOS } from "@/services/automacao";
 
 interface SugestaoVeiculo {
   tipo: string;
@@ -81,12 +84,18 @@ interface Props {
 
 const emptyEnd = (): OSEndereco => ({ sequencia: 1, tipo: "coleta", nomeLocal: "", endereco: "", referencia: "", instrucoes: "", contato: "", telefone: "", janelaInicio: "", janelaFim: "", agendamento: false, statusPonto: "pendente", observacoes: "" });
 
+const emptyCarga = (): OSCarga => ({
+  tipo: "", descricao: "", volumes: 0, peso: 0, cubagem: 0, pallets: 0, valorDeclarado: 0, qtdNotas: 0,
+  refrigerada: false, ajudante: false, fragil: false, empilhavel: true, risco: false, perigosa: false, controlada: false,
+  conferencia: false, equipamento: "", condicao: ""
+});
+
 const emptyOS = (): OrdemServico => ({
   numero: `OS-${new Date().getFullYear()}${(new Date().getMonth()+1).toString().padStart(2, '0')}-${String(Math.floor(Math.random()*9000)+1000)}`,
   data: new Date().toISOString().split("T")[0], cliente: "", unidade: "", centroCusto: "", orcamentoOrigem: "", prestador: "", veiculoAlocado: "", tipoOperacao: "", modalidade: "esporadico", prioridade: "normal",
   status: "rascunho", responsavel: "", refCliente: "", pedidoInterno: "", slaOperacao: "", observacoesGerais: "",
   comprovanteObrigatorio: true, cteObrigatorio: false, xmlObrigatorio: false, operacaoDedicada: false,
-  cargaTipo: "", cargaDescricao: "", volumes: 0, peso: 0, cubagem: 0, pallets: 0, valorDeclarado: 0, qtdNotas: 0, cargaRefrigerada: false, cargaAjudante: false, cargaFragil: false, cargaEmpilhavel: false, cargaRisco: false, conferenciaObrigatoria: false, equipamentoObrigatorio: "", condicaoTransporte: "",
+  carga: emptyCarga(),
   veiculoTipo: "", veiculoSubcategoria: "", veiculoCarroceria: "", veiculoTermica: "seco", isReserva: false, retornoObrigatorio: false,
   dataProgramada: "", janelaOperacional: "", previsaoInicio: "", previsaoTermino: "", tipoEscala: "", instrucoesOperacionais: "", observacaoTorre: "",
   tabelaAplicada: "", valorCliente: 0, custoPrestador: 0, pedagio: 0, ajudante: 0, adicionais: 0, descontos: 0, reembolsoPrevisto: 0, contaContabil: "", centroCustoFin: "", statusFaturamento: "a faturar", statusPagamento: "a pagar",
@@ -106,6 +115,8 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [isSaving, setIsSaving] = useState(false);
   const [sugestaoVeiculo, setSugestaoVeiculo] = useState<SugestaoVeiculo | null>(null);
   const [documentos, setDocumentos] = useState<DocumentoOS[]>([]);
+  const [distanciaRota, setDistanciaRota] = useState<DistanceResult | null>(null);
+  const [calculandoDistancia, setCalculandoDistancia] = useState(false);
   const readOnly = modo === "ver";
 
   useEffect(() => {
@@ -114,17 +125,20 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
        if (draft) {
           try {
             const orc = JSON.parse(draft);
-            setData(p => ({
+setData(p => ({
                ...p,
                cliente: orc.cliente || p.cliente,
                valorCliente: orc.valores?.diaria || orc.valores?.total || p.valorCliente,
                orcamentoOrigem: orc.numero || p.orcamentoOrigem,
                enderecos: orc.enderecos && orc.enderecos.length > 0 ? orc.enderecos : p.enderecos,
                veiculoTipo: orc.veiculo?.tipo || p.veiculoTipo,
-               peso: orc.carga?.peso || p.peso,
-               cubagem: orc.carga?.cubagem || p.cubagem,
-               cargaRefrigerada: orc.carga?.refrigerado || p.cargaRefrigerada
-            }));
+               carga: {
+                 ...p.carga,
+                 peso: orc.carga?.peso || p.carga.peso,
+                 cubagem: orc.carga?.cubagem || p.carga.cubagem,
+                 refrigerada: orc.carga?.refrigerado || p.carga.refrigerada
+               }
+             }));
             if (orc.carga?.peso) {
               const sugestao = sugerirVeiculo(orc.carga.peso, orc.carga.cubagem || 0, orc.carga.refrigerado || false);
               setSugestaoVeiculo(sugestao);
@@ -136,17 +150,54 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     }
   }, [modo]);
 
-  const update = (field: keyof OrdemServico, value: any) => {
-    setData((p) => {
-      const newData = { ...p, [field]: value };
+  useEffect(() => {
+    const calculaRota = async () => {
+      const enderecos = data.enderecos || [];
+      const origem = enderecos.find(e => e.tipo === "coleta" && e.endereco?.trim());
+      const destino = enderecos.filter(e => e.tipo === "entrega" && e.endereco?.trim()).pop();
       
-      if (field === 'peso' || field === 'cubagem' || field === 'cargaRefrigerada') {
-        const novoPeso = field === 'peso' ? value : p.peso;
-        const novaCubagem = field === 'cubagem' ? value : p.cubagem;
-        const refrigerado = field === 'cargaRefrigerada' ? value : p.cargaRefrigerada;
+      if (origem && destino && origem.endereco && destino.endereco) {
+        setCalculandoDistancia(true);
+        try {
+          const resultado = await calcularDistancia(origem.endereco, destino.endereco);
+          setDistanciaRota(resultado);
+        } catch (e) {
+          console.error("Erro ao calcular distância:", e);
+          setDistanciaRota(null);
+        } finally {
+          setCalculandoDistancia(false);
+        }
+      } else {
+        setDistanciaRota(null);
+      }
+    };
+
+    if (data.enderecos && data.enderecos.length > 0) {
+      const timeoutId = setTimeout(calculaRota, 500);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [data.enderecos]);
+
+  const updateCarga = (field: keyof OSCarga, value: any) => {
+    setData((p) => {
+      const newCarga = { ...p.carga, [field]: value };
+      const newData = { ...p, carga: newCarga };
+      
+      if (field === 'peso' || field === 'cubagem' || field === 'refrigerada') {
+        const novoPeso = field === 'peso' ? value : p.carga.peso;
+        const novaCubagem = field === 'cubagem' ? value : p.carga.cubagem;
+        const refrigerado = field === 'refrigerada' ? value : p.carga.refrigerada;
         const sugestao = sugerirVeiculo(novoPeso || 0, novaCubagem || 0, refrigerado || false);
         setSugestaoVeiculo(sugestao);
       }
+      
+      return newData;
+    });
+  };
+
+  const update = (field: keyof OrdemServico, value: any) => {
+    setData((p) => {
+      const newData = { ...p, [field]: value };
       
       if (field === 'cliente' && value) {
         toast.info("Tabela de valores vinculada ao cliente. Para alterar, procure o perfil Operador/Admin.");
@@ -196,11 +247,11 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
       }
     }
     setData(p => ({ ...p, status: novoStatus, historico: novoHist }));
+    dispatchAutomacao(montarEventoOS({ ...data, status: novoStatus }, novoStatus as any)).catch(console.warn);
   };
 
   const isCargoCompatible = () => {
-    // Basic mock compatibility logic
-    if (data.cargaRefrigerada && data.veiculoTermica !== "refrigerado") return false;
+    if (data.carga.refrigerada && data.veiculoTermica !== "refrigerado") return false;
     return true;
   };
 
@@ -208,77 +259,72 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
     setIsSaving(true);
     try {
       const isNovo = !data.id;
-      const { id, enderecos, historico, ...rawPayload } = data;
 
-      const dbPayload: Record<string, any> = {};
-      for (const [k, v] of Object.entries(rawPayload)) {
-        if (v !== undefined) dbPayload[k] = v;
-      }
-      
-      dbPayload.updated_at = new Date().toISOString();
-      if (isNovo) {
-        dbPayload.created_at = new Date().toISOString();
-      }
+      const dbPayload = isNovo ? toOSInsert(data) : toOSUpdate(data);
 
       console.log("Payload enviado:", dbPayload);
       const { data: user } = await supabase.auth.getUser();
       console.log("USER:", user);
       
-      let resId = id;
+      let resId = data.id;
       if (isNovo) {
         const { data: res, error } = await supabase.from("ordens_servico").insert([dbPayload]).select();
         if (error) {
            console.error("SUPABASE ERROR:", { message: error.message, details: error.details, hint: error.hint, code: error.code });
+           toast.error(`Erro ao criar OS: ${error.message}`);
            throw error;
         }
         resId = res?.[0]?.id;
+        toast.success("OS criada com sucesso!");
+        dispatchAutomacao(montarEventoOS({ ...data, id: resId || data.id }, "os_criada")).catch(console.warn);
       } else {
-        const { error } = await supabase.from("ordens_servico").update(dbPayload).eq("id", id).select();
+        const { error } = await supabase.from("ordens_servico").update(dbPayload).eq("id", data.id).select();
         if (error) {
            console.error("SUPABASE ERROR:", { message: error.message, details: error.details, hint: error.hint, code: error.code });
+           toast.error(`Erro ao atualizar OS: ${error.message}`);
            throw error;
         }
+        toast.success("OS atualizada com sucesso!");
+        dispatchAutomacao(montarEventoOS(data, "os_iniciada")).catch(console.warn);
       }
 
       // Sync Enderecos in a real scenario here. For mock/simplicity, we rely on the parent or ignore `os_enderecos` separate sync if using JSON in Supabase.
-      // Assuming parent handles it or ignoring deep sync to focus on UI requirements
-      
-      // FINANCEIRO INTEGRADO (PROBLEMA 4)
-      if (data.status === "finalizada") {
+// Assuming parent handles it or ignoring deep sync to focus on UI requirements
+
+      // FINANCEIRO INTEGRADO - CORRIGIDO para usar IDs corretos
+      if (data.status === "finalizada" && data.valorCliente) {
          try {
 await supabase.from("financeiro_receber").insert([{ 
                 descricao: `Faturamento OS ${data.numero} - ${data.cliente}`,
-                valor: data.valorCliente || 0,
+                valor: data.valorCliente,
                 data_vencimento: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split("T")[0],
                 os_id: resId || data.id,
-                cliente: data.cliente,
+                cliente_nome: data.cliente,
                 status: "aberto"
             }]);
-         } catch(e) {}
+         } catch(e) { console.error("[OS] Erro financeiro_receber:", e); }
       }
       
-      if (data.prestador && !os?.prestador) {
+      if (data.prestador && data.custoPrestador && !os?.prestador) {
          try {
 await supabase.from("financeiro_pagar").insert([{
                 descricao: `Pagamento Viagem OS ${data.numero} - ${data.prestador}`,
-                valor: data.custoPrestador || 0,
+                valor: data.custoPrestador,
                 data_vencimento: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString().split("T")[0],
                 os_id: resId || data.id,
                 prestador: data.prestador,
                 status: "aberto"
-            }]);
-         } catch(e) {}
-      }
+}]);
+           } catch(e) { console.error("[OS] Erro financeiro_pagar:", e); }
+        }
 
-      toast.success(isNovo ? "OS Criada com sucesso." : "OS Atualizada.");
-      onSalvar();
-    } catch {
-      toast.error("Erro ao salvar a OS.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
+       onSalvar();
+     } catch {
+       // erro já tratado dentro do if/else
+     } finally {
+       setIsSaving(false);
+     }
+   };
 
 
   return (
@@ -517,22 +563,22 @@ await supabase.from("financeiro_pagar").insert([{
           <Card>
             <CardHeader><CardTitle className="text-sm text-primary">Detalhamento Condicional da Carga</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-               <Field label="Tipo da Carga" className="lg:col-span-2"><Input value={data.cargaTipo} readOnly={readOnly} onChange={(e) => update("cargaTipo", e.target.value)} /></Field>
-               <Field label="Descrição da Carga" className="lg:col-span-4"><Input value={data.cargaDescricao} readOnly={readOnly} onChange={(e) => update("cargaDescricao", e.target.value)} /></Field>
-               <Field label="Volumes (Qtd)"><Input type="number" value={data.volumes || ""} readOnly={readOnly} onChange={(e) => update("volumes", Number(e.target.value))} /></Field>
-               <Field label="Peso (Kg)"><Input type="number" value={data.peso || ""} readOnly={readOnly} onChange={(e) => update("peso", Number(e.target.value))} /></Field>
-               <Field label="Cubagem (m³)"><Input type="number" value={data.cubagem || ""} readOnly={readOnly} onChange={(e) => update("cubagem", Number(e.target.value))} /></Field>
-               <Field label="Pallets"><Input type="number" value={data.pallets || ""} readOnly={readOnly} onChange={(e) => update("pallets", Number(e.target.value))} /></Field>
-               <Field label="Valor NFs (R$)"><Input type="number" value={data.valorDeclarado || ""} readOnly={readOnly} onChange={(e) => update("valorDeclarado", Number(e.target.value))} /></Field>
-               <Field label="Qtd Notas Fiscais"><Input type="number" value={data.qtdNotas || ""} readOnly={readOnly} onChange={(e) => update("qtdNotas", Number(e.target.value))} /></Field>
+               <Field label="Tipo da Carga" className="lg:col-span-2"><Input value={data.carga.tipo} readOnly={readOnly} onChange={(e) => updateCarga("tipo", e.target.value)} /></Field>
+               <Field label="Descrição da Carga" className="lg:col-span-4"><Input value={data.carga.descricao} readOnly={readOnly} onChange={(e) => updateCarga("descricao", e.target.value)} /></Field>
+               <Field label="Volumes (Qtd)"><Input type="number" value={data.carga.volumes || ""} readOnly={readOnly} onChange={(e) => updateCarga("volumes", Number(e.target.value))} /></Field>
+               <Field label="Peso (Kg)"><Input type="number" value={data.carga.peso || ""} readOnly={readOnly} onChange={(e) => updateCarga("peso", Number(e.target.value))} /></Field>
+               <Field label="Cubagem (m³)"><Input type="number" value={data.carga.cubagem || ""} readOnly={readOnly} onChange={(e) => updateCarga("cubagem", Number(e.target.value))} /></Field>
+               <Field label="Pallets"><Input type="number" value={data.carga.pallets || ""} readOnly={readOnly} onChange={(e) => updateCarga("pallets", Number(e.target.value))} /></Field>
+               <Field label="Valor NFs (R$)"><Input type="number" value={data.carga.valorDeclarado || ""} readOnly={readOnly} onChange={(e) => updateCarga("valorDeclarado", Number(e.target.value))} /></Field>
+               <Field label="Qtd Notas Fiscais"><Input type="number" value={data.carga.qtdNotas || ""} readOnly={readOnly} onChange={(e) => updateCarga("qtdNotas", Number(e.target.value))} /></Field>
                
                <div className="lg:col-span-6 grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border rounded-lg bg-muted/20">
-                 <div className="flex items-center gap-2"><Switch checked={data.cargaRefrigerada} onCheckedChange={(v) => update("cargaRefrigerada", v)} disabled={readOnly} /><Label className="text-xs">Carga Refrigerada</Label></div>
-                 <div className="flex items-center gap-2"><Switch checked={data.cargaFragil} onCheckedChange={(v) => update("cargaFragil", v)} disabled={readOnly} /><Label className="text-xs">Carga Frágil</Label></div>
-                 <div className="flex items-center gap-2"><Switch checked={data.cargaAjudante} onCheckedChange={(v) => update("cargaAjudante", v)} disabled={readOnly} /><Label className="text-xs">Demanda Ajudante</Label></div>
-                 <div className="flex items-center gap-2"><Switch checked={data.cargaEmpilhavel} onCheckedChange={(v) => update("cargaEmpilhavel", v)} disabled={readOnly} /><Label className="text-xs">Não Empilhável</Label></div>
-                 <div className="flex items-center gap-2"><Switch checked={data.cargaRisco} onCheckedChange={(v) => update("cargaRisco", v)} disabled={readOnly} /><Label className="text-xs">Carga de Risco (Escolta)</Label></div>
-                 <div className="flex items-center gap-2"><Switch checked={data.conferenciaObrigatoria} onCheckedChange={(v) => update("conferenciaObrigatoria", v)} disabled={readOnly} /><Label className="text-xs">Conferência Rigorosa</Label></div>
+                 <div className="flex items-center gap-2"><Switch checked={data.carga.refrigerada} onCheckedChange={(v) => updateCarga("refrigerada", v)} disabled={readOnly} /><Label className="text-xs">Carga Refrigerada</Label></div>
+                 <div className="flex items-center gap-2"><Switch checked={data.carga.fragil} onCheckedChange={(v) => updateCarga("fragil", v)} disabled={readOnly} /><Label className="text-xs">Carga Frágil</Label></div>
+                 <div className="flex items-center gap-2"><Switch checked={data.carga.ajudante} onCheckedChange={(v) => updateCarga("ajudante", v)} disabled={readOnly} /><Label className="text-xs">Demanda Ajudante</Label></div>
+                 <div className="flex items-center gap-2"><Switch checked={data.carga.empilhavel} onCheckedChange={(v) => updateCarga("empilhavel", v)} disabled={readOnly} /><Label className="text-xs">Não Empilhável</Label></div>
+                 <div className="flex items-center gap-2"><Switch checked={data.carga.risco} onCheckedChange={(v) => updateCarga("risco", v)} disabled={readOnly} /><Label className="text-xs">Carga de Risco (Escolta)</Label></div>
+                 <div className="flex items-center gap-2"><Switch checked={data.carga.conferencia} onCheckedChange={(v) => updateCarga("conferencia", v)} disabled={readOnly} /><Label className="text-xs">Conferência Rigorosa</Label></div>
                </div>
             </CardContent>
           </Card>
@@ -589,14 +635,18 @@ await supabase.from("financeiro_pagar").insert([{
                  </Select>
                </Field>
 
-               <div className="lg:col-span-4 p-4 border rounded-xl flex items-center justify-between bg-muted/20">
-                 <div className="flex gap-4 items-center">
-                    <Avatar className="w-12 h-12 border-2 border-primary/20"><AvatarFallback className="text-lg">{data.prestador ? data.prestador[0].toUpperCase() : "P"}</AvatarFallback></Avatar>
-                    <div>
-                      <p className="font-semibold text-sm">{data.prestador || "Nenhum parceiro alocado"}</p>
-                      <p className="text-xs text-muted-foreground">{data.veiculoAlocado ? `Placa: ${data.veiculoAlocado} | Km Prev: 120km` : "Placa Indefinida"}</p>
-                    </div>
-                 </div>
+<div className="lg:col-span-4 p-4 border rounded-xl flex items-center justify-between bg-muted/20">
+                  <div className="flex gap-4 items-center">
+                     <Avatar className="w-12 h-12 border-2 border-primary/20"><AvatarFallback className="text-lg">{data.prestador ? data.prestador[0].toUpperCase() : "P"}</AvatarFallback></Avatar>
+                     <div>
+                       <p className="font-semibold text-sm">{data.prestador || "Nenhum parceiro alocado"}</p>
+                       <p className="text-xs text-muted-foreground">
+                         {data.veiculoAlocado ? `Placa: ${data.veiculoAlocado}` : "Placa Indefinida"}
+                         {distanciaRota && <> • {distanciaRota.distanciaTexto} • {distanciaRota.duracaoTexto}</>}
+                         {calculandoDistancia && " • Calculando rota..."}
+                       </p>
+                     </div>
+                  </div>
                  {!readOnly && (
                    <Button onClick={() => setStatus("aguardando parceiro")} variant="outline" className="border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-700">
                      Sinalizar Aguardando Parceiro

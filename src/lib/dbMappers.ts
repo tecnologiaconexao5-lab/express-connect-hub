@@ -777,21 +777,30 @@ export const toOSInsert = (form: Partial<OSForm>): Record<string, unknown> => {
   if (has(form.operacaoDedicada)) d.operacao_dedicada = form.operacaoDedicada;
 
   if (has(form.cargaTipo)) d.carga_tipo = form.cargaTipo;
-  if (has(form.cargaDescricao)) d.carga_descricao = form.cargaDescricao;
-  if (has(form.volumes)) d.volumes = form.volumes;
-  if (has(form.peso)) d.peso = form.peso;
-  if (has(form.cubagem)) d.cubagem = form.cubagem;
-  if (has(form.pallets)) d.pallets = form.pallets;
-  if (has(form.valorDeclarado)) d.valor_declarado = form.valorDeclarado;
-  if (has(form.qtdNotas)) d.qtd_notas = form.qtdNotas;
-  if (has(form.cargaRefrigerada)) d.carga_refrigerada = form.cargaRefrigerada;
-  if (has(form.cargaAjudante)) d.carga_ajudante = form.cargaAjudante;
-  if (has(form.cargaFragil)) d.carga_fragil = form.cargaFragil;
-  if (has(form.cargaEmpilhavel)) d.carga_empilhavel = form.cargaEmpilhavel;
-  if (has(form.cargaRisco)) d.carga_risco = form.cargaRisco;
-  if (has(form.conferenciasObrigatoria)) d.conferencia_obrigatoria = form.conferenciasObrigatoria;
-  if (has(form.equipamentoObrigatorio)) d.equipamento_obrigatorio = form.equipamentoObrigatorio;
-  if (has(form.condicaoTransporte)) d.condicao_transporte = form.condicaoTransporte;
+  // Novo: Priorizar objeto carga JSONB
+  if ((form as any).carga) {
+    const c = (form as any).carga;
+    d.carga = {
+      tipo: c.tipo || "",
+      descricao: c.descricao || "",
+      volumes: c.volumes || 0,
+      peso: c.peso || 0,
+      cubagem: c.cubagem || 0,
+      pallets: c.pallets || 0,
+      valorDeclarado: c.valorDeclarado || 0,
+      qtdNotas: c.qtdNotas || 0,
+      refrigerada: c.refrigerada || false,
+      ajudante: c.ajudante || false,
+      fragil: c.fragil || false,
+      empilhavel: c.empilhavel !== false,
+      risco: c.risco || false,
+      perigosa: c.perigosa || false,
+      controlada: c.controlada || false,
+      conferencia: c.conferencia || false,
+      equipamento: c.equipamento || "",
+      condicao: c.condicao || ""
+    };
+  }
 
   if (has(form.veiculoTipo)) d.veiculo_tipo = form.veiculoTipo;
   if (has(form.veiculoSubcategoria)) d.veiculo_subcategoria = form.veiculoSubcategoria;
@@ -825,6 +834,10 @@ export const toOSInsert = (form: Partial<OSForm>): Record<string, unknown> => {
   if (has(form.whatsappDestinatario)) d.whatsapp_destinatario = form.whatsappDestinatario;
   if (has(form.notificarDestinatario)) d.notificar_destinatario = form.notificarDestinatario;
   if (has(form.eventosTracker)) d.eventos_tracker = form.eventosTracker;
+
+  // Campos não mapeados no OSForm mas presentes no OrdemServico
+  if ((form as any).enderecos) (d as any).enderecos = (form as any).enderecos;
+  if ((form as any).historico) (d as any).historico = (form as any).historico;
 
   d.created_at = new Date().toISOString();
   d.updated_at = new Date().toISOString();
@@ -864,22 +877,25 @@ export const fromOSRow = (item: OSRow): OSForm => ({
   cteObrigatorio: item.cte_obrigatorio ?? item.cteObrigatorio ?? false,
   xmlObrigatorio: item.xml_obrigatorio ?? item.xmlObrigatorio ?? false,
   operacaoDedicada: item.operacao_dedicada ?? item.operacaoDedicada ?? false,
-  cargaTipo: item.carga_tipo || item.cargaTipo,
-  cargaDescricao: item.carga_descricao || item.cargaDescricao,
-  volumes: item.volumes ?? item.volumes ?? 0,
-  peso: item.peso ?? item.peso ?? 0,
-  cubagem: item.cubagem ?? item.cubagem ?? 0,
-  pallets: item.pallets ?? item.pallets ?? 0,
-  valorDeclarado: item.valor_declarado ?? item.valorDeclarado ?? 0,
-  qtdNotas: item.qtd_notas ?? item.qtdNotas ?? 0,
-  cargaRefrigerada: item.carga_refrigerada ?? item.cargaRefrigerada ?? false,
-  cargaAjudante: item.carga_ajudante ?? item.cargaAjudante ?? false,
-  cargaFragil: item.carga_fragil ?? item.cargaFragil ?? false,
-  cargaEmpilhavel: item.carga_empilhavel ?? item.cargaEmpilhavel ?? false,
-  cargaRisco: item.carga_risco ?? item.cargaRisco ?? false,
-  conferenciasObrigatoria: item.conferencia_obrigatoria ?? item.conferenciasObrigatoria ?? false,
-  equipamentoObrigatorio: item.equipamento_obrigatorio || item.equipamentoObrigatorio,
-  condicaoTransporte: item.condicao_transporte || item.condicaoTransporte,
+  // Priorizar objeto carga JSONB, com fallback para campos antigos
+  carga: (item as any).carga || {
+    tipo: item.carga_tipo || item.cargaTipo || "",
+    descricao: item.carga_descricao || item.cargaDescricao || "",
+    volumes: item.volumes ?? item.volumes ?? 0,
+    peso: item.peso ?? item.peso ?? 0,
+    cubagem: item.cubagem ?? item.cubagem ?? 0,
+    pallets: item.pallets ?? item.pallets ?? 0,
+    valorDeclarado: item.valor_declarado ?? item.valorDeclarado ?? 0,
+    qtdNotas: item.qtd_notas ?? item.qtdNotas ?? 0,
+    refrigerada: item.carga_refrigerada ?? item.cargaRefrigerada ?? false,
+    ayudante: item.carga_ajudante ?? item.cargaAjudante ?? false,
+    fragil: item.carga_fragil ?? item.cargaFragil ?? false,
+    empilhavel: item.carga_empilhavel ?? item.cargaEmpilhavel ?? true,
+    risco: item.carga_risco ?? item.cargaRisco ?? false,
+    conferencia: item.conferencia_obrigatoria ?? item.conferenciasObrigatoria ?? false,
+    equipamento: item.equipamento_obrigatorio || item.equipamentoObrigatorio || "",
+    condicao: item.condicao_transporte || item.condicaoTransporte || ""
+  },
   veiculoTipo: item.veiculo_tipo || item.veiculoTipo,
   veiculoSubcategoria: item.veiculo_subcategoria || item.veiculoSubcategoria,
   veiculoCarroceria: item.veiculo_carroceria || item.veiculoCarroceria,
@@ -1031,6 +1047,16 @@ export const toOrcamentoInsert = (form: Partial<OrcamentoForm>): Record<string, 
 
   if (form.historico) d.historico = form.historico;
 
+  // Campos não mapeados no OrcamentoForm mas presentes no Orcamento
+  // enderecos, carga, veiculo, valores, distancia_rota, frete_sugerido, motivoReprovacao
+  if ((form as any).enderecos) (d as any).enderecos = (form as any).enderecos;
+  if ((form as any).carga) (d as any).carga = (form as any).carga;
+  if ((form as any).veiculo) (d as any).veiculo = (form as any).veiculo;
+  if ((form as any).valores) (d as any).valores = (form as any).valores;
+  if ((form as any).distancia_rota) (d as any).distancia_rota = (form as any).distancia_rota;
+  if ((form as any).frete_sugerido) (d as any).frete_sugerido = (form as any).frete_sugerido;
+  if ((form as any).motivoReprovacao) (d as any).motivo_reprovacao = (form as any).motivoReprovacao;
+
   d.created_at = new Date().toISOString();
   d.updated_at = new Date().toISOString();
 
@@ -1080,18 +1106,23 @@ export const fromOrcamentoRow = (item: OrcamentoRow): OrcamentoForm => ({
   valorFinal: item.valor_final ?? item.valorFinal ?? 0,
   custoEstimado: item.custo_estimado ?? item.custoEstimado ?? 0,
   historico: item.historico || [],
+  distancia_rota: (item as any).distancia_rota || undefined,
+  frete_sugerido: (item as any).frete_sugerido || undefined,
 });
 
 // ---------------- FINANCEIRO (RECEBER) ----------------
 
 export interface ReceberForm {
   id?: string;
+  descricao?: string;
+  valor?: number;
   clienteId?: string;
   clienteNome?: string;
   clienteDocumento?: string;
   documento?: string;
   serie?: string;
   osVinculadas?: string;
+  os_id?: string;
   contratoVinculado?: string;
   propostaVinculada?: string;
   valorBruto?: number;
@@ -1113,12 +1144,15 @@ export interface ReceberForm {
 
 export interface ReceberRow {
   id?: string;
+  descricao?: string;
+  valor?: number;
   cliente_id?: string;
   cliente_nome?: string;
   cliente_documento?: string;
   documento?: string;
   serie?: string;
   os_vinculadas?: string;
+  os_id?: string;
   contrato_vinculado?: string;
   proposta_vinculada?: string;
   valor_bruto?: number;
@@ -1144,12 +1178,15 @@ export const toReceberInsert = (form: Partial<ReceberForm>): Record<string, unkn
   const d: Record<string, unknown> = {};
   const has = (v: unknown) => v !== undefined && v !== null;
 
+  if (has(form.descricao)) d.descricao = form.descricao;
+  if (has(form.valor)) d.valor = form.valor;
   if (has(form.clienteId)) d.cliente_id = form.clienteId;
   if (has(form.clienteNome)) d.cliente_nome = form.clienteNome;
   if (has(form.clienteDocumento)) d.cliente_documento = form.clienteDocumento;
   if (has(form.documento)) d.documento = form.documento;
   if (has(form.serie)) d.serie = form.serie;
   if (has(form.osVinculadas)) d.os_vinculadas = form.osVinculadas;
+  if (has(form.os_id)) d.os_id = form.os_id;
   if (has(form.contratoVinculado)) d.contrato_vinculado = form.contratoVinculado;
   if (has(form.propostaVinculada)) d.proposta_vinculada = form.propostaVinculada;
   if (has(form.valorBruto)) d.valor_bruto = form.valorBruto;
@@ -1184,12 +1221,15 @@ export const toReceberUpdate = (form: Partial<ReceberForm>): Record<string, unkn
 
 export const fromReceberRow = (item: ReceberRow): ReceberForm => ({
   id: item.id,
+  descricao: item.descricao,
+  valor: item.valor ?? 0,
   clienteId: item.cliente_id || item.clienteId,
   clienteNome: item.cliente_nome || item.clienteNome || "",
   clienteDocumento: item.cliente_documento || item.clienteDocumento,
   documento: item.documento || "",
   serie: item.serie,
   osVinculadas: item.os_vinculadas || item.osVinculadas,
+  os_id: (item as any).os_id,
   contratoVinculado: item.contrato_vinculado || item.contratoVinculado,
   propostaVinculada: item.proposta_vinculada || item.propostaVinculada,
   valorBruto: item.valor_bruto ?? item.valorBruto ?? 0,
@@ -1213,6 +1253,8 @@ export const fromReceberRow = (item: ReceberRow): ReceberForm => ({
 
 export interface PagarForm {
   id?: string;
+  descricao?: string;
+  valor?: number;
   fornecedorId?: string;
   fornecedorNome?: string;
   fornecedorDocumento?: string;
@@ -1240,11 +1282,15 @@ export interface PagarForm {
   quantidadeParcelas?: number;
   contratoVinculado?: string;
   osVinculada?: string;
+  os_id?: string;
+  prestador?: string;
   observacoes?: string;
 }
 
 export interface PagarRow {
   id?: string;
+  descricao?: string;
+  valor?: number;
   fornecedor_id?: string;
   fornecedor_nome?: string;
   fornecedor_documento?: string;
@@ -1272,6 +1318,8 @@ export interface PagarRow {
   quantidade_parcelas?: number;
   contrato_vinculado?: string;
   os_vinculada?: string;
+  os_id?: string;
+  prestador?: string;
   observacoes?: string;
   created_at?: string;
   updated_at?: string;
@@ -1281,6 +1329,8 @@ export const toPagarInsert = (form: Partial<PagarForm>): Record<string, unknown>
   const d: Record<string, unknown> = {};
   const has = (v: unknown) => v !== undefined && v !== null;
 
+  if (has(form.descricao)) d.descricao = form.descricao;
+  if (has(form.valor)) d.valor = form.valor;
   if (has(form.fornecedorId)) d.fornecedor_id = form.fornecedorId;
   if (has(form.fornecedorNome)) d.fornecedor_nome = form.fornecedorNome;
   if (has(form.fornecedorDocumento)) d.fornecedor_documento = form.fornecedorDocumento;
@@ -1308,6 +1358,8 @@ export const toPagarInsert = (form: Partial<PagarForm>): Record<string, unknown>
   if (has(form.quantidadeParcelas)) d.quantidade_parcelas = form.quantidadeParcelas;
   if (has(form.contratoVinculado)) d.contrato_vinculado = form.contratoVinculado;
   if (has(form.osVinculada)) d.os_vinculada = form.osVinculada;
+  if (has(form.os_id)) d.os_id = form.os_id;
+  if (has(form.prestador)) d.prestador = form.prestador;
   if (has(form.observacoes)) d.observacoes = form.observacoes;
 
   d.created_at = new Date().toISOString();

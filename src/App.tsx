@@ -37,6 +37,7 @@ import Tracking from "@/pages/Tracking";
 import Combustiveis from "@/pages/Combustiveis";
 import Seguros from "@/pages/Seguros";
 import Roteirizador from "@/components/Roteirizador";
+import DevTesteTMS from "@/pages/DevTesteTMS";
 
 const queryClient = new QueryClient();
 
@@ -83,6 +84,7 @@ const App = () => (
             <Route path="/configuracoes" element={<Configuracoes />} />
             <Route path="/comunicacao" element={<Comunicacao />} />
             <Route path="/seguros" element={<Seguros />} />
+            <Route path="/dev-teste" element={<DevTesteTMS />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

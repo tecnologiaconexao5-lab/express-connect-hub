@@ -26,6 +26,7 @@ export interface EnderecoOrcamento {
 }
 
 export interface CargaOrcamento {
+  tipo?: string;
   descricao: string;
   volumes: number;
   peso: number;
@@ -34,6 +35,11 @@ export interface CargaOrcamento {
   valorDeclarado: number;
   refrigerado: boolean;
   ajudante: boolean;
+  fragil: boolean;
+  empilhavel: boolean;
+  risco: boolean;
+  perigosa: boolean;
+  controlada: boolean;
   observacoes: string;
 }
 
@@ -51,6 +57,21 @@ export interface ValoresOrcamento {
   custoEstimado: number;
   margemEstimada: number;
   lucroEstimado: number;
+}
+
+export interface DistanciaRota {
+  distancia_km: number;
+  duracao_min: number;
+  distancia_texto: string;
+  duracao_texto: string;
+  maps_provider: "mapbox";
+}
+
+export interface FreteSugerido {
+  valor_base: number;
+  valor_por_km: number;
+  sugestao: number;
+  distancia_km: number;
 }
 
 export interface Orcamento {
@@ -77,6 +98,8 @@ export interface Orcamento {
     carroceria: string;
   };
   valores: ValoresOrcamento;
+  distancia_rota?: DistanciaRota;
+  frete_sugerido?: FreteSugerido;
   motivoReprovacao?: string;
   historico: { data: string; acao: string; usuario: string }[];
 }
