@@ -15,6 +15,7 @@ import OrcamentoForm from "./OrcamentoForm";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { gerarPdfOrcamento } from "./orcamentoPdf";
+import { toOrcamentoInsert } from "@/lib/dbMappers";
 
 const ITEMS_PER_PAGE = 8;
 
@@ -36,7 +37,7 @@ const OrcamentosLista = () => {
 
   useEffect(() => {
     fetchOrcamentos();
-    
+
     if (searchParams.get("action") === "novo") {
       setModoForm("novo");
       searchParams.delete("action");
@@ -67,7 +68,7 @@ const OrcamentosLista = () => {
     const matchBusca = !busca || o.numero.toLowerCase().includes(busca.toLowerCase()) || o.cliente.toLowerCase().includes(busca.toLowerCase()) || o.clienteCnpj.includes(busca);
     const matchStatus = filtroStatus === "todos" || o.status === filtroStatus;
     const matchResp = filtroResponsavel === "todos" || o.responsavel === filtroResponsavel;
-    
+
     let matchPeriodo = true;
     if (filtroPeriodo !== "todos") {
       const hoje = new Date();
@@ -84,7 +85,7 @@ const OrcamentosLista = () => {
         matchPeriodo = dataOrc >= umMesAtras && dataOrc <= hoje;
       }
     }
-    
+
     return matchBusca && matchStatus && matchResp && matchPeriodo;
   });
 
@@ -97,7 +98,7 @@ const OrcamentosLista = () => {
     try {
       const historicoAtualizado = [...orc.historico, { data: new Date().toLocaleString("pt-BR"), acao: "Aprovado", usuario: "Usuário atual" }];
       const res = await saveToSupabase({ ...orc, status: "aprovado" as OrcamentoStatus, historico: historicoAtualizado }, false);
-      if(res) toast.success("Orçamento Aprovado!");
+      if (res) toast.success("Orçamento Aprovado!");
     } catch {
       toast.error("Erro ao aprovar.");
     }
@@ -108,10 +109,10 @@ const OrcamentosLista = () => {
     try {
       const historicoAtualizado = [...dialogReprovar.historico, { data: new Date().toLocaleString("pt-BR"), acao: `Reprovado: ${motivoReprovacao}`, usuario: "Usuário atual" }];
       const res = await saveToSupabase({ ...dialogReprovar, status: "reprovado" as OrcamentoStatus, historico: historicoAtualizado, motivoReprovacao }, false);
-      if(res) {
-         toast.success("Orçamento Reprovado.");
-         setDialogReprovar(null);
-         setMotivoReprovacao("");
+      if (res) {
+        toast.success("Orçamento Reprovado.");
+        setDialogReprovar(null);
+        setMotivoReprovacao("");
       }
     } catch {
       toast.error("Erro ao reprovar.");
@@ -125,52 +126,32 @@ const OrcamentosLista = () => {
   };
 
   const saveToSupabase = async (orc: Orcamento, isNew: boolean) => {
-    // Basic implementation since data has nested objects (this may require a DB rpc or flattening in a real scenario)
-    // We will save to supabase if the table exists
     try {
-      const dbPayload = {
-        id: orc.id,
-        numero: orc.numero,
-        cliente: orc.cliente,
-        cliente_cnpj: orc.clienteCnpj,
-        unidade: orc.unidade,
-        centro_custo: orc.centroCusto,
-        responsavel: orc.responsavel,
-        data_emissao: orc.dataEmissao,
-        validade: orc.validade,
-        tipo_operacao: orc.tipoOperacao,
-        modalidade: orc.modalidade,
-        prioridade: orc.prioridade,
-        pedido_interno: orc.pedidoInterno,
-        observacoes_gerais: orc.observacoesGerais,
-        status: orc.status,
-        carga: orc.carga,
-        veiculo: orc.veiculo,
-        valores: orc.valores,
-        historico: orc.historico,
-        motivo_reprovacao: orc.motivoReprovacao
-      };
-      
-      let query;
-      if (isNew) query = supabase.from("orcamentos").insert([dbPayload]);
-      else query = supabase.from("orcamentos").update(dbPayload).eq("id", orc.id);
+      const dbPayload = toOrcamentoInsert(orc);
+      let error = null;
 
-      const { error } = await query;
-      if (error && error.code !== "42P01") throw error; // Ignore table missing for mockup compatibility
+      if (isNew) {
+        const result = await supabase.from("orcamentos").insert([dbPayload]).select();
+        error = result.error;
+      } else {
+        const result = await supabase.from("orcamentos").update(dbPayload).eq("id", orc.id).select();
+        error = result.error;
+      }
+
+      if (error) {
+        console.error("[saveToSupabase] Erro ao salvar:", error.message, error.details);
+        toast.error(`Erro ao salvar: ${error.message}`);
+        return false;
+      }
+
       fetchOrcamentos();
+      toast.success(isNew ? "Orçamento criado com sucesso!" : "Orçamento atualizado!");
       return true;
 
     } catch (e: any) {
-      if (e.code !== "42P01") {
-         console.error(e);
-         // Fallback local update if table not found
-         if (isNew) setOrcamentos([orc, ...orcamentos]);
-         else setOrcamentos(orcamentos.map(o => o.id === orc.id ? orc : o));
-      } else {
-         if (isNew) setOrcamentos([orc, ...orcamentos]);
-         else setOrcamentos(orcamentos.map(o => o.id === orc.id ? orc : o));
-      }
-      return true;
+      console.error("[saveToSupabase] Exceção:", e);
+      toast.error("Erro inesperado ao salvar o orçamento.");
+      return false;
     }
   };
 

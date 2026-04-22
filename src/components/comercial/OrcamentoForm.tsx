@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowLeft, Save, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, Clock, Lightbulb, Check, Copy } from "lucide-react";
+import { useState, useCallback } from "react";
+import { ArrowLeft, Save, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, Clock, Lightbulb, Check, Copy, Route } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Orcamento, EnderecoOrcamento, STATUS_CONFIG, OrcamentoStatus } from "./types";
+import { Orcamento, EnderecoOrcamento, STATUS_CONFIG, OrcamentoStatus, DistanciaRota } from "./types";
 import { gerarPdfOrcamento } from "./orcamentoPdf";
 import { generateProfessionalPDF } from "@/lib/pdfGenerator";
 import { FavoritosDropdown, SaveFavoritoButton } from "@/components/enderecos/EnderecosFavoritos";
@@ -18,6 +18,7 @@ import { SearchableSelect } from "@/components/ui/SearchableSelect";
 import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto";
 import { toast } from "sonner";
 import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
+import { calcularDistancia, type DistanceResult } from "@/services/maps";
 
 const gerarNumeroOrcamento = () => {
   const now = new Date();
@@ -98,6 +99,8 @@ const Field = ({ label, children, className = "" }: { label: React.ReactNode; ch
 const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
   const [data, setData] = useState<Orcamento>(orcamento ? JSON.parse(JSON.stringify(orcamento)) : emptyOrcamento());
   const [sugestaoVeiculo, setSugestaoVeiculo] = useState<SugestaoVeiculo | null>(null);
+  const [distanciaRota, setDistanciaRota] = useState<DistanceResult | null>(null);
+  const [calculandoDistancia, setCalculandoDistancia] = useState(false);
   const readOnly = modo === "ver";
 
   const update = (path: string, value: any) => {
@@ -128,7 +131,7 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
     }
   };
 
-  const recalcular = () => {
+const recalcular = () => {
     setData((prev) => {
       const v = { ...prev.valores };
       if (prev.carga && prev.carga.valorDeclarado > 0) { if (prev.cliente === 'Amazon Logística' || prev.cliente === 'Industrias ABC') { v.adValorem = 0; v.gris = 0; } else { v.adValorem = prev.carga.valorDeclarado * 0.003; v.gris = prev.carga.valorDeclarado * 0.0015; } }
@@ -137,6 +140,49 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
       v.margemEstimada = v.valorFinal > 0 ? Math.round((v.lucroEstimado / v.valorFinal) * 1000) / 10 : 0;
       return { ...prev, valores: v };
     });
+  };
+
+  const calcularDistanciaRota = useCallback(async () => {
+    const cols = data.enderecos.filter(e => e.tipo === "coleta");
+    const ents = data.enderecos.filter(e => e.tipo === "entrega");
+    if (cols.length === 0 || ents.length === 0) return;
+    const origem = cols[0].endereco;
+    const destino = ents[ents.length - 1].endereco;
+    if (!origem || !destino) return;
+    setCalculandoDistancia(true);
+    try {
+      const result = await calcularDistancia(origem, destino);
+      if (result) {
+        setDistanciaRota(result);
+        setData((prev) => ({
+          ...prev,
+          distancia_rota: {
+            distancia_km: result.distanciaKm,
+            duracao_min: result.duracaoMin,
+            distancia_texto: result.distanciaTexto,
+            duracao_texto: result.duracaoTexto,
+            maps_provider: result.provider,
+          },
+        }));
+      }
+    } catch (err) {
+      console.error("[OrcamentoForm] Erro ao calcular distancia:", err);
+      setDistanciaRota(null);
+    } finally {
+      setCalculandoDistancia(false);
+    }
+}, [data.enderecos]);
+
+  // ============================================================
+  // Regra de sugestão de frete por km (provisória - parametrizar futuramente)
+  // ============================================================
+  const FRETE_BASE_SUGESTAO = 100; // valor base mínimo
+  const FRETE_POR_KM = 2.5; // valor por km rodado
+
+  const sugerirFretePorDistancia = (distanciaKm: number): number | null => {
+    if (!distanciaKm || distanciaKm <= 0) return null;
+    const sugestao = FRETE_BASE_SUGESTAO + (distanciaKm * FRETE_POR_KM);
+    return Math.round(sugestao * 100) / 100;
   };
 
   const addEndereco = () => {
@@ -148,6 +194,21 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
   };
 
   const handleSalvar = () => {
+    if (data.distancia_rota && data.distancia_rota.distancia_km > 0) {
+      const sugestaoFrete = sugerirFretePorDistancia(data.distancia_rota.distancia_km);
+      if (sugestaoFrete !== null) {
+        setData((prev) => ({
+          ...prev,
+          distancia_rota: prev.distancia_rota,
+          frete_sugerido: {
+            valor_base: FRETE_BASE_SUGESTAO,
+            valor_por_km: FRETE_POR_KM,
+            sugestao: sugestaoFrete,
+            distancia_km: data.distancia_rota.distancia_km,
+          },
+        }));
+      }
+    }
     recalcular();
     onSalvar(data);
   };
@@ -351,8 +412,30 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
                 </CardContent>
               </Card>
             ))}
+            {distanciaRota && (
+              <Card className="mt-4 bg-blue-50 border-blue-200">
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Route className="w-5 h-5 text-blue-600" />
+                      <div>
+                        <p className="text-sm font-medium text-blue-800">Distância Coleta → Última Entrega</p>
+                        <p className="text-xs text-blue-600"> {distanciaRota.distanciaTexto} · {distanciaRota.duracaoTexto}</p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             {!readOnly && (
-              <Button variant="outline" size="sm" onClick={addEndereco}><Plus className="w-4 h-4 mr-1" /> Adicionar Ponto</Button>
+              <div className="flex gap-2 mt-4">
+                <Button variant="outline" size="sm" onClick={addEndereco}><Plus className="w-4 h-4 mr-1" /> Adicionar Ponto</Button>
+                {distanciaRota && (
+                  <Button variant="ghost" size="sm" onClick={calcularDistanciaRota} disabled={calculandoDistancia}>
+                    {calculandoDistancia ? "Calculando..." : "Atualizar Distância"}
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </TabsContent>
@@ -480,6 +563,15 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
                   <div className="flex justify-between"><span className="text-muted-foreground">Custo Estimado</span><span>{fmt(data.valores.custoEstimado)}</span></div>
                   <div className="flex justify-between font-semibold text-green-600"><span>Lucro Estimado</span><span>{fmt(data.valores.lucroEstimado)}</span></div>
                   <div className="flex justify-between font-semibold"><span className="text-muted-foreground">Margem</span><span>{data.valores.margemEstimada}%</span></div>
+                  {data.distancia_rota && data.distancia_rota.distancia_km > 0 && (
+                    <div className="mt-2 pt-2 border-t border-border">
+                      <div className="text-xs text-muted-foreground mb-1">Sugestão por Distância ({data.distancia_rota.distancia_texto})</div>
+                      <div className="flex justify-between font-medium">
+                        <span className="text-blue-600">Valor Sugerido</span>
+                        <span className="text-blue-600">{fmt(sugerirFretePorDistancia(data.distancia_rota.distancia_km))}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

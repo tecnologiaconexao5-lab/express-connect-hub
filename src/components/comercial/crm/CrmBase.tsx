@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   LayoutDashboard, Users, KanbanSquare, MessageSquare,
   FileText, BarChart2, Bell, Zap
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import { Lead, LEADS_MOCK } from "./crmTypes";
 import CrmDashboard from "./CrmDashboard";
 import CrmPipeline from "./CrmPipeline";
@@ -14,9 +15,75 @@ import CrmRelatorios from "./CrmRelatorios";
 // Mantém as abas antigas para retrocompatibilidade
 import CrmAtividades from "./CrmAtividades";
 
+interface LeadMarketing {
+  id: string;
+  nome: string;
+  telefone: string;
+  email: string;
+  empresa: string;
+  origem: string;
+  campanha_id: string;
+  tipo_lead: string;
+  status: string;
+  responsavel: string;
+  created_at: string;
+}
+
 export default function CrmBase() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [leads, setLeads] = useState<Lead[]>(LEADS_MOCK);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    carregarLeadsMarketing();
+  }, []);
+
+  const carregarLeadsMarketing = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("leads")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Erro ao carregar leads marketing:", error);
+        setLoading(false);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const leadsMarketing: Lead[] = data.map((item: LeadMarketing) => ({
+          id: item.id,
+          empresa: item.empresa || item.nome,
+          nomeContato: item.nome,
+          telefone: item.telefone || "",
+          whatsapp: item.telefone || "",
+          email: item.email || "",
+          segmento: item.tipo_lead || "Outro",
+          regiao: "",
+          origem: (item.origem as any) || "outro",
+          responsavel: item.responsavel || "Não atribuído",
+          tipoServico: item.tipo_lead || "Outro",
+          estagio: "lead_novo",
+          urgencia: "media" as const,
+          temperatura: "frio" as const,
+          valorEstimadoMensal: 0,
+          probabilidadeFechamento: 10,
+          timeline: [],
+          lembretes: [],
+          criadoEm: new Date(item.created_at),
+          atualizadoEm: new Date(item.created_at),
+          diasNaEtapa: 0,
+        }));
+
+        setLeads((prev) => [...prev, ...leadsMarketing]);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar leads marketing:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAbrirLead = (lead: Lead) => {
     setActiveTab("pipeline");

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowLeft, Star, FileSignature, Upload, Plus, Trash2, Camera, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ import ContratoPrestadorModal from "./ContratoPrestadorModal";
 import { toPrestadorInsert, toPrestadorUpdate } from "@/lib/dbMappers";
 import { buscarCEP } from "@/services/cepService";
 
-const BUCKET_PRESTADORES = "prestadores";
+const BUCKET_PRESTADORES = "documentos_prestadores";
 
 interface Props {
   prestador?: Prestador;
@@ -88,6 +88,30 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
   const [isUploading, setIsUploading] = useState(false);
   const [docUploadProgress, setDocUploadProgress] = useState<Record<string, boolean>>({});
   const [fotoPreview, setFotoPreview] = useState<string | null>(initial?.foto || null);
+
+  // Carregar documentos do banco ao abrir prestador existente
+  useEffect(() => {
+    const carregarDocumentos = async () => {
+      if (!p.id) return;
+      const { data, error } = await supabase
+        .from("documentos_prestadores")
+        .select("id, tipo, arquivo, created_at")
+        .eq("prestador_id", p.id)
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.error("[Documentos] Erro ao carregar:", error);
+      } else if (data) {
+        console.log("[Documentos] Carregados do banco:", data.length);
+        const docsFromDb = data.map((d: any) => ({
+          tipo: d.tipo,
+          arquivo: d.arquivo,
+          status: "valido" as const
+        }));
+        setP(prev => ({ ...prev, documentos: docsFromDb }));
+      }
+    };
+    carregarDocumentos();
+  }, [p.id]);
 
   // Helper to handle input changes
   const handleChange = (field: keyof Prestador, value: any) => {
@@ -188,25 +212,35 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         .upload(fileName, file, { upsert: true });
 
       if (uploadError) {
-        console.error("Upload error:", uploadError);
+        console.error("[Documentos] Upload error:", uploadError);
         toast.error(`Erro ao fazer upload do ${tipoDocumento}`);
         return;
       }
+
+      console.log("[Documentos] Upload OK:", uploadData);
 
       const { data: urlData } = supabase.storage
         .from(BUCKET_PRESTADORES)
         .getPublicUrl(uploadData.path);
 
       const docUrl = urlData.publicUrl;
-      const { error: dbError } = await supabase.from("documentos_prestadores").insert({
+      console.log("[Documentos] URL pública:", docUrl);
+
+      const docPayload = {
         prestador_id: prestadorId,
         tipo: tipoDocumento,
         arquivo: docUrl,
         created_at: new Date().toISOString()
-      });
+      };
+      console.log("[Documentos] Insert payload:", docPayload);
+
+      const { data: dbData, error: dbError } = await supabase.from("documentos_prestadores").insert([docPayload]).select();
 
       if (dbError) {
-        console.error("DB error:", dbError);
+        console.error("[Documentos] DB error:", dbError);
+        toast.error(`Erro ao salvar documento: ${dbError.message}`);
+      } else {
+        console.log("[Documentos] Insert OK:", dbData);
       }
 
       const currentDocs = p.documentos || [];

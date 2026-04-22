@@ -72,6 +72,27 @@ export interface OSHistorico {
   usuario: string;
 }
 
+export interface OSCarga {
+  tipo?: string;
+  descricao?: string;
+  volumes?: number;
+  peso?: number;
+  cubagem?: number;
+  pallets?: number;
+  valorDeclarado?: number;
+  qtdNotas?: number;
+  refrigerada?: boolean;
+  ajudante?: boolean;
+  fragil?: boolean;
+  empilhavel?: boolean;
+  risco?: boolean;
+  perigosa?: boolean;
+  controlada?: boolean;
+  conferencia?: boolean;
+  equipamento?: string;
+  condicao?: string;
+}
+
 export interface OrdemServico {
   id?: string;
   numero: string;
@@ -80,7 +101,7 @@ export interface OrdemServico {
   unidade: string;
   centroCusto: string;
   orcamentoOrigem: string;
-  prestador: string; // nome ou id
+  prestador: string;
   veiculoAlocado: string;
   tipoOperacao: string;
   modalidade: string;
@@ -95,24 +116,8 @@ export interface OrdemServico {
   cteObrigatorio: boolean;
   xmlObrigatorio: boolean;
   operacaoDedicada: boolean;
-  
-  // Carga
-  cargaTipo: string;
-  cargaDescricao: string;
-  volumes: number;
-  peso: number;
-  cubagem: number;
-  pallets: number;
-  valorDeclarado: number;
-  qtdNotas: number;
-  cargaRefrigerada: boolean;
-  cargaAjudante: boolean;
-  cargaFragil: boolean;
-  cargaEmpilhavel: boolean;
-  cargaRisco: boolean;
-  conferenciaObrigatoria: boolean;
-  equipamentoObrigatorio: string;
-  condicaoTransporte: string;
+
+  carga: OSCarga;
 
   // Veiculo
   veiculoTipo: string;
