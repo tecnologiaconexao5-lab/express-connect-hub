@@ -33,7 +33,7 @@ import { Cliente } from "@/components/clientes/types";
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 interface Parcela {
-  id: number;
+  id: string | number;
   faturaId: number;
   numero: number;
   totalParcelas: number;
@@ -53,7 +53,7 @@ interface Parcela {
 }
 
 interface LancamentoReceber {
-  id: number;
+  id: string | number;
   // Identificação
   documento: string;
   serie: string;
@@ -134,50 +134,6 @@ const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-
-const MOCK_CLIENTES: Pick<Cliente, "id" | "razao_social" | "nome_fantasia" | "cnpj">[] = [
-  { id: "c1", razao_social: "Magazine Luiza S.A.", nome_fantasia: "Magalu", cnpj: "47.960.950/0001-21" },
-  { id: "c2", razao_social: "Amazon Serviços de Varejo do Brasil LTDA", nome_fantasia: "Amazon Brasil", cnpj: "15.436.940/0001-03" },
-  { id: "c3", razao_social: "Mercado Livre BR LTDA", nome_fantasia: "Mercado Livre", cnpj: "03.007.341/0001-61" },
-  { id: "c4", razao_social: "Shopee Brasil Comércio e Serviços LTDA", nome_fantasia: "Shopee", cnpj: "32.614.545/0001-05" },
-  { id: "c5", razao_social: "B2W - Americanas LTDA", nome_fantasia: "Americanas", cnpj: "07.083.419/0001-80" },
-  { id: "c6", razao_social: "Privalia Comércio de Roupas LTDA", nome_fantasia: "Privalia", cnpj: "12.209.964/0001-01" },
-];
-
-const MOCK_RECEBER: LancamentoReceber[] = [
-  {
-    id: 1, documento: "FAT-0045", serie: "A", numero: "0045",
-    clienteId: "c1", clienteNome: "Magazine Luiza S.A.", clienteDocumento: "47.960.950/0001-21",
-    osVinculadas: "OS-401, OS-402", contratoVinculado: "CTR-001", propostaVinculada: "PROP-058",
-    centroResultado: "SP-Operações", categoriaFinanceira: "Receita de Frete", planoContas: "4.1.1 - Receita Operacional",
-    competencia: "03/2026", emissao: "2026-03-01", vencimento: "2026-04-05", previsaoRecebimento: "2026-04-05",
-    valorBruto: 14500, desconto: 0, multa: 0, juros: 0, abatimento: 0, valorLiquido: 14500,
-    contaEntrada: "Conta Corrente Principal", status: "a_vencer", recorrencia: "nenhuma", observacoes: "",
-    parcelas: []
-  },
-  {
-    id: 2, documento: "FAT-0038", serie: "A", numero: "0038",
-    clienteId: "c2", clienteNome: "Amazon Serviços de Varejo do Brasil LTDA", clienteDocumento: "15.436.940/0001-03",
-    osVinculadas: "OS-380", contratoVinculado: "CTR-002", propostaVinculada: "",
-    centroResultado: "SP-Operações", categoriaFinanceira: "Receita de Frete", planoContas: "4.1.1 - Receita Operacional",
-    competencia: "02/2026", emissao: "2026-02-15", vencimento: "2026-03-15", previsaoRecebimento: "2026-03-15",
-    valorBruto: 8200.50, desconto: 0, multa: 82, juros: 40, abatimento: 0, valorLiquido: 8322.50,
-    contaEntrada: "Conta Corrente Principal", status: "vencida", recorrencia: "nenhuma", observacoes: "Cliente informou pagamento para 20/04",
-    parcelas: []
-  },
-  {
-    id: 3, documento: "FAT-0035", serie: "A", numero: "0035",
-    clienteId: "c3", clienteNome: "Mercado Livre BR LTDA", clienteDocumento: "03.007.341/0001-61",
-    osVinculadas: "OS-350, OS-355", contratoVinculado: "CTR-003", propostaVinculada: "",
-    centroResultado: "RJ-Operações", categoriaFinanceira: "Receita de Cross-Docking", planoContas: "4.1.2 - Serviços Especiais",
-    competencia: "01/2026", emissao: "2026-01-10", vencimento: "2026-02-10", previsaoRecebimento: "2026-02-10",
-    valorBruto: 5400, desconto: 200, multa: 0, juros: 0, abatimento: 0, valorLiquido: 5200,
-    contaEntrada: "Conta Corrente Principal", status: "paga", recorrencia: "nenhuma", observacoes: "",
-    parcelas: []
-  },
-];
-
 // ─── Formulário em branco ─────────────────────────────────────────────────────
 
 const FORM_BLANK: Omit<LancamentoReceber, "id" | "parcelas"> = {
@@ -203,14 +159,15 @@ interface ClienteAutocompleteProps {
   error?: string;
 }
 
+interface ClienteOption { id: string; razao_social: string; nome_fantasia?: string; cnpj?: string; cpf?: string; }
+
 function ClienteAutocomplete({ value, onSelect, error }: ClienteAutocompleteProps) {
   const [input, setInput] = useState(value);
   const [open, setOpen] = useState(false);
-  const [options, setOptions] = useState<typeof MOCK_CLIENTES>([]);
+  const [options, setOptions] = useState<ClienteOption[]>([]);
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Sync external value
   useEffect(() => { setInput(value); }, [value]);
 
   const buscar = useCallback(async (q: string) => {
@@ -219,26 +176,18 @@ function ClienteAutocomplete({ value, onSelect, error }: ClienteAutocompleteProp
     try {
       const { data } = await supabase
         .from("clientes")
-        .select("id, razao_social, nome_fantasia, cnpj")
-        .or(`razao_social.ilike.%${q}%,cnpj.ilike.%${q}%`)
+        .select("id, razao_social, nome_fantasia, cnpj, cpf")
+        .or(`razao_social.ilike.%${q}%,cnpj.ilike.%${q}%,cpf.ilike.%${q}%`)
         .order("razao_social")
         .limit(8);
       if (data && data.length > 0) {
-        setOptions(data as typeof MOCK_CLIENTES);
+        setOptions(data as ClienteOption[]);
       } else {
-        // Fallback local
-        setOptions(MOCK_CLIENTES.filter(c =>
-          c.razao_social.toLowerCase().includes(q.toLowerCase()) ||
-          (c.nome_fantasia ?? "").toLowerCase().includes(q.toLowerCase()) ||
-          c.cnpj.includes(q)
-        ));
+        setOptions([]);
       }
-    } catch {
-      setOptions(MOCK_CLIENTES.filter(c =>
-        c.razao_social.toLowerCase().includes(q.toLowerCase()) ||
-        (c.nome_fantasia ?? "").toLowerCase().includes(q.toLowerCase()) ||
-        c.cnpj.includes(q)
-      ));
+    } catch (error) {
+      console.error("Erro ao buscar clientes:", error);
+      setOptions([]);
     } finally {
       setLoading(false);
     }
@@ -300,7 +249,7 @@ function ClienteAutocomplete({ value, onSelect, error }: ClienteAutocompleteProp
 
 interface ModalBaixaProps {
   lancamento: LancamentoReceber;
-  onConfirm: (id: number, tipo: "total" | "parcial", valor: number, conta: string, obs: string, data: string) => void;
+  onConfirm: (id: string | number, tipo: "total" | "parcial", valor: number, conta: string, obs: string, data: string) => void;
   onClose: () => void;
 }
 
@@ -316,9 +265,11 @@ function ModalBaixa({ lancamento, onConfirm, onClose }: ModalBaixaProps) {
     if (!valorBaixar || valorBaixar <= 0) { toast.error("Informe um valor válido."); return; }
     if (valorBaixar > lancamento.valorLiquido) { toast.error("Valor não pode ser maior que o saldo em aberto."); return; }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 600));
-    onConfirm(lancamento.id, tipoBaixa, valorBaixar, conta, obs, dataBaixa);
-    setLoading(false);
+    try {
+      await onConfirm(lancamento.id, tipoBaixa, valorBaixar, conta, obs, dataBaixa);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -419,7 +370,7 @@ function ModalBaixa({ lancamento, onConfirm, onClose }: ModalBaixaProps) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ContasReceber() {
-  const [lancamentos, setLancamentos] = useState<LancamentoReceber[]>(MOCK_RECEBER);
+  const [lancamentos, setLancamentos] = useState<LancamentoReceber[]>([]);
   const [showNovo, setShowNovo] = useState(false);
   const [showFiltros, setShowFiltros] = useState(false);
   const [editando, setEditando] = useState<LancamentoReceber | null>(null);
@@ -481,74 +432,208 @@ export default function ContasReceber() {
     return `FAT-${n}`;
   };
 
-  // ── Salvar ──
+  // ── Leitura inicial do Supabase ──
+  useEffect(() => {
+    fetchLancamentos();
+  }, []);
+
+  const fetchLancamentos = async () => {
+    try {
+      setIsSubmitting(true);
+      const { data, error } = await supabase
+        .from("financeiro_receber")
+        .select("*")
+        .order("data_vencimento", { ascending: true });
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setLancamentos(data.map((r: any) => ({
+          id: r.id,
+          documento: r.fatura || r.documento || "",
+          serie: r.serie || "A",
+          numero: r.numero || "",
+          clienteId: r.cliente_id || "",
+          clienteNome: r.cliente || "",
+          clienteDocumento: r.cliente_documento || "",
+          osVinculadas: r.os_vinculadas || "",
+          contratoVinculado: r.contrato_vinculado || "",
+          propostaVinculada: r.proposta_vinculada || "",
+          centroResultado: r.centro_resultado || "",
+          categoriaFinanceira: r.categoria || "",
+          planoContas: r.plano_conta || "",
+          competencia: r.competencia || "",
+          emissao: r.data_emissao || "",
+          vencimento: r.data_vencimento || r.vencimento || "",
+          previsaoRecebimento: r.data_previsao_recebimento || "",
+          valorBruto: r.valor_bruto || r.valor || 0,
+          desconto: r.desconto || 0,
+          multa: r.multa || 0,
+          juros: r.juros || 0,
+          abatimento: r.abatimento || 0,
+          valorLiquido: r.valor_liquido || r.valor || 0,
+          contaEntrada: r.conta_entrada || "",
+          status: mapStatus(r.status),
+          recorrencia: r.recorrencia || "nenhuma",
+          observacoes: r.observacoes || "",
+          parcelas: []
+        })));
+      } else {
+        setLancamentos([]);
+      }
+    } catch (error) {
+      console.error("Erro ao buscar recebíveis do Supabase:", error);
+      setLancamentos([]);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const mapStatus = (s: string): LancamentoReceber["status"] => {
+    const map: Record<string, LancamentoReceber["status"]> = {
+      "a vencer": "a_vencer", "a_vencer": "a_vencer", "pendente": "a_vencer",
+      "vencida": "vencida", "vencido": "vencida",
+      "paga": "paga", "pago": "paga",
+      "parcial": "parcial",
+      "negociada": "negociada", "renegociada": "negociada",
+      "cancelada": "cancelada", "cancelado": "cancelada",
+    };
+    return map[s?.toLowerCase()] ?? "a_vencer";
+  };
+
+// ── Salvar com persistência Supabase ──
   const handleSalvar = async () => {
     if (!validar()) { toast.error("Corrija os campos obrigatórios."); return; }
     setIsSubmitting(true);
     try {
-      await new Promise(r => setTimeout(r, 700));
-
       const doc = form.documento || gerarDocumento();
       const num = form.numero || doc.split("-")[1] || `${lancamentos.length + 1}`;
 
-      if (editando) {
-        setLancamentos(prev => prev.map(l =>
-          l.id === editando.id ? { ...l, ...form, documento: doc, numero: num, valorLiquido, id: l.id, parcelas: l.parcelas } : l
-        ));
+      const payload = {
+        fatura: doc,
+        serie: form.serie || "A",
+        numero: num,
+        cliente_id: form.clienteId || null,
+        cliente: form.clienteNome,
+        cliente_documento: form.clienteDocumento,
+        os_vinculadas: form.osVinculadas,
+        contrato_vinculado: form.contratoVinculado,
+        proposta_vinculada: form.propostaVinculada,
+        centro_resultado: form.centroResultado,
+        categoria: form.categoriaFinanceira,
+        plano_conta: form.planoContas,
+        competencia: form.competencia,
+        data_emissao: form.emissao,
+        data_vencimento: form.vencimento,
+        data_previsao_recebimento: form.previsaoRecebimento,
+        valor_bruto: form.valorBruto,
+        desconto: form.desconto || 0,
+        multa: form.multa || 0,
+        juros: form.juros || 0,
+        abatimento: form.abatimento || 0,
+        valor_liquido: valorLiquido,
+        conta_entrada: form.contaEntrada,
+        status: form.status === "a_vencer" ? "a vencer" : form.status,
+        recorrencia: form.recorrencia,
+        observacoes: form.observacoes,
+      };
+
+      if (editando?.id) {
+        const { error } = await supabase.from("financeiro_receber").update(payload).eq("id", editando.id);
+        if (error) throw error;
         toast.success("Lançamento atualizado.");
       } else {
-        const novo: LancamentoReceber = {
-          ...form, id: gerarId(), documento: doc, numero: num, valorLiquido, parcelas: [],
-        };
-        // Gerar parcelas se solicitado
+        const { error } = await supabase.from("financeiro_receber").insert([payload]);
+        if (error) throw error;
+
         if (gerarParcelas && numParcelas > 1 && form.vencimento) {
           const valParcela = Math.round((valorLiquido / numParcelas) * 100) / 100;
           const base = new Date(form.vencimento + "T12:00:00");
-          novo.parcelas = Array.from({ length: numParcelas }, (_, i) => {
-            const dt = new Date(base);
-            dt.setMonth(dt.getMonth() + i);
+          const parcelasPayload = Array.from({ length: numParcelas }, (_, i) => {
+            const dt = new Date(base); dt.setMonth(dt.getMonth() + i);
             return {
-              id: gerarId() + i, faturaId: novo.id,
-              numero: i + 1, totalParcelas: numParcelas,
-              vencimento: dt.toISOString().split("T")[0],
-              previsaoRecebimento: dt.toISOString().split("T")[0],
-              valorBruto: valParcela, desconto: 0, multa: 0, juros: 0, abatimento: 0,
-              valorLiquido: valParcela, status: "a_vencer" as const,
+              ...payload,
+              id: undefined,
+              fatura: `${doc} (${i + 1}/${numParcelas})`,
+              data_vencimento: dt.toISOString().split("T")[0],
+              data_previsao_recebimento: dt.toISOString().split("T")[0],
+              valor_bruto: valParcela,
+              desconto: 0, multa: 0, juros: 0, abatimento: 0,
+              valor_liquido: valParcela,
+              serie: form.serie || "A",
+              numero: `${i + 1}/${numParcelas}`,
+              quantidade_parcelas: numParcelas,
+              parcela_atual: i + 1,
             };
           });
+          await supabase.from("financeiro_receber").insert(parcelasPayload);
+          toast.success(`${numParcelas} parcelas criadas!`);
+        } else {
+          toast.success(`Lançamento ${doc} criado!`);
         }
-        setLancamentos(prev => [novo, ...prev]);
-        toast.success(`Lançamento ${doc} criado com sucesso!`);
       }
+      await fetchLancamentos();
       setShowNovo(false);
       setEditando(null);
       setForm({ ...FORM_BLANK });
       setErros({});
       setGerarParcelas(false);
       setNumParcelas(1);
-    } catch {
+    } catch (error) {
+      console.error("Erro ao salvar no Supabase:", error);
       toast.error("Erro ao salvar. Tente novamente.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ── Baixa ──
-  const handleBaixa = (id: number, tipo: "total" | "parcial", valor: number, conta: string, obs: string, data: string) => {
-    setLancamentos(prev => prev.map(l => {
-      if (l.id !== id) return l;
-      const novoStatus = tipo === "total" ? "paga" : "parcial";
-      return {
-        ...l,
+  // ── Baixa com persistência Supabase ──
+  const handleBaixa = async (id: any, tipo: "total" | "parcial", valor: number, conta: string, obs: string, data: string) => {
+    try {
+      const lanc = lancamentos.find(l => l.id === id);
+      if (!lanc) return;
+      const novoStatus = tipo === "total" ? "pago" : "parcial";
+      const novoValor = tipo === "parcial" ? (lanc.valorLiquido - valor) : 0;
+
+      const { error } = await supabase.from("financeiro_receber").update({
         status: novoStatus,
-        dataBaixa: data,
-        valorBaixado: valor,
-        contaEntrada: conta,
-        observacoesBaixa: obs,
-      } as LancamentoReceber;
-    }));
-    toast.success(tipo === "total" ? "Baixa total registrada!" : `Baixa parcial de ${fmtBRL(valor)} registrada!`);
+        valor_liquido: novoValor,
+        data_previsao_recebimento: data,
+        observacoes: `${lanc.observacoes || ""}\nBaixa ${tipo}: ${fmtBRL(valor)} em ${data} | Conta: ${conta} | Obs: ${obs}`,
+      }).eq("id", id);
+      if (error) throw error;
+      toast.success(tipo === "total" ? "Baixa total registrada!" : `Baixa parcial de ${fmtBRL(valor)} registrada!`);
+      await fetchLancamentos();
+    } catch (error) {
+      console.error("Erro na baixa:", error);
+      toast.error("Erro ao registrar baixa.");
+    }
     setBaixando(null);
+  };
+
+  // ── Renegociar com persistência Supabase ──
+  const handleRenegociar = async (id: any) => {
+    try {
+      const { error } = await supabase.from("financeiro_receber").update({ status: "renegociada" }).eq("id", id);
+      if (error) throw error;
+      toast.success("Lançamento renegociado.");
+      await fetchLancamentos();
+    } catch (error) {
+      console.error("Erro na renegociação:", error);
+      toast.error("Erro ao renegociar.");
+    }
+  };
+
+  // ── Cancelar com persistência Supabase ──
+  const handleCancelar = async (id: any) => {
+    if (!confirm("Tem certeza que deseja cancelar?")) return;
+    try {
+      const { error } = await supabase.from("financeiro_receber").update({ status: "cancelada" }).eq("id", id);
+      if (error) throw error;
+      toast.success("Lançamento cancelado.");
+      await fetchLancamentos();
+    } catch (error) {
+      console.error("Erro ao cancelar:", error);
+      toast.error("Erro ao cancelar.");
+    }
   };
 
   // ── Renegociar ──
