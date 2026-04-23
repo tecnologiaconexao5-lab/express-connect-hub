@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Download, UploadCloud, PieChart, CheckCircle2, MoreHorizontal, FileText, Target, UserMinus, ShieldCheck, CreditCard, ArrowRightLeft, Plus, Search, LayoutDashboard, Calculator, BookOpen, Landmark, Users, Package, Clock, Receipt, TrendingUpIcon, FileCheck, FileX, Check, X, Eye, Edit, Trash2, AlertCircle, Sparkles } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -27,7 +27,7 @@ import MargemOperacional from "@/components/financeiro/MargemOperacional";
 import DateRangePicker from "@/components/ui/DateRangePicker";
 import ContasBancarias from "@/components/financeiro/ContasBancarias";
 import ReciboRapido from "@/components/financeiro/ReciboRapido";
-import ContasReceber from "@/components/financeiro/ContasReceber";
+import ContasReceberEnterprise from "@/components/financeiro/ContasReceberEnterprise";
 import ContasPagar from "@/components/financeiro/ContasPagar";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -81,219 +81,11 @@ const mockRentabilidadeCliente = [
 export default function Financeiro() {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = searchParams.get("tab") || "receber";
-  const [subTabPagar, setSubTabPagar] = useState("prestadores");
   const [subTabRentabilidade, setSubTabRentabilidade] = useState("por-os");
-
-  const [receber, setReceber] = useState<any[]>([]);
-  const [pagarPrestadores, setPagarPrestadores] = useState<any[]>([]);
-  const [pagarOutros, setPagarOutros] = useState<any[]>([]);
-  const [lancamentos, setLancamentos] = useState<any[]>([]);
-  const [recibos, setRecibos] = useState(mockRecibos);
-  const [pagarAguardandoAprovacao, setPagarAguardandoAprovacao] = useState([
-    { id: 1, os: "OS-4821", prestador: "João Silva", valor: 7650.00, dataExecucao: "2026-03-25", comprovante: "app", status: "pendente" },
-    { id: 2, os: "OS-4819", prestador: "Transporte Rápido LTDA", valor: 10800.00, dataExecucao: "2026-03-24", comprovante: "app", status: "pendente" },
-    { id: 3, os: "OS-4815", prestador: "Maria Freitas", valor: 2250.00, dataExecucao: "2026-03-23", comprovante: "app", status: "aprovado" },
-  ]);
-  
-  const [buscaReceber, setBuscaReceber] = useState("");
-  const [buscaPagar, setBuscaPagar] = useState("");
+  const [recibos] = useState(mockRecibos);
   const [dateRange, setDateRange] = useState<{from: Date | undefined; to: Date | undefined}>({ from: undefined, to: undefined });
 
-  const [showNovaReceita, setShowNovaReceita] = useState(false);
-  const [novaReceita, setNovaReceita] = useState({
-    fatura: "",
-    cliente: "",
-    os_vinculadas: "",
-    competencia: "",
-    vencimento: "",
-    valor: 0
-  });
-
-  const [showNovaDespesa, setShowNovaDespesa] = useState(false);
-  const [novaDespesa, setNovaDespesa] = useState({
-    doc: "",
-    fornecedor: "",
-    categoria: "",
-    competencia: "",
-    vencimento: "",
-    valorOriginal: 0,
-    acrescimos: 0,
-    descuentos: 0,
-    formaPagamento: "",
-    observacoes: ""
-  });
-
-  const [isSubmittingReceita, setIsSubmittingReceita] = useState(false);
-  const [isSubmittingDespesa, setIsSubmittingDespesa] = useState(false);
-
-  const handleSalvarReceita = async () => {
-    try {
-      setIsSubmittingReceita(true);
-      if (!novaReceita.cliente || !novaReceita.cliente.trim()) {
-        toast.error("O nome do cliente é obrigatório.");
-        return;
-      }
-      if (!novaReceita.valor || novaReceita.valor <= 0) {
-        toast.error("O valor da receita deve ser maior que zero.");
-        return;
-      }
-
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      const nova: any = {
-        id: Date.now(),
-        fatura: novaReceita.fatura || `FAT-${Date.now()}`,
-        cliente: novaReceita.cliente,
-        os_vinculadas: novaReceita.os_vinculadas,
-        competencia: novaReceita.competencia || new Date().toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" }),
-        vencimento: novaReceita.vencimento || new Date(Date.now() + 30 * 86400000).toISOString(),
-        valor: novaReceita.valor,
-        status: "a vencer"
-      };
-      
-      setReceber(prev => [...prev, nova]);
-      setShowNovaReceita(false);
-      setNovaReceita({ fatura: "", cliente: "", os_vinculadas: "", competencia: "", vencimento: "", valor: 0 });
-      toast.success("Receita cadastrada com sucesso!");
-    } catch (error) {
-      console.error("Erro ao salvar receita:", error);
-      toast.error("Erro ao salvar receita. Tente novamente mais tarde.");
-    } finally {
-      setIsSubmittingReceita(false);
-    }
-  };
-
-  const handleSalvarDespesa = async () => {
-    try {
-      setIsSubmittingDespesa(true);
-      if (!novaDespesa.fornecedor || !novaDespesa.fornecedor.trim()) {
-        toast.error("O nome do fornecedor é obrigatório.");
-        return;
-      }
-      if (!novaDespesa.valorOriginal || novaDespesa.valorOriginal <= 0) {
-        toast.error("O valor da despesa deve ser maior que zero.");
-        return;
-      }
-
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      const total = novaDespesa.valorOriginal + (novaDespesa.acrescimos || 0) - (novaDespesa.descuentos || 0);
-      const nova: any = {
-        id: Date.now(),
-        doc: novaDespesa.doc || `DOC-${Date.now()}`,
-        fornecedor: novaDespesa.fornecedor,
-        competencia: novaDespesa.competencia || new Date().toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" }),
-        vencimento: novaDespesa.vencimento || new Date(Date.now() + 30 * 86400000).toISOString(),
-        valor: total > 0 ? total : 0,
-        status: "a vencer",
-        tipo: "outro",
-        categoria: novaDespesa.categoria || "Outros"
-      };
-      
-      setPagarOutros(prev => [...prev, nova]);
-      setShowNovaDespesa(false);
-      setNovaDespesa({ doc: "", fornecedor: "", categoria: "", competencia: "", vencimento: "", valorOriginal: 0, acrescimos: 0, descuentos: 0, formaPagamento: "", observacoes: "" });
-      toast.success("Despesa cadastrada com sucesso!");
-    } catch (error) {
-      console.error("Erro ao salvar despesa:", error);
-      toast.error("Erro ao salvar despesa. Tente novamente mais tarde.");
-    } finally {
-      setIsSubmittingDespesa(false);
-    }
-  };
-
-  const valorTotalDespesa = (novaDespesa.valorOriginal || 0) + (novaDespesa.acrescimos || 0) - (novaDespesa.descuentos || 0);
-
   const handleTabChange = (val: string) => setSearchParams({ tab: val });
-
-  useEffect(() => {
-    fetchReceber();
-    fetchPagar();
-    fetchLancamentos();
-  }, []);
-
-  const fetchReceber = async () => {
-    try {
-      const { data, error } = await supabase.from("financeiro_receber").select("*").order("data_vencimento", { ascending: true });
-      if (error) throw error;
-      if (data && data.length > 0) {
-        setReceber(data);
-      } else {
-        setReceber([
-           { id: 1, fatura: "FAT-0045", cliente: "Tech Solutions", os_vinculadas: "OS-401, OS-402", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 5)).toISOString(), valor: 14500.00, status: "a vencer" },
-           { id: 2, fatura: "FAT-0038", cliente: "Indústria Global", os_vinculadas: "OS-380", competencia: "09/2026", vencimento: new Date(new Date().setDate(new Date().getDate() - 2)).toISOString(), valor: 8200.50, status: "vencida" },
-           { id: 3, fatura: "FAT-0035", cliente: "Comércio Varejo", os_vinculadas: "OS-350, OS-355", competencia: "09/2026", vencimento: new Date(new Date().setDate(new Date().getDate() - 10)).toISOString(), valor: 5400.00, status: "paga" }
-        ]);
-      }
-    } catch (error) {
-      console.error("Erro ao buscar contas a receber:", error);
-      // Fallback local
-      setReceber([
-         { id: 1, fatura: "FAT-0045", cliente: "Tech Solutions", os_vinculadas: "OS-401, OS-402", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 5)).toISOString(), valor: 14500.00, status: "a vencer" }
-      ]);
-    }
-  };
-
-  const fetchPagar = async () => {
-    try {
-      const { data, error } = await supabase.from("financeiro_pagar").select("*").order("data_vencimento", { ascending: true });
-      if (error) throw error;
-      if (data && data.length > 0) {
-        const prestadores = data.filter((d: any) => d.tipo === "prestador");
-        const outros = data.filter((d: any) => d.tipo === "outro");
-        setPagarPrestadores(prestadores);
-        setPagarOutros(outros);
-      } else {
-        throw new Error("No data");
-      }
-    } catch (error) {
-      console.error("Erro ao buscar contas a pagar:", error);
-      // Fallback local
-      setPagarPrestadores([
-        { id: 1, doc: "NF-8599", fornecedor: "João Transporte (Prestador)", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 3)).toISOString(), valor: 1200.00, status: "a vencer", tipo: "prestador" },
-        { id: 2, doc: "NF-8600", fornecedor: "Maria Freitas - ME", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 5)).toISOString(), valor: 8500.00, status: "a vencer", tipo: "prestador", os: "OS-4821" },
-      ]);
-      setPagarOutros([
-        { id: 3, doc: "NF-902", fornecedor: "Companhia de Energia", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 10)).toISOString(), valor: 4500.00, status: "a vencer", tipo: "outro", categoria: "Energia elétrica" },
-        { id: 4, doc: "BOLETO-001", fornecedor: "Locação de Galpão", competencia: "10/2026", vencimento: new Date(new Date().setDate(new Date().getDate() + 15)).toISOString(), valor: 15000.00, status: "a vencer", tipo: "outro", categoria: "Aluguel", recorrente: true },
-      ]);
-    }
-  };
-
-  const fetchLancamentos = async () => {
-    try {
-      const { data } = await supabase.from("lancamentos_financeiros").select("*").order("data", { ascending: false });
-      if (data && data.length > 0) setLancamentos(data);
-      else setLancamentos([
-         { id: 1, data: new Date().toISOString(), descricao: "Recebimento FAT-0035", categoria: "Receita Faturamento", tipo: "entrada", valor: 5400.00 },
-         { id: 2, data: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString(), descricao: "Pagamento Prestador Carlos", categoria: "Custo Operacional", tipo: "saida", valor: 850.00 },
-      ]);
-    } catch { }
-  };
-
-  const filtrarDoc = (lista: any[], busca: string) => lista.filter(i => JSON.stringify(i).toLowerCase().includes(busca.toLowerCase()));
-
-  // Erros inline para formulário de receita
-  const [errosReceita, setErrosReceita] = useState<Record<string, string>>({});
-  const [errosDespesa, setErrosDespesa] = useState<Record<string, string>>({});
-
-  const validarCampoReceita = (campo: string, valor: any) => {
-    const erros = { ...errosReceita };
-    if (campo === "cliente") erros.cliente = valor.trim() ? "" : "Cliente é obrigatório";
-    if (campo === "valor") erros.valor = (Number(valor) > 0) ? "" : "Valor deve ser maior que zero";
-    if (campo === "vencimento") erros.vencimento = valor ? "" : "Informe a data de vencimento";
-    setErrosReceita(erros);
-  };
-
-  const validarCampoDespesa = (campo: string, valor: any) => {
-    const erros = { ...errosDespesa };
-    if (campo === "fornecedor") erros.fornecedor = valor.trim() ? "" : "Fornecedor é obrigatório";
-    if (campo === "valorOriginal") erros.valorOriginal = (Number(valor) > 0) ? "" : "Valor deve ser maior que zero";
-    if (campo === "vencimento") erros.vencimento = valor ? "" : "Informe o vencimento";
-    setErrosDespesa(erros);
-  };
 
   const StatCard = ({ title, value, sub, icon: Icon, gradient, iconBg }: any) => (
     <div className="relative overflow-hidden rounded-xl border bg-card shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 p-5 flex items-center justify-between">
@@ -352,7 +144,7 @@ export default function Financeiro() {
 
         {/* --- CONTAS A RECEBER --- */}
         <TabsContent value="receber" className="pt-4">
-           <ContasReceber />
+           <ContasReceberEnterprise />
         </TabsContent>
 
         {/* --- CONTAS A PAGAR --- */}

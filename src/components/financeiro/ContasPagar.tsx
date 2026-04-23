@@ -50,7 +50,7 @@ interface ParcelaPagar {
 }
 
 interface LancamentoPagar {
-  id: number;
+  id: string | number;
   // Identificação
   favorecidoNome: string;
   favorecidoCnpjCpf: string;
@@ -107,6 +107,18 @@ const fmtData = (s: string) => {
 const hoje = () => new Date().toISOString().split("T")[0];
 const gerarId = () => Date.now() + Math.floor(Math.random() * 1000);
 
+const mapStatusPagar = (s: string): LancamentoPagar["status"] => {
+  const map: Record<string, LancamentoPagar["status"]> = {
+    "a vencer": "a_vencer", "a_vencer": "a_vencer", "pendente": "a_vencer",
+    "vencida": "vencida", "vencido": "vencida",
+    "paga": "paga", "pago": "paga",
+    "parcial": "parcial",
+    "provisao": "provisao",
+    "cancelada": "cancelada", "cancelado": "cancelada",
+  };
+  return map[s?.toLowerCase()] ?? "a_vencer";
+};
+
 const calcLiquidoPagar = (orig: number, desc: number, mult: number, jur: number, imp: number) =>
   Math.max(0, orig - (desc || 0) + (mult || 0) + (jur || 0) - (imp || 0));
 
@@ -129,49 +141,6 @@ const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-
-const MOCK_FORNECEDORES = [
-  { id: "f1", nome: "Posto Ipiranga Rota 101", documento: "01.234.567/0001-89", tipo: "Fornecedor" },
-  { id: "f2", nome: "Enel Distribuidora de Energia", documento: "08.123.456/0001-00", tipo: "Concessionária" },
-  { id: "f3", nome: "Sabesp Serviços", documento: "43.776.517/0001-80", tipo: "Concessionária" },
-  { id: "f4", nome: "João Silva Serviços de Manutenção", documento: "123.456.789-00", tipo: "Prestador" },
-  { id: "f5", nome: "Aluguel Galpão - Imobiliária Base", documento: "99.888.777/0001-22", tipo: "Fornecedor" },
-];
-
-const MOCK_PAGAR: LancamentoPagar[] = [
-  {
-    id: 1, favorecidoNome: "Posto Ipiranga Rota 101", favorecidoCnpjCpf: "01.234.567/0001-89",
-    documentoNF: "NF-894", tipoDocumento: "NF", categoria: "Combustível frota própria",
-    planoContas: "3.1.2 - Custos Operacionais", centroResultado: "Frota", unidadeFilial: "Matriz (SP)",
-    despesaFixaBase: "Variável", competencia: "04/2026", emissao: "2026-04-01",
-    vencimento: "2026-04-15", dataPrevistaPgto: "2026-04-15", valorOriginal: 12450.00,
-    desconto: 0, juros: 0, multa: 0, impostosRetidos: 0, valorLiquido: 12450.00,
-    formaPagamento: "Boleto", codigoBarras: "34191.09008 61000.040003 34567.890001 8 00001245000", chavePix: "",
-    contaPagadora: "Conta Corrente Principal", status: "a_vencer", recorrencia: "nenhuma", observacoes: "", parcelas: []
-  },
-  {
-    id: 2, favorecidoNome: "Enel Distribuidora de Energia", favorecidoCnpjCpf: "08.123.456/0001-00",
-    documentoNF: "FAT-0426", tipoDocumento: "Fatura", categoria: "Energia elétrica",
-    planoContas: "3.2.1 - Despesas Administrativas", centroResultado: "Corporativo", unidadeFilial: "Matriz (SP)",
-    despesaFixaBase: "Fixa", competencia: "03/2026", emissao: "2026-03-20",
-    vencimento: "2026-04-05", dataPrevistaPgto: "2026-04-05", valorOriginal: 1450.80,
-    desconto: 0, juros: 14.50, multa: 29.00, impostosRetidos: 0, valorLiquido: 1494.30,
-    formaPagamento: "PIX", codigoBarras: "", chavePix: "financeiro@expressconnect.com.br",
-    contaPagadora: "Conta Corrente Principal", status: "vencida", recorrencia: "mensal", observacoes: "Aguardando liberação de caixa", parcelas: []
-  },
-  {
-    id: 3, favorecidoNome: "João Silva Serviços de Manutenção", favorecidoCnpjCpf: "123.456.789-00",
-    documentoNF: "REC-102", tipoDocumento: "Recibo", categoria: "Manutenção",
-    planoContas: "3.1.2 - Custos Operacionais", centroResultado: "Frota", unidadeFilial: "Matriz (SP)",
-    despesaFixaBase: "Variável", competencia: "04/2026", emissao: "2026-04-08",
-    vencimento: "2026-04-10", dataPrevistaPgto: "2026-04-10", valorOriginal: 850.00,
-    desconto: 0, juros: 0, multa: 0, impostosRetidos: 0, valorLiquido: 850.00, dataEfetivaPgto: "2026-04-10",
-    formaPagamento: "Transferência / TEF", codigoBarras: "", chavePix: "11988887777",
-    contaPagadora: "Caixa Interno — Pequenos Gastos", status: "paga", recorrencia: "nenhuma", observacoes: "Manutenção placa ABC-1234", parcelas: []
-  },
-];
-
 // ─── Formulário em branco ─────────────────────────────────────────────────────
 
 const FORM_BLANK: Omit<LancamentoPagar, "id" | "parcelas"> = {
@@ -191,27 +160,33 @@ const FILTROS_BLANK: FiltrosAvancados = {
 
 // ─── Autocomplete Fornecedor ───────────────────────────────────────────────────
 
+interface FornecedorOption { id: string; nome: string; documento: string; }
+
 interface FornecedorAutocompleteProps {
   value: string;
-  onSelect: (f: Pick<typeof MOCK_FORNECEDORES[0], "id" | "nome" | "documento">) => void;
+  onSelect: (f: FornecedorOption) => void;
   error?: string;
 }
 
 function FornecedorAutocomplete({ value, onSelect, error }: FornecedorAutocompleteProps) {
   const [input, setInput] = useState(value);
   const [open, setOpen] = useState(false);
-  const [options, setOptions] = useState<typeof MOCK_FORNECEDORES>([]);
+  const [options, setOptions] = useState<FornecedorOption[]>([]);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setInput(value); }, [value]);
 
   useEffect(() => {
     if (!input.trim()) { setOptions([]); return; }
-    const res = MOCK_FORNECEDORES.filter(f =>
-      f.nome.toLowerCase().includes(input.toLowerCase()) ||
-      f.documento.includes(input)
-    );
-    setOptions(res);
+    supabase.from("prestadores").select("id, nome_fantasia, razao_social, cnpj, cpf")
+      .or(`nome_fantasia.ilike.%${input}%,razao_social.ilike.%${input}%,cnpj.ilike.%${input}%,cpf.ilike.%${input}%`)
+      .limit(10)
+      .then(({ data, error }) => {
+        if (error) { console.error("Erro ao buscar prestadores:", error); setOptions([]); return; }
+        setOptions((data || []).map((p: any) => ({
+          id: p.id, nome: p.nome_fantasia || p.razao_social, documento: p.cnpj || p.cpf || ""
+        })));
+      });
   }, [input]);
 
   useEffect(() => {
@@ -263,7 +238,7 @@ function FornecedorAutocomplete({ value, onSelect, error }: FornecedorAutocomple
 
 interface ModalBaixaPagarProps {
   lancamento: LancamentoPagar;
-  onConfirm: (id: number, tipo: "total" | "parcial", valor: number, conta: string, forma: string, obs: string, data: string) => void;
+  onConfirm: (id: string | number, tipo: "total" | "parcial", valor: number, conta: string, forma: string, obs: string, data: string) => void;
   onClose: () => void;
 }
 
@@ -280,9 +255,11 @@ function ModalBaixaPagar({ lancamento, onConfirm, onClose }: ModalBaixaPagarProp
     if (!valorBaixar || valorBaixar <= 0) { toast.error("Informe um valor válido."); return; }
     if (valorBaixar > lancamento.valorLiquido) { toast.error("Valor não pode ser maior que o saldo a pagar."); return; }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 600));
-    onConfirm(lancamento.id, tipoBaixa, valorBaixar, conta, forma, obs, dataBaixa);
-    setLoading(false);
+    try {
+      await onConfirm(lancamento.id, tipoBaixa, valorBaixar, conta, forma, obs, dataBaixa);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -388,7 +365,7 @@ function ModalBaixaPagar({ lancamento, onConfirm, onClose }: ModalBaixaPagarProp
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ContasPagar() {
-  const [lancamentos, setLancamentos] = useState<LancamentoPagar[]>(MOCK_PAGAR);
+  const [lancamentos, setLancamentos] = useState<LancamentoPagar[]>([]);
   const [showNovo, setShowNovo] = useState(false);
   const [showFiltros, setShowFiltros] = useState(false);
   const [editando, setEditando] = useState<LancamentoPagar | null>(null);
@@ -401,13 +378,66 @@ export default function ContasPagar() {
   const [erros, setErros] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Parcelamento
   const [gerarParcelas, setGerarParcelas] = useState(false);
   const [numParcelas, setNumParcelas] = useState(1);
 
-  // ── Valores derivados ──
   const valorLiquido = calcLiquidoPagar(form.valorOriginal, form.desconto, form.multa, form.juros, form.impostosRetidos);
   useEffect(() => { setForm(p => ({ ...p, valorLiquido })); }, [valorLiquido]);
+
+  // ── Leitura inicial do Supabase ──
+  useEffect(() => {
+    fetchLancamentos();
+  }, []);
+
+  const fetchLancamentos = async () => {
+    try {
+      setIsSubmitting(true);
+      const { data, error } = await supabase
+        .from("financeiro_pagar")
+        .select("*")
+        .order("data_vencimento", { ascending: true });
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setLancamentos(data.map((r: any) => ({
+          id: r.id,
+          favorecidoNome: r.fornecedor || "",
+          favorecidoCnpjCpf: r.fornecedor_documento || "",
+          documentoNF: r.documento || r.fatura || "",
+          tipoDocumento: r.tipo_documento || "NF",
+          categoria: r.categoria || "",
+          planoContas: r.plano_contas || "",
+          centroResultado: r.centro_resultado || "",
+          unidadeFilial: r.unidade_filial || "Matriz (SP)",
+          despesaFixaBase: r.despesa_fixa_base || "Variável",
+          competencia: r.competencia || "",
+          emissao: r.data_emissao || "",
+          vencimento: r.data_vencimento || r.vencimento || "",
+          dataPrevistaPgto: r.data_previsao_pagamento || "",
+          valorOriginal: r.valor_bruto || r.valor || 0,
+          desconto: r.desconto || 0,
+          multa: r.multa || 0,
+          juros: r.juros || 0,
+          impostosRetidos: r.impostos_retidos || 0,
+          valorLiquido: r.valor_liquido || r.valor || 0,
+          formaPagamento: r.forma_pagamento || "",
+          codigoBarras: r.codigo_barras || "",
+          chavePix: r.chave_pix || "",
+          contaPagadora: r.conta_pagadora || "",
+          status: mapStatusPagar(r.status),
+          recorrencia: r.recorrencia || "nenhuma",
+          observacoes: r.observacoes || "",
+          parcelas: []
+        })));
+      } else {
+        setLancamentos([]);
+      }
+    } catch (error) {
+      console.error("Erro ao buscar despesas do Supabase:", error);
+      setLancamentos([]);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // ── KPIs ──
   const totalAPagar = lancamentos.filter(l => l.status === "a_vencer" || l.status === "parcial")
@@ -436,71 +466,124 @@ export default function ContasPagar() {
     return Object.keys(e).length === 0;
   };
 
-  // ── Salvar ──
+// ── Salvar com persistência Supabase ──
   const handleSalvar = async () => {
     if (!validar()) { toast.error("Preencha os campos obrigatórios corretamente."); return; }
     setIsSubmitting(true);
     try {
-      await new Promise(r => setTimeout(r, 750));
+      const payload = {
+        fornecedor: form.favorecidoNome,
+        fornecedor_documento: form.favorecidoCnpjCpf,
+        documento: form.documentoNF,
+        tipo_documento: form.tipoDocumento,
+        categoria: form.categoria,
+        plano_contas: form.planoContas,
+        centro_resultado: form.centroResultado,
+        unidade_filial: form.unidadeFilial,
+        despesa_fixa_base: form.despesaFixaBase,
+        competencia: form.competencia,
+        data_emissao: form.emissao,
+        data_vencimento: form.vencimento,
+        data_previsao_pagamento: form.dataPrevistaPgto || form.vencimento,
+        valor_bruto: form.valorOriginal,
+        desconto: form.desconto || 0,
+        multa: form.multa || 0,
+        juros: form.juros || 0,
+        impostos_retidos: form.impostosRetidos || 0,
+        valor_liquido: valorLiquido,
+        forma_pagamento: form.formaPagamento,
+        codigo_barras: form.codigoBarras,
+        chave_pix: form.chavePix,
+        conta_pagadora: form.contaPagadora,
+        status: form.status === "a_vencer" ? "a vencer" : form.status,
+        recorrencia: form.recorrencia,
+        observacoes: form.observacoes,
+      };
 
       if (editando) {
-        setLancamentos(prev => prev.map(l =>
-          l.id === editando.id ? { ...l, ...form, valorLiquido, id: l.id, parcelas: l.parcelas } : l
-        ));
+        const { error } = await supabase.from("financeiro_pagar").update(payload).eq("id", editando.id);
+        if (error) throw error;
         toast.success("Despesa atualizada com sucesso.");
       } else {
-        const novo: LancamentoPagar = { ...form, id: gerarId(), valorLiquido, parcelas: [] };
+        const { error } = await supabase.from("financeiro_pagar").insert([payload]);
+        if (error) throw error;
 
         if (gerarParcelas && numParcelas > 1 && form.vencimento) {
           const valParcela = Math.round((valorLiquido / numParcelas) * 100) / 100;
           const base = new Date(form.vencimento + "T12:00:00");
-          novo.parcelas = Array.from({ length: numParcelas }, (_, i) => {
+          const parcelasPayload = Array.from({ length: numParcelas }, (_, i) => {
             const dt = new Date(base); dt.setMonth(dt.getMonth() + i);
             return {
-              id: gerarId() + i, despesaId: novo.id, numero: i + 1, totalParcelas: numParcelas,
-              vencimento: dt.toISOString().split("T")[0], dataPrevistaPgto: dt.toISOString().split("T")[0],
-              valorOriginal: valParcela, desconto: 0, edulta: 0, juros: 0, impostosRetidos: 0,
-              valorLiquido: valParcela, status: "a_vencer" as const,
-            } as any;
+              ...payload,
+              id: undefined,
+              documento: `${form.documentoNF} (${i + 1}/${numParcelas})`,
+              data_vencimento: dt.toISOString().split("T")[0],
+              data_previsao_pagamento: dt.toISOString().split("T")[0],
+              valor_bruto: valParcela,
+              desconto: 0, multa: 0, juros: 0, impostos_retidos: 0,
+              valor_liquido: valParcela,
+              quantidade_parcelas: numParcelas,
+              parcela_atual: i + 1,
+            };
           });
-          // Se for parcelado, dividimos o original e liquido
-          novo.valorOriginal = valParcela;
-          novo.valorLiquido = valParcela;
-          novo.documentoNF += " (1/" + numParcelas + ")";
-          for(let i=1; i<numParcelas; i++){
-            const pData = novo.parcelas[i];
-            const px = {...novo, id: pData.id, vencimento: pData.vencimento, dataPrevistaPgto: pData.dataPrevistaPgto, documentoNF: form.documentoNF + " ("+(i+1)+"/"+numParcelas+")"};
-            setLancamentos(pr => [...pr, px]);
-          }
+          await supabase.from("financeiro_pagar").insert(parcelasPayload);
+          toast.success(`${numParcelas} parcelas criadas!`);
+        } else {
+          toast.success("Nova despesa cadastrada!");
         }
-        setLancamentos(prev => [novo, ...prev]);
-        toast.success("Nova despesa cadastrada!");
       }
+      await fetchLancamentos();
       setShowNovo(false);
       setEditando(null);
       setForm({ ...FORM_BLANK });
       setErros({});
       setGerarParcelas(false);
       setNumParcelas(1);
-    } catch {
+    } catch (error) {
+      console.error("Erro ao salvar despesa no Supabase:", error);
       toast.error("Erro ao salvar despesa.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ── Ações ──
-  const handleBaixa = (id: number, tipo: "total" | "parcial", valor: number, conta: string, forma: string, obs: string, data: string) => {
-    setLancamentos(prev => prev.map(l => l.id !== id ? l : {
-      ...l, status: tipo === "total" ? "paga" : "parcial",
-      dataEfetivaPgto: data, valorBaixado: valor, contaPagadora: conta, formaPagamento: forma, observacoes: (l.observacoes + "\nPgto: " + obs).trim()
-    } as LancamentoPagar));
-    toast.success(tipo === "total" ? "Cheque/Baixa total registrada!" : "Baixa parcial registrada com sucesso");
+  // ── Ações com persistência Supabase ──
+  const handleBaixa = async (id: string | number, tipo: "total" | "parcial", valor: number, conta: string, forma: string, obs: string, data: string) => {
+    try {
+      const lanc = lancamentos.find(l => l.id === id);
+      if (!lanc) return;
+      const novoStatus = tipo === "total" ? "pago" : "parcial";
+      const novoValor = tipo === "parcial" ? (lanc.valorLiquido - valor) : 0;
+
+      const { error } = await supabase.from("financeiro_pagar").update({
+        status: novoStatus,
+        valor_liquido: novoValor,
+        data_efetiva_pgto: data,
+        conta_pagadora: conta,
+        forma_pagamento: forma,
+        observacoes: `${lanc.observacoes}\nPgto ${tipo}: ${fmtBRL(valor)} em ${data} | Forma: ${forma} | Obs: ${obs}`,
+      }).eq("id", id);
+      if (error) throw error;
+      toast.success(tipo === "total" ? "Pagamento total registrado!" : `Baixa parcial de ${fmtBRL(valor)} registrada!`);
+      await fetchLancamentos();
+    } catch (error) {
+      console.error("Erro na baixa:", error);
+      toast.error("Erro ao registrar pagamento.");
+    }
     setBaixando(null);
   };
-  const handleCancelar = (id: number) => {
-    setLancamentos(prev => prev.map(l => l.id === id ? { ...l, status: "cancelada" } : l));
-    toast.success("Documento cancelado.");
+
+  const handleCancelar = async (id: string | number) => {
+    if (!confirm("Tem certeza que deseja cancelar?")) return;
+    try {
+      const { error } = await supabase.from("financeiro_pagar").update({ status: "cancelada" }).eq("id", id);
+      if (error) throw error;
+      toast.success("Documento cancelado.");
+      await fetchLancamentos();
+    } catch (error) {
+      console.error("Erro ao cancelar:", error);
+      toast.error("Erro ao cancelar.");
+    }
   };
 
   const abrirEditar = (l: LancamentoPagar) => {
