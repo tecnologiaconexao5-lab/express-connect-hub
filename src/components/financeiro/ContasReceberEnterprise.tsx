@@ -227,34 +227,39 @@ export default function ContasReceberEnterprise() {
       return;
     }
     try {
+      const sanitizeValue = (val: any) => {
+        if (val === "" || val === undefined || val === null) return null;
+        return val;
+      };
+      
       const dataToSave = {
         cliente_id: novaReceita.clienteId,
         cliente_nome: novaReceita.clienteNome,
         cliente_documento: novaReceita.clienteDocumento,
         fatura: novaReceita.documento || `FAT-${Date.now()}`,
-        serie: novaReceita.serie,
-        numero: novaReceita.numero,
-        os_vinculadas: novaReceita.osVinculadas,
-        contrato_vinculado: novaReceita.contratoVinculado,
-        proposta_vinculada: novaReceita.propostaVinculada,
-        categoria: novaReceita.categoriaId,
-        centro_resultado: novaReceita.centroResultadoId,
-        valor_bruto: novaReceita.valorBruto,
-        desconto: novaReceita.desconto,
-        juros: novaReceita.juros,
-        multa: novaReceita.multa,
+        serie: sanitizeValue(novaReceita.serie),
+        numero: sanitizeValue(novaReceita.numero),
+        os_vinculadas: sanitizeValue(novaReceita.osVinculadas),
+        contrato_vinculado: sanitizeValue(novaReceita.contratoVinculado),
+        proposta_vinculada: sanitizeValue(novaReceita.propostaVinculada),
+        categoria: sanitizeValue(novaReceita.categoriaId),
+        centro_resultado: sanitizeValue(novaReceita.centroResultadoId),
+        valor_bruto: novaReceita.valorBruto || 0,
+        desconto: novaReceita.desconto || 0,
+        juros: novaReceita.juros || 0,
+        multa: novaReceita.multa || 0,
         abatimento: novaReceita.abatimento || 0,
-        valor_liquido: valorLiquidoCalculado,
-        data_emissao: novaReceita.dataEmissao,
-        data_vencimento: novaReceita.dataVencimento,
-        data_previsao_recebimento: novaReceita.dataPrevisaoRecebimento,
-        conta_entrada: novaReceita.contaFinanceiraId,
+        valor_liquido: valorLiquidoCalculado || 0,
+        data_emissao: sanitizeValue(novaReceita.dataEmissao),
+        data_vencimento: sanitizeValue(novaReceita.dataVencimento),
+        data_previsao_recebimento: sanitizeValue(novaReceita.dataPrevisaoRecebimento),
+        conta_entrada: sanitizeValue(novaReceita.contaFinanceiraId),
         status: novaReceita.status || "a vencer",
-        recorrente: novaReceita.recorrente,
-        quantidade_parcelas: novaReceita.quantidadeParcelas,
-        parcela_atual: novaReceita.parcelaAtual,
-        plano_conta: novaReceita.planoContaId,
-        observacoes: novaReceita.observacoes
+        recorrente: novaReceita.recorrente || false,
+        quantidade_parcelas: sanitizeValue(novaReceita.quantidadeParcelas),
+        parcela_atual: sanitizeValue(novaReceita.parcelaAtual),
+        plano_conta: sanitizeValue(novaReceita.planoContaId),
+        observacoes: sanitizeValue(novaReceita.observacoes)
       };
 
       if (recebivelSelecionado?.id) {
@@ -286,7 +291,12 @@ export default function ContasReceberEnterprise() {
     const valorParcela = valorLiquidoCalculado / qtd;
     const primeiroVencimento = new Date(novaReceita.dataVencimento);
     
-    try {
+try {
+      const sanitizeValue = (val: any) => {
+        if (val === "" || val === undefined || val === null) return null;
+        return val;
+      };
+      
       const parcelas = [];
       for (let i = 0; i < qtd; i++) {
         const vencimento = new Date(primeiroVencimento);
@@ -297,26 +307,26 @@ export default function ContasReceberEnterprise() {
           cliente_nome: novaReceita.clienteNome,
           cliente_documento: novaReceita.clienteDocumento,
           fatura: novaReceita.documento || `FAT-${Date.now()}`,
-          serie: novaReceita.serie,
+          serie: sanitizeValue(novaReceita.serie),
           numero: `${(novaReceita.numero || "1")}/${qtd}`,
-          os_vinculadas: novaReceita.osVinculadas,
-          contrato_vinculado: novaReceita.contratoVinculado,
-          proposta_vinculada: novaReceita.propostaVinculada,
-          categoria: novaReceita.categoriaId,
-          centro_resultado: novaReceita.centroResultadoId,
-          valor_bruto: valorParcela,
+          os_vinculadas: sanitizeValue(novaReceita.osVinculadas),
+          contrato_vinculado: sanitizeValue(novaReceita.contratoVinculado),
+          proposta_vinculada: sanitizeValue(novaReceita.propostaVinculada),
+          categoria: sanitizeValue(novaReceita.categoriaId),
+          centro_resultado: sanitizeValue(novaReceita.centroResultadoId),
+          valor_bruto: valorParcela || 0,
           desconto: 0,
           juros: 0,
           multa: 0,
           abatimento: 0,
-          valor_liquido: valorParcela,
-          data_emissao: novaReceita.dataEmissao,
+          valor_liquido: valorParcela || 0,
+          data_emissao: sanitizeValue(novaReceita.dataEmissao),
           data_vencimento: vencimento.toISOString().split("T")[0],
           status: "a vencer",
-          recorrente: novaReceita.recorrente,
+          recorrente: novaReceita.recorrente || false,
           quantidade_parcelas: qtd,
           parcela_atual: i + 1,
-          observacoes: `${novaReceita.observacoes || ""} (${i+1}/${qtd})`
+          observacoes: sanitizeValue(`${novaReceita.observacoes || ""} (${i+1}/${qtd})`)
         };
         
         const { error } = await supabase.from("financeiro_receber").insert([dataToSave]);

@@ -178,13 +178,13 @@ function FornecedorAutocomplete({ value, onSelect, error }: FornecedorAutocomple
 
   useEffect(() => {
     if (!input.trim()) { setOptions([]); return; }
-    supabase.from("prestadores").select("id, nome_fantasia, razao_social, cnpj, cpf")
-      .or(`nome_fantasia.ilike.%${input}%,razao_social.ilike.%${input}%,cnpj.ilike.%${input}%,cpf.ilike.%${input}%`)
+    supabase.from("prestadores").select("id, nome_completo, cpf_cnpj, tipo_parceiro")
+      .or(`nome_completo.ilike.%${input}%,cpf_cnpj.ilike.%${input}%`)
       .limit(10)
       .then(({ data, error }) => {
         if (error) { console.error("Erro ao buscar prestadores:", error); setOptions([]); return; }
         setOptions((data || []).map((p: any) => ({
-          id: p.id, nome: p.nome_fantasia || p.razao_social, documento: p.cnpj || p.cpf || ""
+          id: p.id, nome: p.nome_completo, documento: p.cpf_cnpj || ""
         })));
       });
   }, [input]);
@@ -471,33 +471,38 @@ export default function ContasPagar() {
     if (!validar()) { toast.error("Preencha os campos obrigatórios corretamente."); return; }
     setIsSubmitting(true);
     try {
+      const sanitizeValue = (val: any) => {
+        if (val === "" || val === undefined || val === null) return null;
+        return val;
+      };
+      
       const payload = {
         fornecedor: form.favorecidoNome,
-        fornecedor_documento: form.favorecidoCnpjCpf,
-        documento: form.documentoNF,
-        tipo_documento: form.tipoDocumento,
+        fornecedor_documento: sanitizeValue(form.favorecidoCnpjCpf),
+        documento: sanitizeValue(form.documentoNF),
+        tipo_documento: sanitizeValue(form.tipoDocumento),
         categoria: form.categoria,
-        plano_contas: form.planoContas,
-        centro_resultado: form.centroResultado,
-        unidade_filial: form.unidadeFilial,
-        despesa_fixa_base: form.despesaFixaBase,
-        competencia: form.competencia,
-        data_emissao: form.emissao,
+        plano_contas: sanitizeValue(form.planoContas),
+        centro_resultado: sanitizeValue(form.centroResultado),
+        unidade_filial: sanitizeValue(form.unidadeFilial),
+        despesa_fixa_base: sanitizeValue(form.despesaFixaBase),
+        competencia: sanitizeValue(form.competencia),
+        data_emissao: sanitizeValue(form.emissao),
         data_vencimento: form.vencimento,
-        data_previsao_pagamento: form.dataPrevistaPgto || form.vencimento,
-        valor_bruto: form.valorOriginal,
+        data_previsao_pagamento: sanitizeValue(form.dataPrevistaPgto) || form.vencimento,
+        valor_bruto: form.valorOriginal || 0,
         desconto: form.desconto || 0,
         multa: form.multa || 0,
         juros: form.juros || 0,
         impostos_retidos: form.impostosRetidos || 0,
-        valor_liquido: valorLiquido,
-        forma_pagamento: form.formaPagamento,
-        codigo_barras: form.codigoBarras,
-        chave_pix: form.chavePix,
-        conta_pagadora: form.contaPagadora,
+        valor_liquido: valorLiquido || 0,
+        forma_pagamento: sanitizeValue(form.formaPagamento),
+        codigo_barras: sanitizeValue(form.codigoBarras),
+        chave_pix: sanitizeValue(form.chavePix),
+        conta_pagadora: sanitizeValue(form.contaPagadora),
         status: form.status === "a_vencer" ? "a vencer" : form.status,
-        recorrencia: form.recorrencia,
-        observacoes: form.observacoes,
+        recorrencia: sanitizeValue(form.recorrencia),
+        observacoes: sanitizeValue(form.observacoes),
       };
 
       if (editando) {
@@ -693,7 +698,7 @@ export default function ContasPagar() {
       </Card>
 
       {/* MODAL CADASTRAR/EDITAR DESPESA ── */}
-      <Dialog open={showNovo} onOpenChange={open => !open && fechar()}>
+      <Dialog open={showNovo} onOpenChange={open => !open && setShowNovo(false)}>
         <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">

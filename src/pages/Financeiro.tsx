@@ -29,6 +29,7 @@ import ContasBancarias from "@/components/financeiro/ContasBancarias";
 import ReciboRapido from "@/components/financeiro/ReciboRapido";
 import ContasReceberEnterprise from "@/components/financeiro/ContasReceberEnterprise";
 import ContasPagar from "@/components/financeiro/ContasPagar";
+import PagamentoPrestadores from "@/components/financeiro/PagamentoPrestadores";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -122,6 +123,7 @@ export default function Financeiro() {
             <TabsTrigger value="receber" className="data-[state=active]:bg-muted"><ArrowDownRight className="w-4 h-4 mr-2"/> Receber</TabsTrigger>
             <TabsTrigger value="inadimplencia" className="data-[state=active]:bg-muted"><UserMinus className="w-4 h-4 mr-2"/> Inadimplência</TabsTrigger>
             <TabsTrigger value="pagar" className="data-[state=active]:bg-muted"><ArrowUpRight className="w-4 h-4 mr-2"/> Pagar</TabsTrigger>
+            <TabsTrigger value="pagamento-prestadores" className="data-[state=active]:bg-muted"><Users className="w-4 h-4 mr-2"/> Pag. Prestadores</TabsTrigger>
             <TabsTrigger value="fluxo" className="data-[state=active]:bg-muted"><TrendingUp className="w-4 h-4 mr-2"/> Fluxo de Caixa</TabsTrigger>
             <TabsTrigger value="dre" className="data-[state=active]:bg-muted"><Calculator className="w-4 h-4 mr-2"/> DRE</TabsTrigger>
             <TabsTrigger value="plano-contas" className="data-[state=active]:bg-muted"><BookOpen className="w-4 h-4 mr-2"/> Plano de Contas</TabsTrigger>
@@ -150,6 +152,11 @@ export default function Financeiro() {
         {/* --- CONTAS A PAGAR --- */}
         <TabsContent value="pagar" className="pt-4">
            <ContasPagar />
+        </TabsContent>
+
+        {/* --- PAGAMENTO DE PRESTADORES --- */}
+        <TabsContent value="pagamento-prestadores" className="pt-4">
+           <PagamentoPrestadores />
         </TabsContent>
 
         {/* --- CONTAS & CAIXAS (NOVO) --- */}

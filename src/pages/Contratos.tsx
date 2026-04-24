@@ -395,7 +395,7 @@ export default function Contratos() {
                          value={modeloEditando.conteudo} 
                          onChange={(e) => setModeloEditando({...modeloEditando, conteudo: e.target.value})}
                          className="min-h-[350px] font-mono text-xs bg-slate-50 border-0 resize-none focus-visible:ring-0"
-                         placeholder="Digite o conteúdo do contrato usando {{variavel}} para inserir dados dinâmicos..."
+                         placeholder="Digite o conteúdo do contrato usando variavel para inserir dados dinâmicos..."
                        />
                     </div>
                     <div className="w-full md:w-64 bg-slate-50 p-4 shrink-0 overflow-y-auto max-h-[450px]">
