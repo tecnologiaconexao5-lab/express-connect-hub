@@ -1,0 +1,151 @@
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = "https://uwrvzsjtpgaifkktpepn.supabase.co";
+const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cnZ6c2p0cGdhaWZra3RwZXBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0Njk4NDMsImV4cCI6MjA5MjA0NTg0M30.0G0b-0FUs-5DxOziWD3clXbXXz0Fq2mx9-d0-V08TGs";
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+async function testClientes() {
+  console.log("=" .repeat(50));
+  console.log("TESTE CADASTRO DE CLIENTE");
+  console.log("=".repeat(50));
+  
+  console.log("\n[0] DESCobrindo colunas da tabela...");
+  const { data: primeiro } = await supabase.from("clientes").select("*").limit(1);
+  
+  console.log("Colunas disponiveis:", primeiro ? Object.keys(primeiro[0] || {}) : "sem dados");
+  console.log("Primeiro registro:", primeiro ? JSON.stringify(primeiro[0], null, 2) : "sem dados");
+  
+  // Test INSERT with fields from dbMappers.ts
+  const payloadInsert = {
+    razao_social: "Cliente Teste Automatizado LTDA",
+    nome_fantasia: "Cliente Teste",
+    cnpj: "12.345.678/0001-99",
+    ie: "123456789",
+    segmento: "varejo",
+    porte: "medio",
+    status: "ativo",
+    telefone: "(11) 99999-9999",
+    whatsapp: "(11) 99999-9999",
+    email: "teste@cliente.com.br",
+    cidade: "São Paulo",
+    uf: "SP",
+    observacoes: "Teste automatizado via script"
+  };
+
+  console.log("\n[1] INSERT CLIENTE - Payload enviado:");
+  console.log(JSON.stringify(payloadInsert, null, 2));
+
+  try {
+    const { data: insertData, error: insertError } = await supabase
+      .from("clientes")
+      .insert([payloadInsert])
+      .select();
+
+    if (insertError) {
+      console.log("\n[1] ERRO NO INSERT:");
+      console.log("Codigo:", insertError.code);
+      console.log("Mensagem:", insertError.message);
+      console.log("Detalhes:", insertError.details);
+      console.log("\nRESULTADO FINAL: REPROVADO");
+      process.exit(1);
+    }
+
+    console.log("\n[1] RESPOSTA INSERT CLIENTE:");
+    console.log(JSON.stringify(insertData, null, 2));
+    
+    const idInserido = insertData?.[0]?.id;
+    console.log("\n[1] ID GERADO:", idInserido);
+
+    if (!idInserido) {
+      console.log("\nRESULTADO FINAL: REPROVADO - Sem ID retornado");
+      process.exit(1);
+    }
+
+    console.log("\n[2] SELECT APÓS INSERT:");
+    const { data: selectData } = await supabase
+      .from("clientes")
+      .select("*")
+      .eq("id", idInserido)
+      .single();
+
+    console.log(JSON.stringify(selectData, null, 2));
+
+    console.log("\n[3] UPDATE CLIENTE:");
+    const { data: updateData, error: updateError } = await supabase
+      .from("clientes")
+      .update({ 
+        segmento: "atacado",
+        observacoes: "Atualizado via teste automatizado em " + new Date().toISOString()
+      })
+      .eq("id", idInserido)
+      .select();
+
+    if (updateError) {
+      console.log("ERRO NO UPDATE:", updateError.message);
+      console.log("\nRESULTADO FINAL: REPROVADO");
+      process.exit(1);
+    }
+    
+    console.log("UPDATE OK");
+
+    console.log("\n[4] SELECT APÓS UPDATE:");
+    const { data: selectAfterUpdate } = await supabase
+      .from("clientes")
+      .select("*")
+      .eq("id", idInserido)
+      .single();
+
+    console.log(JSON.stringify(selectAfterUpdate, null, 2));
+
+    // Testar endereços
+    console.log("\n[5] TESTE ENDEREÇO CLIENTE:");
+    const enderecoPayload = {
+      cliente_id: idInserido,
+      cep: "01234-567",
+      rua: "Av. Teste",
+      numero: "100",
+      bairro: "Centro",
+      cidade: "São Paulo",
+      uf: "SP",
+      tipo: "principal"
+    };
+
+    const { data: enderecoData, error: enderecoError } = await supabase
+      .from("enderecos_clientes")
+      .insert([enderecoPayload])
+      .select();
+
+    if (enderecoError) {
+      console.log("ERRO ao inserir endereço:", enderecoError.message);
+      console.log("Tabela enderecos_clientes pode não existir");
+    } else {
+      console.log("Endereço inserido OK:", JSON.stringify(enderecoData, null, 2));
+    }
+
+    console.log("\n[6] PERSISTÊNCIA:");
+    const { data: persistencia } = await supabase
+      .from("clientes")
+      .select("id, razao_social, segmento")
+      .eq("id", idInserido)
+      .single();
+
+    console.log("Dados persistidos:", JSON.stringify(persistencia, null, 2));
+
+    const sucesso = persistencia?.id === idInserido && persistencia?.segmento === "atacado";
+    
+    console.log("\n" + "=".repeat(50));
+    if (sucesso) {
+      console.log("RESULTADO FINAL: APROVADO ✓");
+    } else {
+      console.log("RESULTADO FINAL: REPROVADO");
+    }
+    console.log("=".repeat(50));
+
+  } catch (error) {
+    console.log("\nERRO CATCH:", error);
+    console.log("\nRESULTADO FINAL: REPROVADO");
+  }
+}
+
+testClientes();

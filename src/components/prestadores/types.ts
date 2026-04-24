@@ -14,7 +14,7 @@ export interface ContatoEmergencia {
 
 export interface DocumentoPrestador {
   tipo: string;
-  arquivo?: string;
+  url?: string;
   dataVencimento?: string;
   status: StatusDocumento;
 }

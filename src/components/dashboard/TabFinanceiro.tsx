@@ -1,108 +1,133 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { DollarSign, CreditCard, ArrowDownCircle, ArrowUpCircle, TrendingUp, Percent, Landmark, PiggyBank, ArrowRight } from "lucide-react";
+import { DollarSign, CreditCard, ArrowDownCircle, ArrowUpCircle, Percent, Landmark, PiggyBank, ArrowRight, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { kpisFinanceiro, receitaDespesaLucro, faturamentoPorCliente, previstoRealizado, despesasPorCategoria, CORES_GRAFICOS } from "./mockData";
+import { supabase } from "@/lib/supabase";
+
+const CORES_GRAFICOS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316"];
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 const KpiCard = ({ title, value, icon: Icon, color, to }: { title: string; value: string; icon: any; color?: string; to?: string }) => {
   const navigate = useNavigate();
   return (
-    <Card className="cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 bg-card dark:bg-slate-800 border-border dark:border-slate-700" onClick={() => to && navigate(to)}>
+    <Card className="cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 bg-card border-border" onClick={() => to && navigate(to)}>
       <CardContent className="p-4 flex items-center gap-3">
         <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${color}`}>
           <Icon className="w-4 h-4 text-white" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[11px] text-muted-foreground dark:text-gray-400 uppercase tracking-wide">{title}</p>
-          <p className="text-base font-bold text-foreground dark:text-white truncate">{value}</p>
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{title}</p>
+          <p className="text-base font-bold text-foreground truncate">{value}</p>
         </div>
-        {to && <ArrowRight className="w-4 h-4 text-muted-foreground dark:text-gray-500" />}
+        {to && <ArrowRight className="w-4 h-4 text-muted-foreground" />}
       </CardContent>
     </Card>
   );
 };
 
-const TabFinanceiro = () => (
-  <div className="space-y-6">
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <KpiCard title="A faturar" value={fmt(kpisFinanceiro.aFaturar)} icon={DollarSign} color="bg-amber-500" to="/financeiro" />
-      <KpiCard title="Faturado" value={fmt(kpisFinanceiro.faturado)} icon={CreditCard} color="bg-blue-500" to="/financeiro" />
-      <KpiCard title="A receber" value={fmt(kpisFinanceiro.aReceber)} icon={ArrowDownCircle} color="bg-orange-500" to="/financeiro" />
-      <KpiCard title="Recebido" value={fmt(kpisFinanceiro.recebido)} icon={ArrowUpCircle} color="bg-green-500" to="/financeiro" />
-      <KpiCard title="A pagar" value={fmt(kpisFinanceiro.aPagar)} icon={ArrowUpCircle} color="bg-red-500" to="/financeiro" />
-      <KpiCard title="Pago" value={fmt(kpisFinanceiro.pago)} icon={Landmark} color="bg-emerald-600" to="/financeiro" />
-      <KpiCard title="Margem média" value={`${kpisFinanceiro.margemMedia}%`} icon={Percent} color="bg-purple-500" to="/financeiro" />
-      <KpiCard title="Provisão do período" value={fmt(kpisFinanceiro.provisao)} icon={PiggyBank} color="bg-indigo-500" to="/financeiro" />
-    </div>
+const TabFinanceiro = () => {
+  const [loading, setLoading] = useState(true);
+  const [financeiro, setFinanceiro] = useState({
+    aFaturar: 0,
+    faturado: 0,
+    aReceber: 0,
+    recebido: 0,
+    aPagar: 0,
+    pago: 0,
+    totalOS: 0,
+    valorTotalOS: 0
+  });
 
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [osData, receberData, pagarData] = await Promise.all([
+          supabase.from("ordens_servico").select("valor_cliente, status_faturamento"),
+          supabase.from("financeiro_receber").select("valor, status"),
+          supabase.from("financeiro_pagar").select("valor, status")
+        ]);
+
+        const osItems = osData.data || [];
+        const valorTotalOS = osItems.reduce((acc, os) => acc + (os.valor_cliente || 0), 0);
+        const aFaturar = osItems.filter(os => os.status_faturamento === "a faturar").reduce((acc, os) => acc + (os.valor_cliente || 0), 0);
+        const faturado = osItems.filter(os => os.status_faturamento === "faturada").reduce((acc, os) => acc + (os.valor_cliente || 0), 0);
+
+        const receberItems = receberData.data || [];
+        const aReceber = receberItems.filter(item => item.status === "aberto" || item.status === "a vencer").reduce((acc, item) => acc + (item.valor || 0), 0);
+        const recebido = receberItems.filter(item => item.status === "pago" || item.status === "recebido").reduce((acc, item) => acc + (item.valor || 0), 0);
+
+        const pagarItems = pagarData.data || [];
+        const aPagar = pagarItems.filter(item => item.status === "aberto" || item.status === "a vencer").reduce((acc, item) => acc + (item.valor || 0), 0);
+        const pago = pagarItems.filter(item => item.status === "pago" || item.status === "quitado").reduce((acc, item) => acc + (item.valor || 0), 0);
+
+        setFinanceiro({
+          aFaturar,
+          faturado,
+          aReceber,
+          recebido,
+          aPagar,
+          pago,
+          totalOS: osItems.length,
+          valorTotalOS
+        });
+      } catch (err) {
+        console.error("[TabFinanceiro] Erro ao carregar dados:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const lucro = financeiro.recebido - financeiro.pago;
+  const margem = financeiro.recebido > 0 ? ((lucro / financeiro.recebido) * 100) : 0;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard title="Total OS" value={financeiro.totalOS.toString()} icon={DollarSign} color="bg-amber-500" to="/financeiro" />
+        <KpiCard title="Valor total OS" value={fmt(financeiro.valorTotalOS)} icon={CreditCard} color="bg-blue-500" to="/financeiro" />
+        <KpiCard title="A receber" value={fmt(financeiro.aReceber)} icon={ArrowDownCircle} color="bg-orange-500" to="/financeiro" />
+        <KpiCard title="Recebido" value={fmt(financeiro.recebido)} icon={ArrowUpCircle} color="bg-green-500" to="/financeiro" />
+        <KpiCard title="A pagar" value={fmt(financeiro.aPagar)} icon={ArrowUpCircle} color="bg-red-500" to="/financeiro" />
+        <KpiCard title="Pago" value={fmt(financeiro.pago)} icon={Landmark} color="bg-emerald-600" to="/financeiro" />
+        <KpiCard title="Lucro" value={fmt(lucro)} icon={Percent} color="bg-purple-500" to="/financeiro" />
+        <KpiCard title="Margem" value={`${margem.toFixed(1)}%`} icon={PiggyBank} color="bg-indigo-500" to="/financeiro" />
+      </div>
+
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Receita × Despesa × Lucro (6 meses)</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm">Resumo Financeiro</CardTitle></CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={receitaDespesaLucro}>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={[
+              { nome: "A Receber", valor: financeiro.aReceber },
+              { nome: "Recebido", valor: financeiro.recebido },
+              { nome: "A Pagar", valor: financeiro.aPagar },
+              { nome: "Pago", valor: financeiro.pago },
+              { nome: "Lucro", valor: lucro }
+            ]}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,20%,90%)" />
-              <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={(v) => `${(v / 1e6).toFixed(1)}M`} tick={{ fontSize: 11 }} />
+              <XAxis dataKey="nome" tick={{ fontSize: 12 }} />
+              <YAxis tickFormatter={(v) => `${(v / 1e3).toFixed(0)}k`} tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v: number) => fmt(v)} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="receita" name="Receita" fill={CORES_GRAFICOS[0]} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="despesa" name="Despesa" fill={CORES_GRAFICOS[1]} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="lucro" name="Lucro" fill={CORES_GRAFICOS[2]} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="valor" fill={CORES_GRAFICOS[0]} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Faturamento por cliente (top 5)</CardTitle></CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={faturamentoPorCliente} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,20%,90%)" />
-              <XAxis type="number" tickFormatter={(v) => `${(v / 1e3).toFixed(0)}k`} tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="cliente" width={110} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v: number) => fmt(v)} />
-              <Bar dataKey="valor" fill={CORES_GRAFICOS[0]} radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Previsto × Realizado</CardTitle></CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={previstoRealizado}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,20%,90%)" />
-              <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={(v) => `${(v / 1e6).toFixed(1)}M`} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v: number) => fmt(v)} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="previsto" name="Previsto" stroke={CORES_GRAFICOS[1]} strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="realizado" name="Realizado" stroke={CORES_GRAFICOS[0]} strokeWidth={2} dot={{ fill: CORES_GRAFICOS[0], r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Despesas por categoria</CardTitle></CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={280}>
-            <PieChart>
-              <Pie data={despesasPorCategoria} dataKey="valor" nameKey="categoria" cx="50%" cy="50%" outerRadius={95} label={({ categoria, percent }) => `${categoria} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
-                {despesasPorCategoria.map((_, i) => <Cell key={i} fill={CORES_GRAFICOS[i]} />)}
-              </Pie>
-              <Tooltip formatter={(v: number) => fmt(v)} />
-            </PieChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
     </div>
-  </div>
-);
+  );
+};
 
 export default TabFinanceiro;

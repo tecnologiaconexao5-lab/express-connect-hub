@@ -207,6 +207,7 @@ export default function PortalCliente() {
   const [enderecosFavoritos, setEnderecosFavoritos] = useState<EnderecoFavorito[]>([]);
   const [roteirizacao, setRoteirizacao] = useState<RoteirizacaoRota[]>([]);
   const [loading, setLoading] = useState(true);
+  const [clienteData, setClienteData] = useState<any>(null);
   const [selectedEntrega, setSelectedEntrega] = useState<Entrega | null>(null);
   const [selectedEntregas, setSelectedEntregas] = useState<Set<string>>(new Set());
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -234,37 +235,41 @@ export default function PortalCliente() {
   const carregarDados = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch data from Supabase
-      const [{ data: entregasData }, { data: faturasData }, { data: ocorrenciasData }] = await Promise.all([
+      const clienteNome = user?.name || user?.email || "";
+      const clienteFiltro = clienteNome ? clienteNome.replace(/@.+$/, "").trim() : "";
+
+      const [{ data: clienteInfo }, { data: entregasData }, { data: faturasData }, { data: ocorrenciasData }] = await Promise.all([
+        clienteFiltro ? supabase.from('clientes').select('*').ilike('nome_fantasia', `%${clienteFiltro}%`).limit(1).single() : Promise.resolve({ data: null }),
         supabase.from('ordens_servico').select('*').order('created_at', { ascending: false }).limit(50),
         supabase.from('financeiro_receber').select('*').order('data_vencimento', { ascending: false }).limit(20),
         supabase.from('ocorrencias').select('*').order('created_at', { ascending: false }).limit(20),
       ]);
 
+      setClienteData(clienteInfo);
+
       if (entregasData && entregasData.length > 0) {
-        // Transform Supabase data to PortalCliente format
         const entregasTransformadas = entregasData.map((os: any) => ({
           id: os.id,
           numero: os.numero || `OS-${os.id.slice(0, 8)}`,
           status: os.status || 'programacao',
           status_label: formatStatus(os.status),
           origem: { cep: '', rua: '', numero: '', bairro: '', cidade: os.filial_origem || 'N/A', uf: '' },
-          destino: { cep: '', rua: '', numero: '', bairro: '', cidade: os.cidade_destino || 'N/A', uf: '' },
+          destino: { cep: '', rua: '', numero: '', bairro: '', cidade: os.cidade_destino || os.cliente || 'N/A', uf: '' },
           previsao: os.data_previsao || new Date().toISOString(),
           created_at: os.created_at,
-          valor_frete: os.valor_frete || 0,
+          valor_frete: os.valor_cliente || os.valor_frete || 0,
           peso: os.peso || 0,
           volumes: os.volumes || 1,
-          mercadoria: os.mercadoria || 'Mercadoria',
-          cliente_nome: os.cliente_nome || 'Cliente',
+          mercadoria: os.carga_descricao || os.mercadoria || 'Mercadoria',
+          cliente_nome: os.cliente || clienteInfo?.nome_fantasia || 'Cliente',
           destinatario: undefined,
-          prestador: undefined,
+          prestador: os.prestador ? { nome: os.prestador } : undefined,
           historico: [],
-          sla: os.sla || 100,
+          sla: 100,
         }));
         setEntregas(entregasTransformadas);
       } else {
-        setEntregas(generateMockEntregas());
+        setEntregas([]);
       }
 
       if (faturasData && faturasData.length > 0) {
@@ -273,13 +278,13 @@ export default function PortalCliente() {
           fatura: f.fatura || `FAT-${f.id.slice(0, 4)}`,
           competencia: f.competencia || new Date().toLocaleString('pt-BR', { month: '2-digit', year: 'numeric' }),
           os_vinculadas: [f.os_id?.slice(0, 8) || ''],
-          vencimento: f.vencimento,
+          vencimento: f.data_vencimento || f.vencimento,
           valor: f.valor || 0,
-          status: f.status === 'pago' ? 'paga' : f.status === 'vencida' ? 'vencida' : 'a_vencer',
+          status: f.status === 'pago' || f.status === 'recebido' ? 'paga' : f.status === 'vencida' ? 'vencida' : 'a_vencer',
         }));
         setFaturas(faturasTransformadas);
       } else {
-        setFaturas(generateMockFaturas());
+        setFaturas([]);
       }
 
       if (ocorrenciasData && ocorrenciasData.length > 0) {
@@ -293,29 +298,27 @@ export default function PortalCliente() {
         }));
         setOcorrencias(ocorrenciasTransformadas);
       } else {
-        setOcorrencias(generateMockOcorrencias());
+        setOcorrencias([]);
       }
 
-      // Load mock data for other sections
-      setAlertas(generateMockAlertas());
-      setNotificacoes(generateMockNotificacoes());
-      setAvaliacoes(generateMockAvaliacoes());
-      setEnderecosFavoritos(generateMockEnderecos());
-      setRoteirizacao(generateMockRoteirizacao());
+      setAlertas([]);
+      setNotificacoes([]);
+      setAvaliacoes([]);
+      setEnderecosFavoritos([]);
+      setRoteirizacao([]);
     } catch (error) {
       console.error('Erro ao carregar dados do Supabase:', error);
-      // Fallback to mock data
-      setEntregas(generateMockEntregas());
-      setAlertas(generateMockAlertas());
-      setFaturas(generateMockFaturas());
-      setNotificacoes(generateMockNotificacoes());
-      setOcorrencias(generateMockOcorrencias());
-      setAvaliacoes(generateMockAvaliacoes());
-      setEnderecosFavoritos(generateMockEnderecos());
-      setRoteirizacao(generateMockRoteirizacao());
+      setEntregas([]);
+      setAlertas([]);
+      setFaturas([]);
+      setNotificacoes([]);
+      setOcorrencias([]);
+      setAvaliacoes([]);
+      setEnderecosFavoritos([]);
+      setRoteirizacao([]);
     }
     setLoading(false);
-  }, []);
+  }, [user]);
 
   const generateMockEntregas = (): Entrega[] => [
     {
@@ -566,7 +569,7 @@ export default function PortalCliente() {
             {!sidebarCollapsed && (
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-white truncate">{user?.name || "Cliente"}</p>
-                <p className="text-[10px] text-slate-400 truncate">Empresa XYZ</p>
+                <p className="text-[10px] text-slate-400 truncate">{clienteData?.nome_fantasia || clienteData?.razao_social || user?.email || ""}</p>
               </div>
             )}
           </div>
@@ -926,7 +929,7 @@ export default function PortalCliente() {
                   <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="text-white">Faturas</CardTitle>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="border-slate-600 text-slate-300"><FileExport className="w-4 h-4 mr-2" />PDF</Button>
+                      <Button variant="outline" size="sm" className="border-slate-600 text-slate-300"><FileText className="w-4 h-4 mr-2" />PDF</Button>
                       <Button variant="outline" size="sm" className="border-slate-600 text-slate-300"><FileText className="w-4 h-4 mr-2" />Excel</Button>
                     </div>
                   </CardHeader>

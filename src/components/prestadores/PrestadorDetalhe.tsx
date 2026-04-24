@@ -95,7 +95,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       if (!p.id) return;
       const { data, error } = await supabase
         .from("documentos_prestadores")
-        .select("id, tipo, arquivo, created_at")
+        .select("id, tipo, url, created_at")
         .eq("prestador_id", p.id)
         .order("created_at", { ascending: false });
       if (error) {
@@ -104,7 +104,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
         console.log("[Documentos] Carregados do banco:", data.length);
         const docsFromDb = data.map((d: any) => ({
           tipo: d.tipo,
-          arquivo: d.arquivo,
+          url: d.url,
           status: "valido" as const
         }));
         setP(prev => ({ ...prev, documentos: docsFromDb }));
@@ -229,7 +229,7 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
       const docPayload = {
         prestador_id: prestadorId,
         tipo: tipoDocumento,
-        arquivo: docUrl,
+        url: docUrl,
         created_at: new Date().toISOString()
       };
       console.log("[Documentos] Insert payload:", docPayload);
@@ -245,8 +245,8 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
 
       const currentDocs = p.documentos || [];
       const updatedDocs = currentDocs.some(d => d.tipo === tipoDocumento)
-        ? currentDocs.map(d => d.tipo === tipoDocumento ? { ...d, arquivo: docUrl, status: "valido" as const } : d)
-        : [...currentDocs, { tipo: tipoDocumento, arquivo: docUrl, status: "valido" as const }];
+        ? currentDocs.map(d => d.tipo === tipoDocumento ? { ...d, url: docUrl, status: "valido" as const } : d)
+        : [...currentDocs, { tipo: tipoDocumento, url: docUrl, status: "valido" as const }];
       setP(prev => ({ ...prev, documentos: updatedDocs }));
       toast.success(`${tipoDocumento} enviado!`);
     } catch (error) {
@@ -262,26 +262,31 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
     const prestadorId = p.id;
     if (!prestadorId) {
       toast.error("Salve o prestador primeiro para adicionar veículo");
-      return;
+return;
     }
 
     try {
-      const { data: veiculoResult, error: veiculoError } = await supabase.from("veiculos_prestadores").insert({
-        prestador_id: prestadorId,
-        veiculo_id: veiculoData.id,
+      // Usar tabela correta 'veiculos' com coluna 'prestador_vinculado'
+      const { data: veiculoResult, error: veiculoError } = await supabase.from("veiculos").insert({
         placa: veiculoData.placa,
-        tipo: veiculoData.tipoVeiculo,
+        tipo_veiculo: veiculoData.tipoVeiculo,
+        marca: veiculoData.marca,
+        modelo: veiculoData.modelo,
+        ano_fabricacao: veiculoData.ano,
         capacidade_kg: veiculoData.capacidadeKg,
+        prestador_vinculado: prestadorId,
         status: "Ativo",
         created_at: new Date().toISOString()
       }).select();
 
       if (veiculoError) {
-        console.error("Erro ao vincular veículo:", veiculoError);
+        console.error("Erro ao adicionar veículo:", veiculoError);
         toast.error("Erro ao adicionar veículo");
         return;
       }
 
+      toast.success("Veículo adicionado com sucesso!");
+      
       const currentVeiculos = p.veiculos || [];
       const newVeiculo: VeiculoPrestador = {
         id: veiculoData.id || `temp_${Date.now()}`,
