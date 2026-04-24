@@ -5,8 +5,13 @@ const MAPBOX_GEOCODING_URL = "https://api.mapbox.com/geocoding/v5/mapbox.places"
 const MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox/driving";
 
 function getMapboxToken(): string | null {
-  const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim();
-  return token || null;
+  const token = 
+    import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ||
+    import.meta.env.VITE_MAPBOX_TOKEN?.trim() ||
+    import.meta.env.MAPBOX_ACCESS_TOKEN?.trim() ||
+    import.meta.env.MAPBOX_TOKEN?.trim() ||
+    null;
+  return token;
 }
 
 async function geocodificarEndereco(endereco: string, token: string): Promise<GeocodingResult | null> {

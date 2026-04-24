@@ -163,18 +163,18 @@ export default function Biblioteca() {
             <TableHeader><TableRow><TableHead className="w-10"></TableHead><TableHead>Nome e Descrição</TableHead><TableHead>Categoria / Pasta</TableHead><TableHead>Modificado Em</TableHead><TableHead>Tamanho Autorizado</TableHead><TableHead className="text-right">Ação</TableHead></TableRow></TableHeader>
             <TableBody>
               {docs.map(d => (
-                <TableRow key={d.id}>
-                  <TableCell>{getDocIcon(d.tipo)}</TableCell>
+                <TableRow key={d?.id || Math.random()}>
+                  <TableCell>{getDocIcon(d?.tipo || "file")}</TableCell>
                   <TableCell>
-                    <p className="font-bold text-sm text-slate-800">{d.nome}</p>
-                    <p className="text-xs text-muted-foreground truncate w-48 lg:w-96">{d.desc}</p>
+                    <p className="font-bold text-sm text-slate-800">{d?.nome || d?.titulo || "Documento sem nome"}</p>
+                    <p className="text-xs text-muted-foreground truncate w-48 lg:w-96">{d?.desc || ""}</p>
                   </TableCell>
-                  <TableCell><Badge variant="secondary" className="bg-slate-100 text-slate-700 font-mono text-[10px]"><Folder className="w-3 h-3 mr-1 inline"/> {d.cat}</Badge></TableCell>
-                  <TableCell className="text-xs">{d.data}</TableCell>
-                  <TableCell className="text-xs">{d.tamanho}</TableCell>
+                  <TableCell><Badge variant="secondary" className="bg-slate-100 text-slate-700 font-mono text-[10px]"><Folder className="w-3 h-3 mr-1 inline"/> {d?.cat || "-"}</Badge></TableCell>
+                  <TableCell className="text-xs">{d?.data || "-"}</TableCell>
+                  <TableCell className="text-xs">{d?.tamanho || "-"}</TableCell>
                   <TableCell className="text-right">
                      <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600"><Download className="w-4 h-4"/></Button>
-                     {d.admin && <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:bg-red-50"><Trash className="w-4 h-4"/></Button>}
+                     {d?.admin && <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:bg-red-50"><Trash className="w-4 h-4"/></Button>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -397,10 +397,10 @@ export default function Biblioteca() {
               <Textarea 
                 value={mensagemEditando?.texto || ''} 
                 onChange={(e) => setMensagemEditando(mensagemEditando ? { ...mensagemEditando, texto: e.target.value } : null)}
-                placeholder="Digite a mensagem usando {{variavel}} para dados dinâmicos..."
+                placeholder="Digite a mensagem usando variavel para dados dinâmicos..."
                 className="min-h-[120px]"
               />
-              <p className="text-xs text-muted-foreground">Use {{nome}}, {{os}}, {{valor}}, {{origem}}, {{destino}} como variáveis.</p>
+              <p className="text-xs text-muted-foreground">Use {"{{nome}}"}, {"{{os}}"}, {"{{valor}}"}, {"{{origem}}"}, {"{{destino}}"} como variáveis.</p>
             </div>
           </div>
           <DialogFooter>

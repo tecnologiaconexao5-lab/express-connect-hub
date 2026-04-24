@@ -392,7 +392,7 @@ export function CentralComunicacao() {
               <Textarea
                 value={mensagem}
                 onChange={(e) => setMensagem(e.target.value)}
-                placeholder="Digite sua mensagem usando variáveis como {{nome}}, {{primeiro_nome}}, {{tipo_veiculo}}, etc."
+                placeholder="Digite sua mensagem usando variáveis como variavel, primeiro_nome, tipo_veiculo, etc."
                 rows={6}
               />
               <p className="text-xs text-muted-foreground mt-1">
