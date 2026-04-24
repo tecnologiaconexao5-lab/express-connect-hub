@@ -31,10 +31,6 @@ interface Cliente {
   razao_social: string;
   nome_fantasia?: string;
   cnpj?: string;
-  cpf?: string;
-  email?: string;
-  telefone?: string;
-  segmento?: string;
   status?: string;
 }
 
@@ -176,8 +172,15 @@ export default function ContasReceberEnterprise() {
 
   const fetchClientes = async () => {
     try {
-      const { data, error } = await supabase.from("clientes").select("id, razao_social, nome_fantasia, cnpj, cpf, email, telefone, segmento, status").order("razao_social");
-      if (error) throw error;
+      const { data, error } = await supabase
+        .from("clientes")
+        .select("id, razao_social, nome_fantasia, cnpj, status")
+        .order("razao_social");
+      
+      if (error) {
+        console.error("Erro Supabase clientes:", error);
+        throw error;
+      }
       setClientes((data as Cliente[]) || []);
     } catch (error) {
       console.error("Erro ao buscar clientes:", error);
@@ -190,8 +193,7 @@ export default function ContasReceberEnterprise() {
     return clientes.filter(c => 
       (c.razao_social?.toLowerCase() || "").includes(buscaLower) ||
       (c.nome_fantasia?.toLowerCase() || "").includes(buscaLower) ||
-      (c.cnpj || "").includes(buscaCliente) ||
-      (c.cpf || "").includes(buscaCliente)
+      (c.cnpj || "").includes(buscaCliente)
     ).slice(0, 10);
   }, [buscaCliente, clientes]);
 
@@ -204,11 +206,11 @@ export default function ContasReceberEnterprise() {
   }, [buscaCliente, filtrarClientes]);
 
   const handleSelecionarCliente = (cliente: Cliente) => {
-    const doc = cliente.cnpj || cliente.cpf || "";
+    const doc = cliente.cnpj || "";
     setNovaReceita({
       ...novaReceita,
       clienteId: cliente.id,
-      clienteNome: cliente.razao_social,
+      clienteNome: cliente.nome_fantasia || cliente.razao_social,
       clienteDocumento: doc
     });
     setBuscaCliente("");
@@ -216,8 +218,8 @@ export default function ContasReceberEnterprise() {
   };
 
   const valorLiquidoCalculado = useMemo(() => {
-    return novaReceita.valorBruto - novaReceita.desconto + novaReceita.juros + novaReceita.multa;
-  }, [novaReceita.valorBruto, novaReceita.desconto, novaReceita.juros, novaReceita.multa]);
+    return novaReceita.valorBruto - novaReceita.desconto + novaReceita.juros + novaReceita.multa - novaReceita.abatimento;
+  }, [novaReceita.valorBruto, novaReceita.desconto, novaReceita.juros, novaReceita.multa, novaReceita.abatimento]);
 
   const handleSalvarReceita = async () => {
     if (!novaReceita.clienteId || !novaReceita.valorBruto) {
@@ -229,14 +231,14 @@ export default function ContasReceberEnterprise() {
         cliente_id: novaReceita.clienteId,
         cliente_nome: novaReceita.clienteNome,
         cliente_documento: novaReceita.clienteDocumento,
-        documento: novaReceita.documento || `FAT-${Date.now()}`,
+        fatura: novaReceita.documento || `FAT-${Date.now()}`,
         serie: novaReceita.serie,
         numero: novaReceita.numero,
         os_vinculadas: novaReceita.osVinculadas,
         contrato_vinculado: novaReceita.contratoVinculado,
         proposta_vinculada: novaReceita.propostaVinculada,
-        categoria_id: novaReceita.categoriaId,
-        centro_resultado_id: novaReceita.centroResultadoId,
+        categoria: novaReceita.categoriaId,
+        centro_resultado: novaReceita.centroResultadoId,
         valor_bruto: novaReceita.valorBruto,
         desconto: novaReceita.desconto,
         juros: novaReceita.juros,
@@ -246,13 +248,12 @@ export default function ContasReceberEnterprise() {
         data_emissao: novaReceita.dataEmissao,
         data_vencimento: novaReceita.dataVencimento,
         data_previsao_recebimento: novaReceita.dataPrevisaoRecebimento,
-        forma_recebimento: novaReceita.formaRecebimento,
-        conta_financeira_id: novaReceita.contaFinanceiraId,
-        status: novaReceita.status || "pendente",
+        conta_entrada: novaReceita.contaFinanceiraId,
+        status: novaReceita.status || "a vencer",
         recorrente: novaReceita.recorrente,
         quantidade_parcelas: novaReceita.quantidadeParcelas,
         parcela_atual: novaReceita.parcelaAtual,
-        plano_conta_id: novaReceita.planoContaId,
+        plano_conta: novaReceita.planoContaId,
         observacoes: novaReceita.observacoes
       };
 
@@ -295,14 +296,14 @@ export default function ContasReceberEnterprise() {
           cliente_id: novaReceita.clienteId,
           cliente_nome: novaReceita.clienteNome,
           cliente_documento: novaReceita.clienteDocumento,
-          documento: novaReceita.documento || `FAT-${Date.now()}`,
+          fatura: novaReceita.documento || `FAT-${Date.now()}`,
           serie: novaReceita.serie,
           numero: `${(novaReceita.numero || "1")}/${qtd}`,
           os_vinculadas: novaReceita.osVinculadas,
           contrato_vinculado: novaReceita.contratoVinculado,
           proposta_vinculada: novaReceita.propostaVinculada,
-          categoria_id: novaReceita.categoriaId,
-          centro_resultado_id: novaReceita.centroResultadoId,
+          categoria: novaReceita.categoriaId,
+          centro_resultado: novaReceita.centroResultadoId,
           valor_bruto: valorParcela,
           desconto: 0,
           juros: 0,
@@ -311,8 +312,7 @@ export default function ContasReceberEnterprise() {
           valor_liquido: valorParcela,
           data_emissao: novaReceita.dataEmissao,
           data_vencimento: vencimento.toISOString().split("T")[0],
-          forma_recebimento: novaReceita.formaRecebimento,
-          status: "pendente",
+          status: "a vencer",
           recorrente: novaReceita.recorrente,
           quantidade_parcelas: qtd,
           parcela_atual: i + 1,
@@ -346,9 +346,8 @@ export default function ContasReceberEnterprise() {
       const { error } = await supabase.from("financeiro_receber").update({
         valor_liquido: novoValor,
         status: novoStatus,
-        data_recebimento: dadosBaixa.dataRecebimento,
-        forma_recebimento: dadosBaixa.formaRecebimento,
-        conta_financeira_id: dadosBaixa.contaFinanceiraId,
+        data_pagamento: dadosBaixa.dataRecebimento,
+        conta_entrada: dadosBaixa.contaFinanceiraId,
         observacoes: `${recebivelSelecionado.observacoes || ""}\nBaixa parcial: ${fmtFin(dadosBaixa.valorRecebido)} em ${dadosBaixa.dataRecebimento}`
       }).eq("id", recebivelSelecionado.id);
       
@@ -367,9 +366,8 @@ export default function ContasReceberEnterprise() {
     try {
       const { error } = await supabase.from("financeiro_receber").update({
         status: "pago",
-        data_recebimento: dadosBaixa.dataRecebimento || new Date().toISOString().split("T")[0],
-        forma_recebimento: dadosBaixa.formaRecebimento,
-        conta_financeira_id: dadosBaixa.contaFinanceiraId,
+        data_pagamento: dadosBaixa.dataRecebimento || new Date().toISOString().split("T")[0],
+        conta_entrada: dadosBaixa.contaFinanceiraId,
         valor_liquido: 0,
         observacoes: `${recebivelSelecionado.observacoes}\nBaixa total em ${dadosBaixa.dataRecebimento}`
       }).eq("id", recebivelSelecionado.id);
@@ -444,7 +442,7 @@ export default function ContasReceberEnterprise() {
   };
 
   const filtrados = useMemo(() => {
-    return recibiveis.filter(r => {
+    return recebiveis.filter(r => {
       if (filtros.busca && !JSON.stringify(r).toLowerCase().includes(filtros.busca.toLowerCase())) return false;
       if (filtros.status !== "todos" && r.status !== filtros.status) return false;
       if (filtros.cliente !== "todos" && r.clienteId !== filtros.cliente) return false;
@@ -454,7 +452,7 @@ export default function ContasReceberEnterprise() {
       if (filtros.dataFim && r.dataVencimento > filtros.dataFim) return false;
       return true;
     });
-  }, [recibiveis, filtros]);
+  }, [recebiveis, filtros]);
 
   const totais = useMemo(() => {
     const pendentes = filtrados.filter(r => r.status === "pendente").reduce((acc, r) => acc + r.valorLiquido, 0);

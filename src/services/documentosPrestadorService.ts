@@ -44,7 +44,7 @@ export async function verificarDocumentoDuplicado(
 
   if (existentes && existentes.length > 0) {
     if (urlArquivo) {
-      const mesmoArquivo = existentes.find(d => d.arquivo === urlArquivo || d.url_arquivo === urlArquivo);
+      const mesmoArquivo = existentes.find(d => d.url === urlArquivo);
       if (mesmoArquivo) {
         return { duplicado: true, existente: mesmoArquivo };
       }
@@ -72,7 +72,7 @@ export async function vincularDocumentoCandidatoAPrestador(
   }
 
   for (const doc of docsCandidato) {
-    const { duplicado } = await verificarDocumentoDuplicado(prestadorId, doc.tipo, doc.arquivo || doc.url_arquivo);
+    const { duplicado } = await verificarDocumentoDuplicado(prestadorId, doc.tipo, doc.url);
 
     if (duplicado) {
       console.log(`[Documentos] pulando duplicado: ${doc.tipo}`);
@@ -129,8 +129,7 @@ export async function adicionarDocumentoPrestador(
     prestador_id: doc.prestador_id,
     candidato_id: doc.candidato_id || null,
     tipo: doc.tipo,
-    arquivo: doc.arquivo || doc.url_arquivo || null,
-    url_arquivo: doc.url_arquivo || doc.arquivo || null,
+    url: doc.url_arquivo || doc.arquivo || null,
     dados: doc.dados || null,
     validade: doc.validade || null,
     status: doc.status || "pendente",
@@ -178,7 +177,7 @@ export async function verificarDocumentosOrfaos(): Promise<{
 }> {
   const { data } = await supabase
     .from("documentos_prestadores")
-    .select("id, tipo, arquivo, created_at, origem")
+    .select("id, tipo, url, created_at, origem")
     .is("prestador_id", null)
     .order("created_at", { ascending: false })
     .limit(50);

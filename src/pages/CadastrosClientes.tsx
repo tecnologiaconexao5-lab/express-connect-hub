@@ -1,11 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Users } from "lucide-react";
 import ClientesLista from "@/components/clientes/ClientesLista";
 import ClienteDetalhe from "@/components/clientes/ClienteDetalhe";
 
 const CadastrosClientes = () => {
+  const [searchParams] = useSearchParams();
+  const isNovo = searchParams.get("novo") === "true";
   const [view, setView] = useState<"lista" | "detalhe" | "novo">("lista");
   const [selectedId, setSelectedId] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (isNovo) {
+      setView("novo");
+    }
+  }, [isNovo]);
 
   if (view === "detalhe" || view === "novo") {
     return (

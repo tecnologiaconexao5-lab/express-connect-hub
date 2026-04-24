@@ -1,8 +1,11 @@
-import { DollarSign, Activity, Users, TrendingUp, UserCheck, CheckCircle2, Receipt, Clock, TrendingDown, Package, Zap } from "lucide-react";
+import { useState, useEffect } from "react";
+import { DollarSign, Activity, Users, TrendingUp, UserCheck, CheckCircle2, Receipt, Clock, TrendingDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { kpisExecutivo, faturamentoMensal, operacoesSemana, operacoesTipoVeiculo, topClientes, CORES_GRAFICOS } from "./mockData";
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { supabase } from "@/lib/supabase";
 import { AniversariantesWidget } from "@/components/comunicacao/AniversariantesWidget";
+
+const CORES_GRAFICOS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899"];
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const fmtN = (v: number) => v.toLocaleString("pt-BR");
@@ -45,91 +48,140 @@ const KpiSmall = ({ title, value, icon: Icon, subtext }: { title: string; value:
   </Card>
 );
 
-const TabExecutivo = () => (
-  <div className="space-y-6">
-    <AniversariantesWidget />
+const TabExecutivo = () => {
+  const [loading, setLoading] = useState(true);
+  const [clientes, setClientes] = useState(0);
+  const [prestadores, setPrestadores] = useState(0);
+  const [veiculos, setVeiculos] = useState(0);
+  const [osTotal, setOsTotal] = useState(0);
+  const [osFinalizadas, setOsFinalizadas] = useState(0);
+  const [faturamento, setFaturamento] = useState(0);
+  const [osRecentes, setOsRecentes] = useState<any[]>([]);
+  const [osPorStatus, setOsPorStatus] = useState<Record<string, number>>({});
+  const [osPorVeiculo, setOsPorVeiculo] = useState<{ tipo: string; valor: number }[]>([]);
 
-    {/* Linha 1 — 4 KPIs grandes Premium */}
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <KpiCard title="Faturamento do mês" value={fmt(kpisExecutivo.faturamentoMes)} icon={DollarSign} accent trend="up" />
-      <KpiCard title="Total de operações" value={fmtN(kpisExecutivo.totalOperacoes)} icon={Activity} trend="up" />
-      <KpiCard title="Prestadores ativos" value={fmtN(kpisExecutivo.prestadoresAtivos)} icon={Users} />
-      <KpiCard title="Margem média" value={`${kpisExecutivo.margemMedia}%`} icon={TrendingUp} trend="neutral" />
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [clientesCount, prestadoresCount, veiculosCount, osData, financeiroData] = await Promise.all([
+          supabase.from("clientes").select("id", { count: "exact", head: true }),
+          supabase.from("prestadores").select("id", { count: "exact", head: true }),
+          supabase.from("veiculos").select("id", { count: "exact", head: true }),
+          supabase.from("ordens_servico").select("status, veiculo_tipo, valor_cliente, numero, created_at").order("created_at", { ascending: false }).limit(100),
+          supabase.from("financeiro_receber").select("valor")
+        ]);
+
+        setClientes(clientesCount.count || 0);
+        setPrestadores(prestadoresCount.count || 0);
+        setVeiculos(veiculosCount.count || 0);
+
+        if (osData.data) {
+          setOsTotal(osData.data.length);
+          setOsFinalizadas(osData.data.filter(os => os.status === "finalizada").length);
+          
+          const statusCount: Record<string, number> = {};
+          osData.data.forEach(os => {
+            statusCount[os.status || "sem_status"] = (statusCount[os.status || "sem_status"] || 0) + 1;
+          });
+          setOsPorStatus(statusCount);
+
+          const veiculoCount: Record<string, number> = {};
+          osData.data.forEach(os => {
+            const tipo = os.veiculo_tipo || "Não informado";
+            veiculoCount[tipo] = (veiculoCount[tipo] || 0) + 1;
+          });
+          const veiculosArray = Object.entries(veiculoCount).map(([tipo, valor]) => ({ tipo, valor }));
+          setOsPorVeiculo(veiculosArray);
+
+          setOsRecentes(osData.data.slice(0, 5));
+        }
+
+        if (financeiroData.data) {
+          const total = financeiroData.data.reduce((acc, item) => acc + (item.valor || 0), 0);
+          setFaturamento(total);
+        }
+      } catch (err) {
+        console.error("[TabExecutivo] Erro ao carregar dados:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const ticketMedio = osTotal > 0 ? faturamento / osTotal : 0;
+
+  return (
+    <div className="space-y-6">
+      <AniversariantesWidget />
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard title="Faturamento total" value={fmt(faturamento)} icon={DollarSign} accent trend="up" />
+        <KpiCard title="Total de OS" value={fmtN(osTotal)} icon={Activity} trend="up" />
+        <KpiCard title="Prestadores" value={fmtN(prestadores)} icon={Users} />
+        <KpiCard title="Clientes" value={fmtN(clientes)} icon={TrendingUp} trend="neutral" />
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiSmall title="Veículos" value={fmtN(veiculos)} icon={UserCheck} subtext="cadastrados" />
+        <KpiSmall title="OS finalizadas" value={fmtN(osFinalizadas)} icon={CheckCircle2} subtext={`${osTotal > 0 ? Math.round(osFinalizadas / osTotal * 100) : 0}%`} />
+        <KpiSmall title="Ticket médio" value={fmt(ticketMedio)} icon={Receipt} subtext="por OS" />
+        <KpiSmall title="Em aberto" value={fmtN(osTotal - osFinalizadas)} icon={Clock} subtext="em andamento" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">OS por Status</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={Object.entries(osPorStatus).map(([tipo, valor]) => ({ tipo, valor }))} dataKey="valor" nameKey="tipo" cx="50%" cy="50%" outerRadius={95} label={({ tipo, percent }) => `${tipo} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={11}>
+                  {Object.keys(osPorStatus).map((_, i) => <Cell key={i} fill={CORES_GRAFICOS[i % CORES_GRAFICOS.length]} />)}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">OS por Tipo de Veículo</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={osPorVeiculo}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,20%,90%)" />
+                <XAxis dataKey="tipo" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Bar dataKey="valor" fill={CORES_GRAFICOS[0]} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Últimas OS</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {osRecentes.map((os) => (
+                <div key={os.numero} className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                  <div>
+                    <span className="font-medium text-sm">{os.numero}</span>
+                    <span className="text-xs text-muted-foreground ml-2">| {os.status}</span>
+                  </div>
+                  <span className="font-semibold text-sm">{fmt(os.valor_cliente || 0)}</span>
+                </div>
+              ))}
+              {osRecentes.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma OS encontrada</p>}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
-
-    {/* Linha 2 — 4 KPIs menores */}
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <KpiSmall title="Clientes ativos" value={fmtN(kpisExecutivo.clientesAtivos)} icon={UserCheck} subtext="+3 novos" />
-      <KpiSmall title="Ordens concluídas" value={fmtN(kpisExecutivo.ordensConcluidas)} icon={CheckCircle2} subtext="98% aprovação" />
-      <KpiSmall title="Ticket médio" value={fmt(kpisExecutivo.ticketMedio)} icon={Receipt} subtext="por operação" />
-      <KpiSmall title="Entrega no prazo" value={`${kpisExecutivo.entregaNoPrazo}%`} icon={Clock} subtext="meta: 95%" />
-    </div>
-
-    {/* Linha 3 — 2 gráficos */}
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <Card className="shadow-sm">
-        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Faturamento por mês</CardTitle></CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={faturamentoMensal}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,20%,90%)" />
-              <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={(v) => `${(v / 1e6).toFixed(1)}M`} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v: number) => fmt(v)} />
-              <Bar dataKey="valor" fill={CORES_GRAFICOS[0]} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-sm">
-        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Evolução de operações por semana</CardTitle></CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={operacoesSemana}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,20%,90%)" />
-              <XAxis dataKey="semana" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Line type="monotone" dataKey="operacoes" stroke={CORES_GRAFICOS[0]} strokeWidth={2} dot={{ fill: CORES_GRAFICOS[0], r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-    </div>
-
-    {/* Linha 4 — 2 gráficos */}
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <Card className="shadow-sm">
-        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Operações por tipo de veículo</CardTitle></CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={260}>
-            <PieChart>
-              <Pie data={operacoesTipoVeiculo} dataKey="valor" nameKey="tipo" cx="50%" cy="50%" outerRadius={95} label={({ tipo, percent }) => `${tipo} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={11}>
-                {operacoesTipoVeiculo.map((_, i) => <Cell key={i} fill={CORES_GRAFICOS[i % CORES_GRAFICOS.length]} />)}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-sm">
-        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Top 5 clientes por volume</CardTitle></CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={topClientes} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,20%,90%)" />
-              <XAxis type="number" tick={{ fontSize: 11 }} />
-              <YAxis type="category" dataKey="cliente" width={110} tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Bar dataKey="volume" fill={CORES_GRAFICOS[1]} radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-    </div>
-  </div>
-);
+  );
+};
 
 export default TabExecutivo;

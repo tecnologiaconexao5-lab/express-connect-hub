@@ -159,7 +159,7 @@ interface ClienteAutocompleteProps {
   error?: string;
 }
 
-interface ClienteOption { id: string; razao_social: string; nome_fantasia?: string; cnpj?: string; cpf?: string; }
+interface ClienteOption { id: string; razao_social: string; nome_fantasia?: string; cnpj?: string; }
 
 function ClienteAutocomplete({ value, onSelect, error }: ClienteAutocompleteProps) {
   const [input, setInput] = useState(value);
@@ -174,12 +174,18 @@ function ClienteAutocomplete({ value, onSelect, error }: ClienteAutocompleteProp
     if (!q.trim()) { setOptions([]); return; }
     setLoading(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("clientes")
-        .select("id, razao_social, nome_fantasia, cnpj, cpf")
-        .or(`razao_social.ilike.%${q}%,cnpj.ilike.%${q}%,cpf.ilike.%${q}%`)
+        .select("id, razao_social, nome_fantasia, cnpj")
+        .or(`razao_social.ilike.%${q}%,cnpj.ilike.%${q}%`)
         .order("razao_social")
         .limit(8);
+      
+      if (error) {
+        console.error("Erro Supabase clientes:", error);
+        setOptions([]);
+        return;
+      }
       if (data && data.length > 0) {
         setOptions(data as ClienteOption[]);
       } else {

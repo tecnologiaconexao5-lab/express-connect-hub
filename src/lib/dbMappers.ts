@@ -777,9 +777,9 @@ export const toOSInsert = (form: Partial<OSForm>): Record<string, unknown> => {
   if (has(form.operacaoDedicada)) d.operacao_dedicada = form.operacaoDedicada;
 
   if (has(form.cargaTipo)) d.carga_tipo = form.cargaTipo;
-  // Novo: Priorizar objeto carga JSONB
   if ((form as any).carga) {
     const c = (form as any).carga;
+    if (c.descricao) d.carga_descricao = c.descricao;
     d.carga = {
       tipo: c.tipo || "",
       descricao: c.descricao || "",

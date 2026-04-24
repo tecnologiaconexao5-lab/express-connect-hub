@@ -61,8 +61,8 @@ export function StatusDocumental() {
         .order("nome_completo");
 
       const { data: documentos } = await supabase
-        .from("provider_documents")
-        .select("id, prestador_id, tipo, status, validade");
+        .from("documentos_prestadores")
+        .select("id, prestador_id, tipo, status, validade, url");
 
       const docsMap: Record<string, Record<string, string>> = {};
       
