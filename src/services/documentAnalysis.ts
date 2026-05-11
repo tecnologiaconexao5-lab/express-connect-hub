@@ -363,3 +363,50 @@ export async function rejectDocumentAnalysis(
     user_id: usuarioId
   }]);
 }
+
+export interface AnalisarDocumentoResult {
+  status: "aprovado" | "suspeito" | "invalido";
+  confianca: number;
+  divergencias: string[];
+  resumo: string;
+}
+
+export async function analisarDocumento(
+  imagemUrl: string,
+  tipoDocumento: TipoDocumento,
+  dadosComparacao?: PrestadorData & VeiculoData
+): Promise<AnalisarDocumentoResult> {
+  const result = await analyzeDocument(
+    imagemUrl,
+    tipoDocumento,
+    undefined,
+    dadosComparacao
+  );
+
+  if (!result.success || !result.data) {
+    return {
+      status: "invalido",
+      confianca: 0,
+      divergencias: [result.error || "Erro na análise"],
+      resumo: "Não foi possível analisar o documento"
+    };
+  }
+
+  const { confianca_pct, divergencias, recomendacao } = result.data;
+  
+  let status: "aprovado" | "suspeito" | "invalido";
+  if (recomendacao === "aprovar") {
+    status = "aprovado";
+  } else if (recomendacao === "revisar") {
+    status = "suspeito";
+  } else {
+    status = "invalido";
+  }
+
+  return {
+    status,
+    confianca: confianca_pct,
+    divergencias,
+    resumo: `${status.toUpperCase()} - ${confianca_pct}% de confiança`
+  };
+}

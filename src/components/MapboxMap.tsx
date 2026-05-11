@@ -96,13 +96,13 @@ export default function MapboxMap({
       >
         <div className="text-center p-8">
           <MapPin className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-white mb-2">Mapbox não configurado</h3>
+          <h3 className="text-lg font-semibold text-white mb-2">Mapa não disponível</h3>
           <p className="text-slate-400 mb-4 max-w-md">
-            Configure o token do Mapbox em Configurações → Integrações para visualizar o mapa de rastreamento.
+            Configure a integração de mapas em Configurações → Integrações para visualizar o rastreamento em tempo real.
           </p>
           <Button onClick={openSettings} className="bg-orange-500 hover:bg-orange-600 gap-2">
             <Settings className="w-4 h-4" />
-            Configurar Mapbox
+            Configurar Integração
           </Button>
         </div>
       </div>

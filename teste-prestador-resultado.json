@@ -1,0 +1,5 @@
+{
+  "data": "2026-05-07T14:33:47.086Z",
+  "sucesso": false,
+  "erro": "Erro ao criar prestador: Could not find the 'acepta_esporadica' column of 'prestadores' in the schema cache"
+}

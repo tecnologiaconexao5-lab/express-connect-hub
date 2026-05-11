@@ -1,0 +1,161 @@
+{
+  "name": "Recrutamento WhatsApp — TMS Conexão Express",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "recrutamento-whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-node-001",
+      "name": "Webhook Evolution",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "telefone",
+              "value": "={{ $json.body.data.key.remoteJid.replace('@s.whatsapp.net', '') }}"
+            },
+            {
+              "name": "nome_contato",
+              "value": "={{ $json.body.data.pushName || '' }}"
+            },
+            {
+              "name": "mensagem",
+              "value": "={{ $json.body.data.message.conversation || $json.body.data.message.extendedTextMessage?.text || '[Mídia]' }}"
+            },
+            {
+              "name": "tipo_mensagem",
+              "value": "={{ Object.keys($json.body.data.message)[0] === 'conversation' ? 'text' : Object.keys($json.body.data.message)[0] }}"
+            },
+            {
+              "name": "instancia",
+              "value": "={{ $json.body.instance }}"
+            },
+            {
+              "name": "from_me",
+              "value": "={{ $json.body.data.key.fromMe ? 'enviada' : 'recebida' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-node-001",
+      "name": "Extrair Campos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/whatsapp_conversas",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_ANON_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_ANON_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=",
+              "value": "={{ JSON.stringify({ telefone: $json.telefone, nome_contato: $json.nome_contato, tipo_origem: 'recrutamento', status: 'aberta', ultima_mensagem: $json.mensagem, ultima_interacao: new Date().toISOString() }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-node-001",
+      "name": "Upsert Conversa Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [640, 300],
+      "notes": "Faz upsert em whatsapp_conversas. Requer UNIQUE constraint em telefone."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/whatsapp_mensagens",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_ANON_KEY }}" },
+            { "name": "Authorization", "value": "Bearer {{ $env.SUPABASE_ANON_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "=",
+              "value": "={{ JSON.stringify({ conversa_id: $('Upsert Conversa Supabase').first().json.id, telefone: $('Extrair Campos').first().json.telefone, direcao: $('Extrair Campos').first().json.from_me, mensagem: $('Extrair Campos').first().json.mensagem, tipo_mensagem: $('Extrair Campos').first().json.tipo_mensagem, raw_payload: $('Webhook Evolution').first().json.body, status: 'recebida' }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-node-002",
+      "name": "Insert Mensagem Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"ts\": \"{{ new Date().toISOString() }}\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "resp-node-001",
+      "name": "Responder HTTP 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1080, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Evolution": {
+      "main": [[{ "node": "Extrair Campos", "type": "main", "index": 0 }]]
+    },
+    "Extrair Campos": {
+      "main": [[{ "node": "Upsert Conversa Supabase", "type": "main", "index": 0 }]]
+    },
+    "Upsert Conversa Supabase": {
+      "main": [[{ "node": "Insert Mensagem Supabase", "type": "main", "index": 0 }]]
+    },
+    "Insert Mensagem Supabase": {
+      "main": [[{ "node": "Responder HTTP 200", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "description": "Workflow n8n para receber webhooks do Evolution API e persistir no Supabase. Importar em n8n via Menu > Import Workflow.",
+    "instrucoes": [
+      "1. Importe este arquivo no n8n: Menu superior > Import from file",
+      "2. Configure as variáveis de ambiente no n8n: SUPABASE_URL e SUPABASE_ANON_KEY",
+      "3. Ative o workflow clicando em 'Active' no canto superior direito",
+      "4. Configure o webhook URL no Evolution API: http://localhost:5678/webhook/recrutamento-whatsapp",
+      "5. Adicione UNIQUE constraint em whatsapp_conversas(telefone) se necessário"
+    ]
+  }
+}

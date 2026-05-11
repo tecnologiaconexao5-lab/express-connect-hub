@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Plus, CheckCircle, Save, Calendar, Copy, MapPin, Trash2, Edit, AlertTriangle, FileText, Download, Eye, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, CheckCircle, Save, Calendar, Copy, MapPin, Trash2, Edit, AlertTriangle, FileText, Download, Eye, Loader2, Upload, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -52,6 +52,9 @@ interface Contrato {
   valor: number;
   status: string;
   urlPdf?: string;
+  observacoes?: string;
+  anexoUrl?: string;
+  anexoNome?: string;
 }
 
 interface Props {
@@ -174,6 +177,7 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
     if (clienteId) {
       fetchCliente();
       fetchEnderecos();
+      fetchContratos();
     }
   }, [clienteId]);
 
@@ -210,6 +214,37 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
       setEnderecos(data || []);
     } catch (error: any) {
       console.error("Erro ao buscar endereços:", error.message);
+    }
+  };
+
+  const fetchContratos = async () => {
+    if (!clienteId) return;
+    try {
+      const { data, error } = await supabase
+        .from("clientes_contratos")
+        .select("*")
+        .eq("cliente_id", clienteId)
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.warn("[fetchContratos] Tabela clientes_contratos indisponível:", error.message);
+        return;
+      }
+      setContratos((data || []).map((row: any) => ({
+        id: row.id,
+        numero: row.numero || "",
+        tipo: row.tipo || "",
+        objeto: row.objeto || "",
+        vigenciaInicio: row.vigencia_inicio || "",
+        vigenciaFim: row.vigencia_fim || "",
+        valor: Number(row.valor) || 0,
+        status: row.status || "ativo",
+        urlPdf: row.anexo_url,
+        observacoes: row.observacoes,
+        anexoUrl: row.anexo_url,
+        anexoNome: row.anexo_nome,
+      })));
+    } catch (error: any) {
+      console.error("[fetchContratos] Erro:", error.message);
     }
   };
 
@@ -308,9 +343,29 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
       
       const savedCliente = data?.[0];
       if (!savedCliente) {
-        console.error("[ClienteDetalhe] Response kosong meski tidak ada error");
-        toast.error("Erro: response kosong dari Supabase");
+        console.error("[ClienteDetalhe] Response vazio após salvar");
+        toast.error("Erro: resposta vazia do Supabase");
         return;
+      }
+
+      // Persistir endereços temporários (novo cliente sem ID anterior)
+      if (isNew && savedCliente.id) {
+        const tempEnds = enderecos.filter((e: any) => e._temp);
+        if (tempEnds.length > 0) {
+          const endPayload = tempEnds.map((e: any) => ({
+            cliente_id: savedCliente.id,
+            tipo_endereco: e.tipo_endereco || null,
+            cep: e.cep || null,
+            logradouro: e.logradouro || null,
+            numero: e.numero || null,
+            complemento: e.complemento || null,
+            bairro: e.bairro || null,
+            cidade: e.cidade || null,
+            uf: e.uf || null,
+          }));
+          const { error: endErr } = await supabase.from("enderecos_clientes").insert(endPayload);
+          if (endErr) console.error("Erro ao persistir endereços:", endErr.message);
+        }
       }
 
       toast.success(isNew ? "Cliente cadastrado com sucesso!" : "Cliente atualizado com sucesso!");
@@ -437,7 +492,7 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
               <div><Label>WhatsApp</Label><Input value={c.whatsapp || ""} onChange={e => handleChange("whatsapp", e.target.value)} /></div>
               <div><Label>E-mail Corporativo</Label><Input value={c.email || ""} onChange={e => handleChange("email", e.target.value)} /></div>
               <div><Label>Site Institucional</Label><Input value={c.site || ""} onChange={e => handleChange("site", e.target.value)} /></div>
-              <div><Label>Origem Comercial</Label><Input value={c.origem_comercial || ""} onChange={e => handleChange("origem_comercial", e.target.value)} placeholder="Ex: Indicações, Prospecção" /></div>
+              <div><Label>Origem Comercial</Label><Input value={c.origemComercial || ""} onChange={e => handleChange("origemComercial", e.target.value)} placeholder="Ex: Indicações, Prospecção" /></div>
               
               <div><Label>Resp. Operacional</Label><Input value={c.responsavelOperacional || ""} onChange={e => handleChange("responsavelOperacional", e.target.value)} /></div>
               <div><Label>Resp. Financeiro</Label><Input value={c.responsavelFinanceiro || ""} onChange={e => handleChange("responsavelFinanceiro", e.target.value)} /></div>
@@ -810,10 +865,76 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
                 <SelectContent><SelectItem value="ativo">Ativo</SelectItem><SelectItem value="encerrado">Encerrado</SelectItem><SelectItem value="renovacao">Em renovação</SelectItem></SelectContent>
               </Select>
             </div>
+            <div><Label>Observações</Label><Textarea value={novoContrato.observacoes || ''} onChange={e => setNovoContrato({...novoContrato, observacoes: e.target.value})} rows={2} placeholder="Informações adicionais..." /></div>
+            <div>
+              <Label className="flex items-center gap-2 mb-2"><Paperclip className="w-4 h-4" /> Anexo do Contrato</Label>
+              <div
+                className="border-2 border-dashed border-muted rounded-lg p-4 text-center hover:border-primary/50 transition-colors cursor-pointer"
+                onClick={() => document.getElementById('contrato-file-input')?.click()}
+              >
+                {novoContrato.anexoNome ? (
+                  <div className="flex items-center justify-center gap-2 text-sm">
+                    <FileText className="w-4 h-4 text-primary" />
+                    <span className="font-medium text-primary">{novoContrato.anexoNome}</span>
+                    <button onClick={e => { e.stopPropagation(); setNovoContrato({...novoContrato, anexoNome: undefined, anexoUrl: undefined}); }} className="text-destructive ml-2">✕</button>
+                  </div>
+                ) : (
+                  <div className="text-muted-foreground">
+                    <Upload className="w-5 h-5 mx-auto mb-1" />
+                    <p className="text-xs">Clique para selecionar PDF ou documento do contrato</p>
+                  </div>
+                )}
+              </div>
+              <input id="contrato-file-input" type="file" accept=".pdf,.doc,.docx" className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) setNovoContrato({...novoContrato, anexoNome: f.name, anexoUrl: URL.createObjectURL(f)});
+                }}
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setModalContratoOpen(false)}>Cancelar</Button>
-            <Button onClick={() => { setContratos([...contratos, { ...novoContrato, id: String(Date.now()) } as Contrato]); setModalContratoOpen(false); toast.success("Contrato adicionado!"); }}>Salvar</Button>
+            <Button variant="outline" onClick={() => { setModalContratoOpen(false); setNovoContrato({}); }}>Cancelar</Button>
+            <Button onClick={async () => {
+              try {
+                if (clienteId) {
+                  const payload: Record<string, unknown> = {
+                    cliente_id: clienteId,
+                    numero: novoContrato.numero || null,
+                    tipo: novoContrato.tipo || null,
+                    valor: novoContrato.valor || 0,
+                    objeto: novoContrato.objeto || null,
+                    vigencia_inicio: novoContrato.vigenciaInicio || null,
+                    vigencia_fim: novoContrato.vigenciaFim || null,
+                    status: novoContrato.status || 'ativo',
+                    observacoes: novoContrato.observacoes || null,
+                    anexo_nome: novoContrato.anexoNome || null,
+                  };
+                  const { data: saved, error } = await supabase.from("clientes_contratos").insert([payload]).select();
+                  if (error) throw error;
+                  const row = saved?.[0];
+                  setContratos([...contratos, {
+                    id: row?.id || String(Date.now()),
+                    numero: row?.numero || novoContrato.numero || '',
+                    tipo: row?.tipo || novoContrato.tipo || '',
+                    objeto: row?.objeto || novoContrato.objeto || '',
+                    vigenciaInicio: row?.vigencia_inicio || novoContrato.vigenciaInicio || '',
+                    vigenciaFim: row?.vigencia_fim || novoContrato.vigenciaFim || '',
+                    valor: Number(row?.valor) || novoContrato.valor || 0,
+                    status: row?.status || novoContrato.status || 'ativo',
+                    observacoes: novoContrato.observacoes,
+                    anexoNome: novoContrato.anexoNome,
+                  }]);
+                } else {
+                  setContratos([...contratos, { ...novoContrato, id: String(Date.now()) } as Contrato]);
+                }
+                setModalContratoOpen(false);
+                setNovoContrato({});
+                toast.success("Contrato adicionado!");
+              } catch (err: any) {
+                toast.error("Erro ao salvar contrato: " + err.message);
+              }
+            }}>Salvar Contrato</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -870,18 +991,37 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
             <Button variant="outline" onClick={() => setModalEnderecoOpen(false)}>Cancelar</Button>
             <Button onClick={async () => {
               try {
+                if (!clienteId) {
+                  // Cliente ainda não salvo: manter em estado temporário
+                  setEnderecos(prev => [...prev, {
+                    id: `temp_${Date.now()}`,
+                    tipo_endereco: novoEndereco.tipo_endereco,
+                    cep: novoEndereco.cep,
+                    logradouro: novoEndereco.logradouro,
+                    numero: novoEndereco.numero,
+                    complemento: novoEndereco.complemento,
+                    bairro: novoEndereco.bairro,
+                    cidade: novoEndereco.cidade,
+                    uf: novoEndereco.uf,
+                    _temp: true,
+                  } as any]);
+                  setModalEnderecoOpen(false);
+                  setNovoEndereco({tipo_endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", uf: ""});
+                  toast.success("Endereço adicionado! Será vinculado ao salvar o cliente.");
+                  return;
+                }
                 const payload = {
                   cliente_id: clienteId,
                   tipo_endereco: novoEndereco.tipo_endereco,
                   cep: novoEndereco.cep,
                   logradouro: novoEndereco.logradouro,
                   numero: novoEndereco.numero,
-                  complemento: novoEndereco.complemento,
+                  complemento: novoEndereco.complemento || null,
                   bairro: novoEndereco.bairro,
                   cidade: novoEndereco.cidade,
-                  uf: novoEndereco.uf
+                  uf: novoEndereco.uf,
                 };
-                const { data, error } = await supabase.from("enderecos_clientes").insert([payload]).select();
+                const { error } = await supabase.from("enderecos_clientes").insert([payload]);
                 if (error) throw error;
                 toast.success("Endereço adicionado!");
                 setModalEnderecoOpen(false);

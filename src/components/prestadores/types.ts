@@ -1,10 +1,11 @@
 export type TipoParceiro = "autonomo" | "agregado" | "fixo" | "esporadico" | "terceiro" | "clt";
 export type StatusPrestador = "ativo" | "analise" | "inativo" | "bloqueado";
-export type StatusDocumento = "valido" | "vencendo" | "vencido" | "pendente";
+export type StatusDocumento = "valido" | "vencendo" | "vencido" | "pendente" | "aprovado" | "reprovado" | "em_analise";
 export type TipoVeiculo = "moto" | "utilitario_leve" | "fiorino" | "kangoo" | "hr" | "van" | "vuc" | "3_4" | "toco" | "truck" | "carreta" | "carreta_ls" | "bitrem" | "rodotrem" | "cavalo_mecanico" | "bau_urbano" | "dedicado" | "refrigerado_leve" | "outro";
 export type SubcategoriaVeiculo = "urbano" | "leve" | "medio" | "pesado" | "dedicado" | "refrigerado" | "distribuicao" | "transferencia" | "outro";
 export type TipoCarroceria = "bau" | "bau_refrigerado" | "bau_isotermico" | "sider" | "grade_baixa" | "graneleira" | "prancha" | "plataforma" | "carroceria_aberta" | "cegonha" | "tanque" | "container" | "furgao" | "refrigerada" | "lonada" | "outro";
-export type ClassificacaoTermica = "seco" | "refrigerado" | "isotermico";
+export type ClassificacaoTermica = "seco" | "refrigerado" | "congelado" | "misto" | "isotermico";
+export type StatusVeiculo = "ativo" | "inativo" | "manutencao" | "bloqueado";
 
 export interface ContatoEmergencia {
   nome: string;
@@ -13,10 +14,17 @@ export interface ContatoEmergencia {
 }
 
 export interface DocumentoPrestador {
+  id?: string;
   tipo: string;
   url?: string;
+  dataEnvio?: string;
   dataVencimento?: string;
   status: StatusDocumento;
+  observacaoInterna?: string;
+  analisadoPor?: string;
+  analisadoEm?: string;
+  caminhoStorage?: string;
+  nomeArquivo?: string;
 }
 
 export interface VeiculoPrestador {
@@ -27,6 +35,7 @@ export interface VeiculoPrestador {
   classificacaoTermica: ClassificacaoTermica;
   placa: string;
   renavam: string;
+  antt?: string;
   marca: string;
   modelo: string;
   ano: number;
@@ -38,10 +47,31 @@ export interface VeiculoPrestador {
   altura?: number;
   qtdPallets?: number;
   proprietario: string;
+  cpfCnpjProprietario?: string;
   rastreador?: string;
   seguradora?: string;
+  possuiSeguro?: boolean;
   validadeDocumental?: string;
-  status: "ativo" | "inativo";
+  status: StatusVeiculo;
+  tipoCarga?: "seco" | "refrigerado" | "congelado" | "misto";
+  tempMin?: number;
+  tempMax?: number;
+  restricoesRegiao?: string;
+  observacoesOperacionais?: string;
+  principal?: boolean;
+}
+
+export interface OcorrenciaPrestador {
+  id?: string;
+  prestadorId: string;
+  data: string;
+  tipo: "assalto" | "atraso" | "mercadoria_nao_retornada" | "divida" | "sinistro" | "reclamacao" | "elogio" | "advertencia" | "outro";
+  descricao: string;
+  gravidade: "baixa" | "media" | "alta" | "critica";
+  registradoPor: string;
+  status: "aberto" | "acompanhamento" | "resolvido";
+  observacoesInternas?: string;
+  criadoEm?: string;
 }
 
 export interface HistoricoAlteracao {
@@ -50,6 +80,16 @@ export interface HistoricoAlteracao {
   depois: string;
   usuario: string;
   data: string;
+}
+
+export interface PermissoesPrestador {
+  podeVerOS?: boolean;
+  podeAceitarServico?: boolean;
+  podeVerValores?: boolean;
+  podeVerHistorico?: boolean;
+  podeEnviarDocumentos?: boolean;
+  podeAtualizarCadastro?: boolean;
+  podeReceberNotificacoes?: boolean;
 }
 
 export interface Prestador {
@@ -88,6 +128,11 @@ export interface Prestador {
   contatosEmergencia: ContatoEmergencia[];
   documentos: DocumentoPrestador[];
   veiculos: VeiculoPrestador[];
+  ocorrencias?: OcorrenciaPrestador[];
+  
+  // Permissões (Aplicativo do Prestador)
+  permissoes?: PermissoesPrestador;
+
   // Financeiro
   banco?: string;
   agencia?: string;
@@ -113,6 +158,7 @@ export interface Prestador {
   centroCusto?: string;
   retencoes?: string;
   conferenciManual: boolean;
+  franquiaKm?: number;
   observacoesFinanceiras?: string;
   // Qualidade
   scoreInterno: number;
@@ -129,6 +175,15 @@ export interface Prestador {
   ultimaAtualizacao: string;
   ultimoUsuario: string;
   observacoesTorre?: string;
+  torreControle?: {
+    ocorrenciasGraves: number;
+    sinistro: number;
+    extravio: number;
+    desobediencia: number;
+    atrasos: number;
+    elogios: number;
+    observacoes: string;
+  };
 }
 
 export const TIPO_PARCEIRO_LABEL: Record<TipoParceiro, string> = {
@@ -170,3 +225,4 @@ export const TIPO_VEICULO_LABEL: Record<TipoVeiculo, string> = {
   cavalo_mecanico: "Cavalo Mecânico", bau_urbano: "Baú Urbano", dedicado: "Veículo Dedicado",
   refrigerado_leve: "Refrigerado Leve", outro: "Outro",
 };
+

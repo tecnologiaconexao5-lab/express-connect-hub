@@ -386,85 +386,50 @@ export default function FluxoCaixaEnterprise() {
 
       {/* Cards de Resumo */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <Card className="bg-green-50 border-green-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-green-800 uppercase">Saldo Inicial</p>
-                <p className="text-xl font-bold text-green-700 mt-1">{fmtFin(saldoInicial.valor)}</p>
+        {[
+          { label: "Saldo Inicial", value: fmtFin(saldoInicial.valor), icon: DollarSign, accent: "bg-emerald-500", color: "text-emerald-500" },
+          { label: "Entradas Previstas", value: fmtFin(totalEntradas), icon: ArrowDownRight, accent: "bg-green-500", color: "text-green-500" },
+          { label: "Saídas Previstas", value: fmtFin(totalSaidas), icon: ArrowUpRight, accent: "bg-rose-500", color: "text-rose-500" },
+          { label: "Saldo Final", value: fmtFin(saldoAtual), icon: DollarSign, accent: "bg-blue-500", color: "text-blue-500" },
+          { label: "Saldo Acumulado", value: fmtFin(saldoAcumuladoFinal), icon: TrendingUp, accent: "bg-violet-500", color: "text-violet-500" },
+        ].map(k => (
+          <Card key={k.label} className="relative overflow-hidden bg-card border-border shadow-sm hover:-translate-y-0.5 transition-transform">
+            <div className={`absolute top-0 left-0 right-0 h-0.5 ${k.accent}`} />
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{k.label}</p>
+                  <p className={`text-lg font-extrabold mt-1 ${k.color}`}>{k.value}</p>
+                </div>
+                <div className={`p-2 rounded-xl bg-muted/40`}><k.icon className={`w-5 h-5 ${k.color}`} /></div>
               </div>
-              <DollarSign className="w-8 h-8 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-50 border-emerald-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-emerald-800 uppercase">Entradas Previstas</p>
-                <p className="text-xl font-bold text-emerald-700 mt-1">{fmtFin(totalEntradas)}</p>
-              </div>
-              <ArrowDownRight className="w-8 h-8 text-emerald-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-orange-50 border-orange-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-orange-800 uppercase">Saídas Previstas</p>
-                <p className="text-xl font-bold text-orange-700 mt-1">{fmtFin(totalSaidas)}</p>
-              </div>
-              <ArrowUpRight className="w-8 h-8 text-orange-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-blue-50 border-blue-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-blue-800 uppercase">Saldo Final</p>
-                <p className="text-xl font-bold text-blue-700 mt-1">{fmtFin(saldoAtual)}</p>
-              </div>
-              <DollarSign className="w-8 h-8 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-purple-50 border-purple-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-purple-800 uppercase">Saldo Acumulado</p>
-                <p className="text-xl font-bold text-purple-700 mt-1">{fmtFin(saldoAcumuladoFinal)}</p>
-              </div>
-              <TrendingUp className="w-8 h-8 text-purple-600" />
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* Comparativo Previsto x Realizado */}
-      <Card>
+      <Card className="bg-card border-border shadow-sm">
         <CardHeader className="py-3">
-          <CardTitle className="text-sm font-semibold">Comparativo: Previsto vs Realizado</CardTitle>
+          <CardTitle className="text-sm font-semibold">Comparativo: Previsto × Realizado</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-3 gap-4 text-center">
-            <div className="p-4 rounded-lg bg-green-50">
-              <p className="text-xs font-semibold text-green-700">Entradas Realizadas</p>
-              <p className="text-lg font-bold text-green-600">
+            <div className="p-4 rounded-lg bg-muted/30 border border-border/40">
+              <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">Entradas Realizadas</p>
+              <p className="text-lg font-extrabold text-foreground mt-1">
                 {fmtFin(dadosProcessados.filter(d => d.realizado).reduce((acc, d) => acc + d.entrada, 0))}
               </p>
             </div>
-            <div className="p-4 rounded-lg bg-red-50">
-              <p className="text-xs font-semibold text-red-700">Saídas Realizadas</p>
-              <p className="text-lg font-bold text-red-600">
+            <div className="p-4 rounded-lg bg-muted/30 border border-border/40">
+              <p className="text-xs font-semibold text-rose-500 uppercase tracking-wide">Saídas Realizadas</p>
+              <p className="text-lg font-extrabold text-foreground mt-1">
                 {fmtFin(dadosProcessados.filter(d => d.realizado).reduce((acc, d) => acc + d.saida, 0))}
               </p>
             </div>
-            <div className="p-4 rounded-lg bg-blue-50">
-              <p className="text-xs font-semibold text-blue-700">Saldo Realizado</p>
-              <p className="text-lg font-bold text-blue-600">
+            <div className="p-4 rounded-lg bg-muted/30 border border-border/40">
+              <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide">Saldo Realizado</p>
+              <p className="text-lg font-extrabold text-foreground mt-1">
                 {fmtFin(
                   dadosProcessados
                     .filter(d => d.realizado)
@@ -528,14 +493,14 @@ export default function FluxoCaixaEnterprise() {
               <CardContent className="h-[350px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={dadosProcessados}>
-                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                    <XAxis dataKey="dia" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `R$ ${(v/1000).toFixed(0)}k`} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                    <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `R$ ${(v/1000).toFixed(0)}k`} />
                     <Tooltip 
                       formatter={(value: number) => fmtFin(value)}
-                      contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }}
+                      contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", color: "hsl(var(--foreground))", borderRadius: '8px', fontSize: '12px' }}
                     />
-                    <Legend />
+                    <Legend wrapperStyle={{ fontSize: '12px' }} />
                     <Bar dataKey="entrada" name="Entradas" fill={entradaColor} fillOpacity={0.7} radius={[4, 4, 0, 0]} />
                     <Bar dataKey="saida" name="Saídas" fill={saidaColor} fillOpacity={0.7} radius={[4, 4, 0, 0]} />
                     <Line type="monotone" dataKey="saldoAcumulado" name="Saldo Acumulado" stroke="#7c3aed" strokeWidth={2} dot={false} />

@@ -441,10 +441,20 @@ export default function ContasPagar() {
 
   // ── KPIs ──
   const totalAPagar = lancamentos.filter(l => l.status === "a_vencer" || l.status === "parcial")
-    .reduce((a, l) => a + l.valorLiquido, 0);
-  const totalAtrasado = lancamentos.filter(l => l.status === "vencida").reduce((a, l) => a + l.valorLiquido, 0);
-  const totalPagoMes = lancamentos.filter(l => l.status === "paga").reduce((a, l) => a + l.valorLiquido, 0);
-  const totalProvisao = lancamentos.filter(l => l.status === "provisao").reduce((a, l) => a + l.valorLiquido, 0);
+    .reduce((a, l) => a + (l.valorLiquido || 0), 0);
+  const totalAtrasado = lancamentos.filter(l => l.status === "vencida").reduce((a, l) => a + (l.valorLiquido || 0), 0);
+  const totalPagoMes = lancamentos.filter(l => l.status === "paga").reduce((a, l) => a + (l.valorLiquido || 0), 0);
+  const totalProvisao = lancamentos.filter(l => l.status === "provisao").reduce((a, l) => a + (l.valorLiquido || 0), 0);
+  const hoje = new Date().toISOString().split("T")[0];
+  const em7dias = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+  const mesAtual = new Date().toISOString().slice(0, 7);
+  const totalVence7 = lancamentos.filter(l =>
+    (l.status === "a_vencer" || l.status === "parcial") &&
+    l.vencimento >= hoje && l.vencimento <= em7dias
+  ).reduce((a, l) => a + (l.valorLiquido || 0), 0);
+  const totalPrevisto = lancamentos.filter(l =>
+    l.vencimento?.startsWith(mesAtual) && l.status !== "cancelada"
+  ).reduce((a, l) => a + (l.valorLiquido || 0), 0);
 
   // ── Filtros ──
   const lancFiltrados = lancamentos.filter(l => {
@@ -610,15 +620,17 @@ export default function ContasPagar() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
         {[
-          { label: "Total a Pagar", value: totalAPagar, icon: ArrowUpRight, gradient: "from-orange-500 to-red-500", bg: "from-orange-500 to-red-600" },
-          { label: "Atrasado", value: totalAtrasado, icon: AlertTriangle, gradient: "from-red-600 to-rose-700", bg: "from-red-600 to-rose-800" },
-          { label: "Provisões", value: totalProvisao, icon: FileText, gradient: "from-slate-500 to-slate-700", bg: "from-slate-500 to-slate-800" },
-          { label: "Pago no Mês", value: totalPagoMes, icon: CheckCircle2, gradient: "from-emerald-500 to-green-600", bg: "from-emerald-500 to-green-700" },
+          { label: "Total a Pagar", value: totalAPagar, icon: ArrowUpRight, accent: "from-orange-500 to-red-500", bg: "from-orange-500 to-red-600" },
+          { label: "Atrasado", value: totalAtrasado, icon: AlertTriangle, accent: "from-red-600 to-rose-700", bg: "from-red-600 to-rose-800" },
+          { label: "Vence em 7 dias", value: totalVence7, icon: Clock, accent: "from-amber-400 to-amber-600", bg: "from-amber-400 to-amber-600" },
+          { label: "Previsto no Mês", value: totalPrevisto, icon: DollarSign, accent: "from-blue-500 to-blue-700", bg: "from-blue-500 to-blue-700" },
+          { label: "Provisões", value: totalProvisao, icon: FileText, accent: "from-slate-500 to-slate-700", bg: "from-slate-500 to-slate-800" },
+          { label: "Pago no Mês", value: totalPagoMes, icon: CheckCircle2, accent: "from-emerald-500 to-green-600", bg: "from-emerald-500 to-green-700" },
         ].map(k => (
           <div key={k.label} className="relative overflow-hidden rounded-xl border bg-card shadow-sm hover:translate-y-[-2px] transition-transform p-4 flex items-center justify-between">
-            <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${k.gradient}`} />
+            <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${k.accent}`} />
             <div>
               <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{k.label}</p>
               <p className="text-xl font-black text-foreground mt-1">{fmtBRL(k.value)}</p>

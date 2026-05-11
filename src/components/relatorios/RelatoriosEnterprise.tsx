@@ -11,6 +11,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useLogo } from "@/hooks/useLogo";
+import { supabase } from "@/lib/supabase";
+import { useEffect } from "react";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -29,16 +31,7 @@ interface OS {
   margemPct: number;
 }
 
-const mockOS: OS[] = [
-  { id: 1, numero: "OS-420", data: "2026-03-25", cliente: "Tech Solutions", prestador: "João Transporte", origem: "São Paulo/SP", destino: "Rio de Janeiro/RJ", status: "Concluída", valorCliente: 2400, custoPrestador: 1800, margem: 600, margemPct: 25 },
-  { id: 2, numero: "OS-421", data: "2026-03-25", cliente: "Indústria Global", prestador: "Maria Logistics", origem: "Belo Horizonte/MG", destino: "São Paulo/SP", status: "Concluída", valorCliente: 1800, custoPrestador: 1200, margem: 600, margemPct: 33.3 },
-  { id: 3, numero: "OS-422", data: "2026-03-24", cliente: "Comércio Varejo", prestador: "João Transporte", origem: "Curitiba/PR", destino: "Florianópolis/SC", status: "Concluída", valorCliente: 950, custoPrestador: 700, margem: 250, margemPct: 26.3 },
-  { id: 4, numero: "OS-423", data: "2026-03-24", cliente: "Distribuidora Norte", prestador: "Transportes ABC", origem: "Manaus/AM", destino: "Belém/PA", status: "Em Andamento", valorCliente: 3200, custoPrestador: 2400, margem: 800, margemPct: 25 },
-  { id: 5, numero: "OS-424", data: "2026-03-23", cliente: "Logística Sul", prestador: "Maria Logistics", origem: "Porto Alegre/RS", destino: "São Paulo/SP", status: "Concluída", valorCliente: 2800, custoPrestador: 2100, margem: 700, margemPct: 25 },
-  { id: 6, numero: "OS-425", data: "2026-03-23", cliente: "Tech Solutions", prestador: "João Transporte", origem: "São Paulo/SP", destino: "Campinas/SP", status: "Concluída", valorCliente: 850, custoPrestador: 550, margem: 300, margemPct: 35.3 },
-  { id: 7, numero: "OS-426", data: "2026-03-22", cliente: "Indústria Global", prestador: "Transportes ABC", origem: "São Paulo/SP", destino: "Santos/SP", status: "Concluída", valorCliente: 1200, custoPrestador: 900, margem: 300, margemPct: 25 },
-  { id: 8, numero: "OS-427", data: "2026-03-22", cliente: "Comércio Varejo", prestador: "Maria Logistics", origem: "Rio de Janeiro/RJ", destino: "São Paulo/SP", status: "Cancelada", valorCliente: 1800, custoPrestador: 1400, margem: 400, margemPct: 22.2 },
-];
+// REMOVED MOCK_OS
 
 interface Cliente {
   id: number;
@@ -50,12 +43,7 @@ interface Cliente {
   operacoes: OS[];
 }
 
-const mockClientes: Cliente[] = [
-  { id: 1, nome: "Tech Solutions", cnpj: "12.345.678/0001-90", totalFaturado: 145000, diarias: 45, contratosFixos: 2, operacoes: mockOS.filter(o => o.cliente === "Tech Solutions") },
-  { id: 2, nome: "Indústria Global", cnpj: "23.456.789/0001-01", totalFaturado: 98000, diarias: 32, contratosFixos: 1, operacoes: mockOS.filter(o => o.cliente === "Indústria Global") },
-  { id: 3, nome: "Comércio Varejo", cnpj: "34.567.890/0001-12", totalFaturado: 72000, diarias: 28, contratosFixos: 1, operacoes: mockOS.filter(o => o.cliente === "Comércio Varejo") },
-  { id: 4, nome: "Distribuidora Norte", cnpj: "45.678.901/0001-23", totalFaturado: 54000, diarias: 15, contratosFixos: 0, operacoes: mockOS.filter(o => o.cliente === "Distribuidora Norte") },
-];
+// REMOVED MOCK_CLIENTES
 
 interface Prestador {
   id: number;
@@ -68,11 +56,7 @@ interface Prestador {
   ocorrencias: number;
 }
 
-const mockPrestadores: Prestador[] = [
-  { id: 1, nome: "João Transporte", cpfCnpj: "123.456.789-00", tipo: "Motorista", totalOperacoes: 156, valorPago: 89000, score: 4.8, ocorrencias: 2 },
-  { id: 2, nome: "Maria Logistics", cpfCnpj: "234.567.890-00", tipo: "Transportadora", totalOperacoes: 89, valorPago: 67000, score: 4.5, ocorrencias: 5 },
-  { id: 3, nome: "Transportes ABC", cpfCnpj: "34.567.890/0001-99", tipo: "Transportadora", totalOperacoes: 45, valorPago: 42000, score: 4.2, ocorrencias: 8 },
-];
+// REMOVED MOCK_PRESTADORES
 
 interface PagamentoPrestador {
   id: number;
@@ -276,10 +260,80 @@ export default function RelatoriosEnterprise() {
   });
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
 
-  const filteredOS = mockOS.filter(os => {
+  const [relatorioOS, setRelatorioOS] = useState<OS[]>([]);
+  const [relatorioClientes, setRelatorioClientes] = useState<Cliente[]>([]);
+  const [relatorioPrestadores, setRelatorioPrestadores] = useState<Prestador[]>([]);
+  
+  useEffect(() => {
+    async function loadData() {
+      // 1. Fetch OS
+      const { data: osData } = await supabase.from("ordens_servico").select("*").order("data", { ascending: false });
+      const fmtdOS: OS[] = (osData || []).map(o => {
+         const margem = (o.valor_cliente || 0) - (o.custo_prestador || 0);
+         const margemPct = o.valor_cliente > 0 ? (margem / o.valor_cliente) * 100 : 0;
+         return {
+           id: o.id,
+           numero: o.numero,
+           data: o.data || "",
+           cliente: o.cliente || "Avulso",
+           prestador: o.prestador || "Não alocado",
+           origem: o.enderecos?.[0]?.cidade || "N/A",
+           destino: o.enderecos?.[o.enderecos.length-1]?.cidade || "N/A",
+           status: o.status || "Pendente",
+           valorCliente: o.valor_cliente || 0,
+           custoPrestador: o.custo_prestador || 0,
+           margem: margem,
+           margemPct: margemPct
+         };
+      });
+      setRelatorioOS(fmtdOS);
+
+      // 2. Fetch Clientes
+      const { data: cliData } = await supabase.from("clientes").select("*");
+      const fmtdCli: Cliente[] = (cliData || []).map(c => {
+         const ops = fmtdOS.filter(o => o.cliente === c.nome_fantasia || o.cliente === c.razao_social);
+         return {
+            id: c.id,
+            nome: c.nome_fantasia || c.razao_social || "",
+            cnpj: c.cnpj || "",
+            totalFaturado: ops.reduce((sum, o) => sum + o.valorCliente, 0),
+            diarias: 0,
+            contratosFixos: 0,
+            operacoes: ops
+         };
+      });
+      setRelatorioClientes(fmtdCli);
+
+      // 3. Fetch Prestadores
+      const { data: prestData } = await supabase.from("prestadores").select("*");
+      const fmtdPrest: Prestador[] = (prestData || []).map(p => {
+         const ops = fmtdOS.filter(o => o.prestador === p.nome_completo);
+         return {
+            id: p.id,
+            nome: p.nome_completo || "",
+            cpfCnpj: p.cpf_cnpj || "",
+            tipo: p.tipo_parceiro || "Agregado",
+            totalOperacoes: ops.length,
+            valorPago: ops.reduce((sum, o) => sum + o.custoPrestador, 0),
+            score: p.score_interno || 4.0,
+            ocorrencias: 0
+         };
+      });
+      setRelatorioPrestadores(fmtdPrest);
+    }
+    loadData();
+  }, []);
+
+  const clientesUnicos = Array.from(new Set(relatorioOS.map(o => o.cliente).filter(Boolean)));
+  const prestadoresUnicos = Array.from(new Set(relatorioOS.map(o => o.prestador).filter(Boolean)));
+  const statusUnicos = Array.from(new Set(relatorioOS.map(o => o.status).filter(Boolean)));
+
+  const filteredOS = relatorioOS.filter(os => {
     if (filtros.cliente !== "todos" && os.cliente !== filtros.cliente) return false;
     if (filtros.prestador !== "todos" && os.prestador !== filtros.prestador) return false;
     if (filtros.status !== "todos" && os.status !== filtros.status) return false;
+    if (filtros.dataInicio && os.data && os.data < filtros.dataInicio) return false;
+    if (filtros.dataFim && os.data && os.data > filtros.dataFim) return false;
     return true;
   });
 
@@ -288,7 +342,7 @@ export default function RelatoriosEnterprise() {
   const totalMargem = filteredOS.reduce((acc, os) => acc + os.margem, 0);
   const margemMedia = totalReceita > 0 ? (totalMargem / totalReceita) * 100 : 0;
 
-  const scatterData = mockOS.map(os => ({
+  const scatterData = relatorioOS.map(os => ({
     x: os.custoPrestador,
     y: os.margem,
     z: os.valorCliente,
@@ -296,24 +350,38 @@ export default function RelatoriosEnterprise() {
   }));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
+      {/* Header enterprise */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shadow-sm">
             <BarChart3 className="w-6 h-6 text-primary" />
-            Relatórios Enterprise
-          </h2>
-          <p className="text-sm text-muted-foreground">Relatórios gerenciais com exportação PDF</p>
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Relatórios Enterprise</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Análises gerenciais, extrato operacional e exportação PDF corporativo</p>
+          </div>
         </div>
       </div>
 
       <Tabs value={view} onValueChange={setView} className="w-full">
-        <TabsList>
-          <TabsTrigger value="extrato">Extrato Operacional</TabsTrigger>
-          <TabsTrigger value="faturamento">Faturamento Cliente</TabsTrigger>
-          <TabsTrigger value="margem">Margem Operação</TabsTrigger>
-          <TabsTrigger value="prestadores">Prestadores</TabsTrigger>
-        </TabsList>
+        {/* Tabs underline enterprise */}
+        <div className="border-b border-border mb-6">
+          <TabsList className="h-auto bg-transparent p-0 gap-0">
+            <TabsTrigger value="extrato" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5 gap-2">
+              <FileText className="w-4 h-4"/>Extrato Operacional
+            </TabsTrigger>
+            <TabsTrigger value="faturamento" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5 gap-2">
+              <Building2 className="w-4 h-4"/>Faturamento Cliente
+            </TabsTrigger>
+            <TabsTrigger value="margem" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5 gap-2">
+              <TrendingUp className="w-4 h-4"/>Margem Operação
+            </TabsTrigger>
+            <TabsTrigger value="prestadores" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5 gap-2">
+              <Truck className="w-4 h-4"/>Prestadores
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* EXTRATO OPERACIONAL */}
         <TabsContent value="extrato" className="space-y-4 pt-4">
@@ -342,9 +410,7 @@ export default function RelatoriosEnterprise() {
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Todos" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todos</SelectItem>
-                      <SelectItem value="Tech Solutions">Tech Solutions</SelectItem>
-                      <SelectItem value="Indústria Global">Indústria Global</SelectItem>
-                      <SelectItem value="Comércio Varejo">Comércio Varejo</SelectItem>
+                      {clientesUnicos.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -354,9 +420,7 @@ export default function RelatoriosEnterprise() {
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Todos" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todos</SelectItem>
-                      <SelectItem value="João Transporte">João Transporte</SelectItem>
-                      <SelectItem value="Maria Logistics">Maria Logistics</SelectItem>
-                      <SelectItem value="Transportes ABC">Transportes ABC</SelectItem>
+                      {prestadoresUnicos.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -366,18 +430,38 @@ export default function RelatoriosEnterprise() {
                     <SelectTrigger className="mt-1"><SelectValue placeholder="Todos" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todos</SelectItem>
-                      <SelectItem value="Concluída">Concluída</SelectItem>
-                      <SelectItem value="Em Andamento">Em Andamento</SelectItem>
-                      <SelectItem value="Cancelada">Cancelada</SelectItem>
+                      {statusUnicos.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
+              {(filtros.cliente !== "todos" || filtros.prestador !== "todos" || filtros.status !== "todos" || filtros.dataInicio || filtros.dataFim) && (
+                <div className="mt-3 flex justify-end">
+                  <Button variant="outline" size="sm" onClick={() => setFiltros({ dataInicio: "", dataFim: "", cliente: "todos", prestador: "todos", status: "todos" })}>
+                    Limpar Filtros
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          <div className="flex justify-end">
-            <Button onClick={() => generateExtratoPDF(filteredOS, filtros)} className="gap-2 bg-orange-500 hover:bg-orange-600">
+          <div className="flex items-center justify-between">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 flex-1">
+              {[
+                { label: "Total OS", value: filteredOS.length, color: "text-slate-700" },
+                { label: "Receita", value: fmtFin(totalReceita), color: "text-blue-700" },
+                { label: "Custo", value: fmtFin(totalCusto), color: "text-red-600" },
+                { label: "Margem Média", value: `${margemMedia.toFixed(1)}%`, color: margemMedia >= 0 ? "text-green-600" : "text-red-600" },
+              ].map((kpi, i) => (
+                <Card key={i} className="border shadow-sm">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase font-medium">{kpi.label}</p>
+                    <p className={`text-lg font-bold ${kpi.color}`}>{kpi.value}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            <Button onClick={() => generateExtratoPDF(filteredOS, filtros)} className="gap-2 bg-orange-500 hover:bg-orange-600 ml-4">
               <Download className="w-4 h-4" />
               Gerar PDF
             </Button>
@@ -424,31 +508,58 @@ export default function RelatoriosEnterprise() {
             </CardContent>
           </Card>
 
+          {/* KPI cards — dark mode safe */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="bg-blue-50"><CardContent className="p-4"><p className="text-xs text-blue-800">Total OS</p><p className="text-xl font-bold text-blue-700">{filteredOS.length}</p></CardContent></Card>
-            <Card className="bg-green-50"><CardContent className="p-4"><p className="text-xs text-green-800">Receita Total</p><p className="text-xl font-bold text-green-700">{fmtFin(totalReceita)}</p></CardContent></Card>
-            <Card className="bg-red-50"><CardContent className="p-4"><p className="text-xs text-red-800">Custo Total</p><p className="text-xl font-bold text-red-700">{fmtFin(totalCusto)}</p></CardContent></Card>
-            <Card className="bg-purple-50"><CardContent className="p-4"><p className="text-xs text-purple-800">Margem Total</p><p className="text-xl font-bold text-purple-700">{fmtFin(totalMargem)} ({margemMedia.toFixed(1)}%)</p></CardContent></Card>
+            <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-1 shadow-sm hover:shadow-md transition">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Total OS</p>
+              <p className="text-2xl font-extrabold text-foreground">{filteredOS.length}</p>
+              <div className="h-1 w-full bg-blue-500/20 rounded-full mt-1"><div className="h-full bg-blue-500 rounded-full" style={{width:'60%'}}/></div>
+            </div>
+            <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-1 shadow-sm hover:shadow-md transition">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Receita Total</p>
+              <p className="text-2xl font-extrabold text-emerald-500">{fmtFin(totalReceita)}</p>
+              <div className="h-1 w-full bg-emerald-500/20 rounded-full mt-1"><div className="h-full bg-emerald-500 rounded-full" style={{width:'80%'}}/></div>
+            </div>
+            <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-1 shadow-sm hover:shadow-md transition">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Custo Total</p>
+              <p className="text-2xl font-extrabold text-rose-500">{fmtFin(totalCusto)}</p>
+              <div className="h-1 w-full bg-rose-500/20 rounded-full mt-1"><div className="h-full bg-rose-500 rounded-full" style={{width:'65%'}}/></div>
+            </div>
+            <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-1 shadow-sm hover:shadow-md transition">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Margem Total</p>
+              <p className="text-2xl font-extrabold text-violet-500">{fmtFin(totalMargem)}</p>
+              <p className="text-xs text-muted-foreground font-semibold">{margemMedia.toFixed(1)}% de margem</p>
+            </div>
           </div>
         </TabsContent>
 
         {/* FATURAMENTO POR CLIENTE */}
-        <TabsContent value="faturamento" className="space-y-4 pt-4">
+        <TabsContent value="faturamento" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {mockClientes.map((cliente) => (
-              <Card key={cliente.id} className={`cursor-pointer hover:shadow-lg transition ${clienteSelecionado?.id === cliente.id ? 'ring-2 ring-orange-500' : ''}`} onClick={() => setClienteSelecionado(cliente)}>
-                <CardHeader className="py-3">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Building2 className="w-4 h-4" />
-                    {cliente.nome}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-xs text-muted-foreground">{cliente.cnpj}</p>
-                  <p className="text-lg font-bold text-green-600 mt-2">{fmtFin(cliente.totalFaturado)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{cliente.operacoes.length} operações</p>
-                </CardContent>
-              </Card>
+            {relatorioClientes.length === 0 && <p className="text-muted-foreground text-sm py-4">Nenhum cliente com dados de faturamento.</p>}
+            {relatorioClientes.map((cliente) => (
+              <div
+                key={cliente.id}
+                className={`bg-card border rounded-xl p-5 cursor-pointer hover:shadow-lg transition-all hover:-translate-y-0.5 group ${
+                  clienteSelecionado?.id === cliente.id
+                    ? 'border-primary shadow-md shadow-primary/10'
+                    : 'border-border hover:border-primary/40'
+                }`}
+                onClick={() => setClienteSelecionado(cliente)}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Building2 className="w-5 h-5 text-primary" />
+                  </div>
+                  {clienteSelecionado?.id === cliente.id && (
+                    <div className="w-2.5 h-2.5 rounded-full bg-primary mt-1" />
+                  )}
+                </div>
+                <p className="font-bold text-foreground group-hover:text-primary transition-colors">{cliente.nome}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{cliente.cnpj}</p>
+                <p className="text-xl font-extrabold text-emerald-500 mt-3">{fmtFin(cliente.totalFaturado)}</p>
+                <p className="text-xs text-muted-foreground mt-1">{cliente.operacoes.length} operações realizadas</p>
+              </div>
             ))}
           </div>
 
@@ -524,8 +635,8 @@ export default function RelatoriosEnterprise() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {mockClientes.map((c) => {
-                      const ops = mockOS.filter(o => o.cliente === c.nome);
+                    {relatorioClientes.map((c) => {
+                      const ops = relatorioOS.filter(o => o.cliente === c.nome);
                       const receita = ops.reduce((a, o) => a + o.valorCliente, 0);
                       const custo = ops.reduce((a, o) => a + o.custoPrestador, 0);
                       const margem = receita - custo;
@@ -564,7 +675,7 @@ export default function RelatoriosEnterprise() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockPrestadores.map((p) => (
+                  {relatorioPrestadores.map((p) => (
                     <TableRow key={p.id}>
                       <TableCell className="font-medium">{p.nome}</TableCell>
                       <TableCell className="text-sm font-mono">{p.cpfCnpj}</TableCell>

@@ -465,36 +465,43 @@ try {
   }, [recebiveis, filtros]);
 
   const totais = useMemo(() => {
-    const pendentes = filtrados.filter(r => r.status === "pendente").reduce((acc, r) => acc + r.valorLiquido, 0);
-    const vencidos = filtrados.filter(r => r.status === "vencido").reduce((acc, r) => acc + r.valorLiquido, 0);
-    const pagos = filtrados.filter(r => r.status === "pago").reduce((acc, r) => acc + r.valorLiquido, 0);
-    const parciais = filtrados.filter(r => r.status === "parcial").reduce((acc, r) => acc + r.valorLiquido, 0);
+    const hoje = new Date().toISOString().split("T")[0];
+    const em7dias = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+    const pendentes = filtrados.filter(r => r.status === "pendente").reduce((acc, r) => acc + (r.valorLiquido || 0), 0);
+    const vencidos = filtrados.filter(r => r.status === "vencido").reduce((acc, r) => acc + (r.valorLiquido || 0), 0);
+    const pagos = filtrados.filter(r => r.status === "pago").reduce((acc, r) => acc + (r.valorLiquido || 0), 0);
+    const parciais = filtrados.filter(r => r.status === "parcial").reduce((acc, r) => acc + (r.valorLiquido || 0), 0);
     const total = pendentes + vencidos + parciais;
-    return { pendentes, vencidos, pagos, parciais, total };
+    const vence7 = filtrados.filter(r =>
+      (r.status === "pendente" || r.status === "parcial") &&
+      r.dataVencimento >= hoje && r.dataVencimento <= em7dias
+    ).reduce((acc, r) => acc + (r.valorLiquido || 0), 0);
+    const inadimplencia = (total + pagos) > 0 ? (vencidos / (total + pagos)) * 100 : 0;
+    return { pendentes, vencidos, pagos, parciais, total, vence7, inadimplencia };
   }, [filtrados]);
-
-  const StatCard = ({ title, value, icon: Icon, color, sub }: any) => (
-    <Card className="border-l-4" style={{ borderLeftColor: color }}>
-      <CardContent className="p-4 flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase">{title}</p>
-          <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-          {sub && <p className="text-[10px] text-muted-foreground mt-1">{sub}</p>}
-        </div>
-        <div className="p-3 bg-muted rounded-full">
-          <Icon className="w-5 h-5" style={{ color }} />
-        </div>
-      </CardContent>
-    </Card>
-  );
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total a Receber" value={fmtFin(totais.total)} icon={DollarSign} color="#2563eb" />
-        <StatCard title="Vencido" value={fmtFin(totais.vencidos)} icon={AlertTriangle} color="#dc2626" />
-        <StatCard title="Pendente" value={fmtFin(totais.pendentes)} icon={Clock} color="#eab308" />
-        <StatCard title="Recebido no Mês" value={fmtFin(totais.pagos)} icon={DollarSign} color="#16a34a" />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {[
+          { title: "Total a Receber", value: fmtFin(totais.total), icon: DollarSign, accent: "bg-blue-500", color: "text-blue-500" },
+          { title: "Vencido", value: fmtFin(totais.vencidos), icon: AlertTriangle, accent: "bg-red-500", color: "text-red-500" },
+          { title: "Vence em 7 dias", value: fmtFin(totais.vence7), icon: Clock, accent: "bg-amber-500", color: "text-amber-500" },
+          { title: "Pendente", value: fmtFin(totais.pendentes), icon: Clock, accent: "bg-yellow-500", color: "text-yellow-500" },
+          { title: "Recebido", value: fmtFin(totais.pagos), icon: DollarSign, accent: "bg-emerald-500", color: "text-emerald-500" },
+          { title: "Inadimpl\u00eancia", value: `${totais.inadimplencia.toFixed(1)}%`, icon: ArrowDownRight, accent: totais.inadimplencia > 10 ? "bg-red-500" : "bg-slate-500", color: totais.inadimplencia > 10 ? "text-red-500" : "text-muted-foreground" },
+        ].map(k => (
+          <div key={k.title} className="relative overflow-hidden bg-card border border-border rounded-xl p-4 shadow-sm hover:-translate-y-0.5 transition-transform">
+            <div className={`absolute top-0 left-0 right-0 h-0.5 ${k.accent}`} />
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{k.title}</p>
+                <p className={`text-base font-extrabold mt-1 ${k.color}`}>{k.value}</p>
+              </div>
+              <div className="p-2 bg-muted/40 rounded-xl"><k.icon className={`w-4 h-4 ${k.color}`} /></div>
+            </div>
+          </div>
+        ))}
       </div>
 
       <Card>

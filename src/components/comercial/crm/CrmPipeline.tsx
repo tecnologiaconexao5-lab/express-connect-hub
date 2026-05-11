@@ -60,6 +60,41 @@ export default function CrmPipeline({ leads, onLeadsChange }: CrmPipelineProps) 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const fmtInitials = (name: string) => name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
+  const formatPhoneForWhatsApp = (phone: string) => {
+    const digits = phone.replace(/\D/g, "");
+    return digits.length === 10 || digits.length === 11 ? `55${digits}` : digits;
+  };
+
+  const handleWhatsApp = () => {
+    if (!leadSelecionado?.telefone) return toast.error("Telefone não informado.");
+    const formatted = formatPhoneForWhatsApp(leadSelecionado.telefone);
+    window.open(`https://wa.me/${formatted}`, "_blank");
+    console.log(`[CRM] WhatsApp aberto para ${leadSelecionado.telefone}`);
+  };
+
+  const handleEmail = () => {
+    if (!leadSelecionado?.email) return toast.error("E-mail não informado.");
+    window.open(`mailto:${leadSelecionado.email}?subject=Contato - ${encodeURIComponent(leadSelecionado.empresa)}`, "_blank");
+    console.log(`[CRM] E-mail aberto para ${leadSelecionado.email}`);
+  };
+
+  const handleCall = () => {
+    if (!leadSelecionado?.telefone) return toast.error("Telefone não informado.");
+    const phone = leadSelecionado.telefone.replace(/\D/g, "");
+    window.open(`tel:${phone}`, "_blank");
+    console.log(`[CRM] Ligação iniciada para ${leadSelecionado.telefone}`);
+  };
+
+  const handleExcluirLead = () => {
+    if (!leadSelecionado) return;
+    const confirmar = window.confirm(`Tem certeza que deseja excluir o lead "${leadSelecionado.empresa}"?`);
+    if (!confirmar) return;
+    onLeadsChange(leads.filter(l => l.id !== leadSelecionado.id));
+    setDetalheOpen(false);
+    toast.success("Lead excluído!");
+    console.log(`[CRM] Lead ${leadSelecionado.empresa} excluído`);
+  };
+
   // Agrupa leads por estágio
   const leadsPorEstagio = useMemo(() => {
     const map: Record<string, Lead[]> = {};
@@ -500,13 +535,13 @@ export default function CrmPipeline({ leads, onLeadsChange }: CrmPipelineProps) 
                   </div>
 
                   <div className="flex gap-2 mt-2">
-                    <Button variant="outline" size="sm" className="flex-1 text-xs gap-1 text-green-700 border-green-300 bg-green-50 hover:bg-green-100">
+                    <Button variant="outline" size="sm" className="flex-1 text-xs gap-1 text-green-700 border-green-300 bg-green-50 hover:bg-green-100" onClick={handleWhatsApp} disabled={!leadSelecionado.telefone}>
                       <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 text-xs gap-1 text-blue-700 border-blue-300 bg-blue-50 hover:bg-blue-100">
+                    <Button variant="outline" size="sm" className="flex-1 text-xs gap-1 text-blue-700 border-blue-300 bg-blue-50 hover:bg-blue-100" onClick={handleEmail} disabled={!leadSelecionado.email}>
                       <Mail className="w-3.5 h-3.5" /> E-mail
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 text-xs gap-1">
+                    <Button variant="outline" size="sm" className="flex-1 text-xs gap-1" onClick={handleCall} disabled={!leadSelecionado.telefone}>
                       <Phone className="w-3.5 h-3.5" /> Ligar
                     </Button>
                   </div>
@@ -520,6 +555,10 @@ export default function CrmPipeline({ leads, onLeadsChange }: CrmPipelineProps) 
                       <User className="w-4 h-4" /> Converter em Cliente + Criar Rota
                     </Button>
                   )}
+
+                  <Button variant="outline" size="sm" className="w-full text-xs gap-1 text-red-700 border-red-300 bg-red-50 hover:bg-red-100 mt-2" onClick={handleExcluirLead}>
+                    <Trash2 className="w-3.5 h-3.5" /> Excluir Lead
+                  </Button>
                 </TabsContent>
 
                 {/* HISTÓRICO */}

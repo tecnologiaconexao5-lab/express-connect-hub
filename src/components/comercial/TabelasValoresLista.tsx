@@ -23,12 +23,71 @@ const TabelasValoresLista = () => {
   const fetchTabelas = async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase.from("tabelas_valores").select("*").order("nome");
-      if (error) throw error;
-      // Preenche lista mas se vazio a UI lida.
-      setTabelas((data as any) || []);
+      const { data, error } = await supabase
+        .from("tabelas_valores")
+        .select("*")
+        .order("nome", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: false, nullsFirst: false });
+      
+      if (error) {
+        console.error("[TabelasValores] Erro ao carregar:", error);
+        if (error.code === "42P01") {
+          setTabelas([]);
+          return;
+        }
+        if (error.message?.includes("nome")) {
+          const { data: data2, error: error2 } = await supabase
+            .from("tabelas_valores")
+            .select("*")
+            .order("created_at", { ascending: false });
+          if (!error2) {
+            setTabelas((data2 as any) || []);
+            return;
+          }
+        }
+        throw error;
+      }
+      
+      const normalizedData = (data as any[])?.map((t: any) => ({
+        ...t,
+        id: t.id,
+        nome: t.nome || "",
+        cliente: t.cliente || "",
+        unidade: t.unidade || "",
+        tipoOperacao: t.tipo_operacao || "",
+        segmentoCliente: t.segmento_cliente || "",
+        dataInicio: t.data_inicio || "",
+        dataFim: t.data_fim || "",
+        status: t.status || "rascunho",
+        versao: t.versao || 1,
+        tipoTabela: t.tipo_tabela || "principal",
+        observacoes: t.observacoes || "",
+        cobrancaPrincipais: Array.isArray(t.cobranca_principais) ? t.cobranca_principais : [],
+        tipoVeiculo: t.tipo_veiculo || "",
+        subcategoriaVeiculo: t.subcategoria_veiculo || "",
+        classificacaoTermica: t.classificacao_termica || "seco",
+        valorBase: t.valor_base || 0,
+        minimoFaturavel: t.minimo_faturavel || 0,
+        custoPrestador: t.custo_prestador || 0,
+        markupPercent: t.markup_percent || 0,
+        margemMinimaPercent: t.margem_minima_percent || 20,
+        custoMinimoPrestador: t.custo_minimo_prestador || 0,
+        franquiaKm: t.franquia_km || 0,
+        valorKmExcedente: t.valor_km_excedente || 0,
+        arredondamento: t.arredondamento || "normal",
+        cobrancaRetorno: (t.cobranca_retorno && typeof t.cobranca_retorno === 'object') ? t.cobranca_retorno : { cobrado: false, percentual: 0 },
+        faixas: Array.isArray(t.faixas) ? t.faixas : [],
+        adicionais: (t.adicionais && typeof t.adicionais === 'object') ? t.adicionais : {},
+        contaContabil: t.conta_contabil || "",
+        centroCustoPadrao: t.centro_custo_padrao || "",
+        universal: t.universal || false,
+      })) || [];
+      
+      setTabelas(normalizedData);
     } catch (e: any) {
+      console.error("[TabelasValores] Erro catch:", e);
       if (e.code !== "42P01") toast.error("Erro ao carregar tabelas de valores.");
+      setTabelas([]);
     } finally {
       setIsLoading(false);
     }
@@ -71,13 +130,73 @@ const TabelasValoresLista = () => {
     }
   };
 
+  const handleSalvarTabela = async (tabela: TabelaValores) => {
+    try {
+      const payload = {
+        nome: tabela.nome,
+        cliente: tabela.cliente,
+        unidade: tabela.unidade,
+        tipo_operacao: tabela.tipoOperacao,
+        segmento_cliente: tabela.segmentoCliente,
+        data_inicio: tabela.dataInicio || null,
+        data_fim: tabela.dataFim || null,
+        status: tabela.status,
+        versao: tabela.versao,
+        tipo_tabela: tabela.tipoTabela,
+        observacoes: tabela.observacoes,
+        cobranca_principais: tabela.cobrancaPrincipais,
+        tipo_veiculo: tabela.tipoVeiculo,
+        subcategoria_veiculo: tabela.subcategoriaVeiculo,
+        classificacao_termica: tabela.classificacaoTermica,
+        valor_base: tabela.valorBase,
+        minimo_faturavel: tabela.minimoFaturavel,
+        custo_prestador: tabela.custoPrestador,
+        markup_percent: tabela.markupPercent,
+        margem_minima_percent: tabela.margemMinimaPercent,
+        custo_minimo_prestador: tabela.custoMinimoPrestador,
+        franquia_km: tabela.franquiaKm,
+        valor_km_excedente: tabela.valorKmExcedente,
+        arredondamento: tabela.arredondamento,
+        cobranca_retorno: tabela.cobrancaRetorno,
+        faixas: tabela.faixas,
+        adicionais: tabela.adicionais,
+        conta_contabil: tabela.contaContabil,
+        centro_custo_padrao: tabela.centroCustoPadrao,
+        universal: !tabela.cliente,
+      };
+
+      let error;
+      if (modoForm === "novo") {
+        const result = await supabase.from("tabelas_valores").insert([payload]);
+        error = result.error;
+      } else {
+        const result = await supabase.from("tabelas_valores").update(payload).eq("id", tabela.id);
+        error = result.error;
+      }
+
+      if (error) {
+        console.error("[TabelasValores] Erro ao salvar:", error);
+        toast.error(`Erro ao salvar: ${error.message}`);
+        return;
+      }
+
+      toast.success("Tabela salva com sucesso!");
+      setModoForm(null);
+      setTabelaSelecionada(null);
+      fetchTabelas();
+    } catch (e) {
+      console.error("[TabelasValores] Erro catch salvar:", e);
+      toast.error("Erro ao salvar tabela.");
+    }
+  };
+
   if (modoForm) {
     return (
       <TabelaValoresForm
         tabela={tabelaSelecionada || undefined}
         modo={modoForm}
         onVoltar={() => { setModoForm(null); setTabelaSelecionada(null); fetchTabelas(); }}
-        onSalvar={() => { setModoForm(null); setTabelaSelecionada(null); fetchTabelas(); }}
+        onSalvar={handleSalvarTabela}
       />
     );
   }

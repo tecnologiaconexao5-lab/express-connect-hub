@@ -199,7 +199,6 @@ export async function testarAntiDuplicidade(): Promise<{
     email: email,
     tipo_parceiro: "autonomo",
     status: "ativo",
-    origem_cadastro: "teste",
     created_at: now(),
     updated_at: now(),
   }]).select("id").single();

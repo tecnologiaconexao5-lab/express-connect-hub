@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { UserPlus, Filter, Database, Clock, LineChart, Briefcase, PlusCircle, BarChart3, MessageSquare, Truck } from "lucide-react";
+import { UserPlus, Filter, Database, Clock, LineChart, Briefcase, PlusCircle, BarChart3, MessageSquare, Truck, Bot } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { Captacao } from "@/components/recrutamento/Captacao";
@@ -14,6 +14,7 @@ import { NovaOperacaoRI } from "@/components/recrutamento/NovaOperacaoRI";
 import { IndicadoresRI } from "@/components/recrutamento/IndicadoresRI";
 import { DisparosWhatsApp } from "@/components/recrutamento/DisparosWhatsApp";
 import { BancoMotoristas } from "@/components/recrutamento/BancoMotoristas";
+import { WhatsAppIAPrestadores } from "@/components/recrutamento/WhatsAppIAPrestadores";
 
 export default function Recrutamento() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -21,41 +22,69 @@ export default function Recrutamento() {
   const handleTabChange = (val: string) => setSearchParams({ tab: val });
 
   return (
-    <div className="space-y-6 max-w-[1400px] mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <UserPlus className="w-8 h-8 text-primary" /> Recrutamento Inteligente (RI) – Conexão Express
-          </h1>
-          <p className="text-muted-foreground">O motor completo para atrair, simular operações, qualificar via IA e automatizar a ativação de profissionais e parceiros.</p>
+    <div className="animate-fade-in">
+      {/* Header enterprise */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shadow-sm shrink-0">
+            <UserPlus className="w-6 h-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">
+              Recrutamento Inteligente
+            </h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Atrair, simular operações, qualificar via IA e automatizar a ativação de parceiros.
+            </p>
+          </div>
         </div>
       </div>
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full">
-           <TabsTrigger value="operacoes" className="px-5"><Briefcase className="w-4 h-4 mr-2"/> Operações</TabsTrigger>
-           <TabsTrigger value="nova-operacao" className="px-5"><PlusCircle className="w-4 h-4 mr-2"/> Nova Operação</TabsTrigger>
-           <TabsTrigger value="indicadores-ri" className="px-5"><BarChart3 className="w-4 h-4 mr-2"/> Indicadores</TabsTrigger>
-           <TabsTrigger value="disparos" className="px-5"><MessageSquare className="w-4 h-4 mr-2"/> Disparos WhatsApp</TabsTrigger>
-           <TabsTrigger value="motoristas" className="px-5"><Truck className="w-4 h-4 mr-2"/> Banco Motoristas</TabsTrigger>
-           <TabsTrigger value="captacao" className="px-5 text-muted-foreground"><UserPlus className="w-4 h-4 mr-2"/> Captação Base</TabsTrigger>
-           <TabsTrigger value="banco" className="px-5 text-muted-foreground"><Database className="w-4 h-4 mr-2"/> Célula de Talentos</TabsTrigger>
-           <TabsTrigger value="triagem" className="px-5 text-muted-foreground"><Filter className="w-4 h-4 mr-2"/> Triagem IA</TabsTrigger>
-           <TabsTrigger value="lembretes" className="px-5 text-muted-foreground"><Clock className="w-4 h-4 mr-2"/> Automações Antigas</TabsTrigger>
-           <TabsTrigger value="analytics" className="px-5 text-muted-foreground"><LineChart className="w-4 h-4 mr-2"/> Analytics Base</TabsTrigger>
-        </TabsList>
+        {/* Tabs bar enterprise — distribuída */}
+        <div className="mb-6 border-b border-border">
+          <TabsList className="h-auto bg-transparent p-0 gap-0 flex flex-wrap">
+            <TabsTrigger value="operacoes" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-4">
+              <Briefcase className="w-4 h-4"/>Operações
+            </TabsTrigger>
+            <TabsTrigger value="nova-operacao" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-4">
+              <PlusCircle className="w-4 h-4"/>Nova Operação
+            </TabsTrigger>
+            <TabsTrigger value="indicadores-ri" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-4">
+              <BarChart3 className="w-4 h-4"/>Indicadores
+            </TabsTrigger>
+            <TabsTrigger value="disparos" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-4">
+              <MessageSquare className="w-4 h-4"/>Disparos WApp
+            </TabsTrigger>
+            <TabsTrigger value="motoristas" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-4">
+              <Truck className="w-4 h-4"/>Banco Motoristas
+            </TabsTrigger>
+            <TabsTrigger value="whatsapp-ia" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-green-500 data-[state=active]:bg-transparent data-[state=active]:text-green-600 pb-3 px-4">
+              <Bot className="w-4 h-4"/>WhatsApp IA
+            </TabsTrigger>
+            <TabsTrigger value="captacao" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-4 text-muted-foreground">
+              <UserPlus className="w-4 h-4"/>Captação
+            </TabsTrigger>
+            <TabsTrigger value="banco" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-4 text-muted-foreground">
+              <Database className="w-4 h-4"/>Talentos
+            </TabsTrigger>
+            <TabsTrigger value="triagem" className="gap-1.5 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-4 text-muted-foreground">
+              <Filter className="w-4 h-4"/>Triagem IA
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-        <TabsContent value="operacoes" className="pt-4"><OperacoesRI /></TabsContent>
-        <TabsContent value="nova-operacao" className="pt-4"><NovaOperacaoRI /></TabsContent>
-        <TabsContent value="indicadores-ri" className="pt-4"><IndicadoresRI /></TabsContent>
-        <TabsContent value="disparos" className="pt-4"><DisparosWhatsApp /></TabsContent>
-        <TabsContent value="motoristas" className="pt-4"><BancoMotoristas /></TabsContent>
-        
-        <TabsContent value="captacao" className="pt-4"><Captacao /></TabsContent>
-        <TabsContent value="banco" className="pt-4"><BancoTalentos /></TabsContent>
-        <TabsContent value="triagem" className="pt-4"><TriagemIA /></TabsContent>
-        <TabsContent value="lembretes" className="pt-4"><LembretesAuto /></TabsContent>
-        <TabsContent value="analytics" className="pt-4"><RecrutamentoAnalytics /></TabsContent>
+        <TabsContent value="operacoes"><OperacoesRI /></TabsContent>
+        <TabsContent value="nova-operacao"><NovaOperacaoRI /></TabsContent>
+        <TabsContent value="indicadores-ri"><IndicadoresRI /></TabsContent>
+        <TabsContent value="disparos"><DisparosWhatsApp /></TabsContent>
+        <TabsContent value="whatsapp-ia"><WhatsAppIAPrestadores /></TabsContent>
+        <TabsContent value="motoristas"><BancoMotoristas /></TabsContent>
+        <TabsContent value="captacao"><Captacao /></TabsContent>
+        <TabsContent value="banco"><BancoTalentos /></TabsContent>
+        <TabsContent value="triagem"><TriagemIA /></TabsContent>
+        <TabsContent value="lembretes"><LembretesAuto /></TabsContent>
+        <TabsContent value="analytics"><RecrutamentoAnalytics /></TabsContent>
       </Tabs>
     </div>
   );

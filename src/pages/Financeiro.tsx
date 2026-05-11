@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Download, UploadCloud, PieChart, CheckCircle2, MoreHorizontal, FileText, Target, UserMinus, ShieldCheck, CreditCard, ArrowRightLeft, Plus, Search, LayoutDashboard, Calculator, BookOpen, Landmark, Users, Package, Clock, Receipt, TrendingUpIcon, FileCheck, FileX, Check, X, Eye, Edit, Trash2, AlertCircle, Sparkles } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Download, UploadCloud, PieChart, CheckCircle2, MoreHorizontal, FileText, Target, UserMinus, ShieldCheck, CreditCard, ArrowRightLeft, Plus, Search, LayoutDashboard, Calculator, BookOpen, Landmark, Users, Package, Clock, Receipt, TrendingUpIcon, FileCheck, FileX, Check, X, Eye, Edit, Trash2, AlertCircle, Sparkles, MoreVertical } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,12 +24,14 @@ import PendenciasCadastro from "@/components/financeiro/PendenciasCadastro";
 import Inadimplencia from "@/components/financeiro/Inadimplencia";
 import ConciliacaoAvancada from "@/components/financeiro/ConciliacaoAvancada";
 import MargemOperacional from "@/components/financeiro/MargemOperacional";
+import MargemPorOS from "@/components/financeiro/MargemPorOS";
 import DateRangePicker from "@/components/ui/DateRangePicker";
 import ContasBancarias from "@/components/financeiro/ContasBancarias";
 import ReciboRapido from "@/components/financeiro/ReciboRapido";
 import ContasReceberEnterprise from "@/components/financeiro/ContasReceberEnterprise";
 import ContasPagar from "@/components/financeiro/ContasPagar";
 import PagamentoPrestadores from "@/components/financeiro/PagamentoPrestadores";
+import RelatorioFinanceiroCompleto from "@/components/financeiro/RelatorioFinanceiroCompleto";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -117,26 +119,28 @@ export default function Financeiro() {
       </div>
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full mb-4">
-            <TabsTrigger value="dashboard" className="data-[state=active]:bg-muted"><LayoutDashboard className="w-4 h-4 mr-2"/> Dashboard</TabsTrigger>
-            <TabsTrigger value="contas-caixas" className="data-[state=active]:bg-muted"><Landmark className="w-4 h-4 mr-2"/> Contas & Caixas</TabsTrigger>
-            <TabsTrigger value="receber" className="data-[state=active]:bg-muted"><ArrowDownRight className="w-4 h-4 mr-2"/> Receber</TabsTrigger>
-            <TabsTrigger value="inadimplencia" className="data-[state=active]:bg-muted"><UserMinus className="w-4 h-4 mr-2"/> Inadimplência</TabsTrigger>
-            <TabsTrigger value="pagar" className="data-[state=active]:bg-muted"><ArrowUpRight className="w-4 h-4 mr-2"/> Pagar</TabsTrigger>
-            <TabsTrigger value="pagamento-prestadores" className="data-[state=active]:bg-muted"><Users className="w-4 h-4 mr-2"/> Pag. Prestadores</TabsTrigger>
-            <TabsTrigger value="fluxo" className="data-[state=active]:bg-muted"><TrendingUp className="w-4 h-4 mr-2"/> Fluxo de Caixa</TabsTrigger>
-            <TabsTrigger value="dre" className="data-[state=active]:bg-muted"><Calculator className="w-4 h-4 mr-2"/> DRE</TabsTrigger>
-            <TabsTrigger value="plano-contas" className="data-[state=active]:bg-muted"><BookOpen className="w-4 h-4 mr-2"/> Plano de Contas</TabsTrigger>
-            <TabsTrigger value="conciliacao" className="data-[state=active]:bg-muted"><ArrowRightLeft className="w-4 h-4 mr-2"/> Conciliação</TabsTrigger>
-            <TabsTrigger value="lotes" className="data-[state=active]:bg-muted"><CreditCard className="w-4 h-4 mr-2"/> CNAB</TabsTrigger>
-            <TabsTrigger value="centro-resultado" className="data-[state=active]:bg-muted"><PieChart className="w-4 h-4 mr-2"/> Centro Resultado</TabsTrigger>
-            <TabsTrigger value="provisoes" className="data-[state=active]:bg-muted"><Clock className="w-4 h-4 mr-2"/> Provisões</TabsTrigger>
-            <TabsTrigger value="recibos" className="data-[state=active]:bg-muted"><Receipt className="w-4 h-4 mr-2"/> Recibos</TabsTrigger>
-            <TabsTrigger value="rentabilidade" className="data-[state=active]:bg-muted"><TrendingUpIcon className="w-4 h-4 mr-2"/> Rentabilidade</TabsTrigger>
-            <TabsTrigger value="pendencias" className="data-[state=active]:bg-muted"><ShieldCheck className="w-4 h-4 mr-2 text-red-500"/> Pendências</TabsTrigger>
-            <TabsTrigger value="margem" className="data-[state=active]:bg-muted"><Target className="w-4 h-4 mr-2"/> Margem</TabsTrigger>
-            <TabsTrigger value="seguros" className="data-[state=active]:bg-muted"><DollarSign className="w-4 h-4 mr-2"/> Seguros</TabsTrigger>
-            <TabsTrigger value="contabilidade" className="data-[state=active]:bg-muted"><FileText className="w-4 h-4 mr-2"/> Contabilidade</TabsTrigger>
+        <TabsList className="mb-4 justify-start overflow-x-auto flex-wrap">
+            <TabsTrigger value="dashboard" className="gap-2"><LayoutDashboard className="w-4 h-4"/>Dashboard</TabsTrigger>
+            <TabsTrigger value="receber" className="gap-2"><ArrowDownRight className="w-4 h-4"/>Receber</TabsTrigger>
+            <TabsTrigger value="pagar" className="gap-2"><ArrowUpRight className="w-4 h-4"/>Pagar</TabsTrigger>
+            <TabsTrigger value="pagamento-prestadores" className="gap-2"><Users className="w-4 h-4"/>Pag. Prestadores</TabsTrigger>
+            <TabsTrigger value="margem-os" className="gap-2"><TrendingUpIcon className="w-4 h-4"/>Margem por OS</TabsTrigger>
+            <TabsTrigger value="fluxo" className="gap-2"><TrendingUp className="w-4 h-4"/>Fluxo de Caixa</TabsTrigger>
+            <TabsTrigger value="dre" className="gap-2"><Calculator className="w-4 h-4"/>DRE</TabsTrigger>
+            <TabsTrigger value="conciliacao" className="gap-2"><ArrowRightLeft className="w-4 h-4"/>Conciliação</TabsTrigger>
+            <TabsTrigger value="lotes" className="gap-2"><CreditCard className="w-4 h-4"/>CNAB</TabsTrigger>
+            <TabsTrigger value="plano-contas" className="gap-2"><BookOpen className="w-4 h-4"/>Plano de Contas</TabsTrigger>
+            <TabsTrigger value="contas-caixas" className="gap-2"><Landmark className="w-4 h-4"/>Contas & Caixas</TabsTrigger>
+            <TabsTrigger value="inadimplencia" className="gap-2"><UserMinus className="w-4 h-4"/>Inadimplência</TabsTrigger>
+            <TabsTrigger value="relatorios" className="gap-2"><FileText className="w-4 h-4"/>Relatórios</TabsTrigger>
+            <TabsTrigger value="margem" className="gap-2"><Target className="w-4 h-4"/>Margem</TabsTrigger>
+            <TabsTrigger value="provisoes" className="gap-2"><Clock className="w-4 h-4"/>Provisões</TabsTrigger>
+            <TabsTrigger value="centro-resultado" className="gap-2"><PieChart className="w-4 h-4"/>Centro Resultado</TabsTrigger>
+            <TabsTrigger value="recibos" className="gap-2"><Receipt className="w-4 h-4"/>Recibos</TabsTrigger>
+            <TabsTrigger value="rentabilidade" className="gap-2"><TrendingUpIcon className="w-4 h-4"/>Rentabilidade</TabsTrigger>
+            <TabsTrigger value="pendencias" className="gap-2"><ShieldCheck className="w-4 h-4 text-red-500"/>Pendências</TabsTrigger>
+            <TabsTrigger value="seguros-auto" className="gap-2"><ShieldCheck className="w-4 h-4"/>Seguros Auto</TabsTrigger>
+            <TabsTrigger value="contabilidade" className="gap-2"><FileText className="w-4 h-4"/>Contabilidade</TabsTrigger>
         </TabsList>
 
         {/* --- DASHBOARD FINANCEIRO ENTERPRISE --- */}
@@ -276,13 +280,18 @@ export default function Financeiro() {
         </TabsContent>
         */}
 
+        {/* --- MARGEM POR OS --- */}
+        <TabsContent value="margem-os" className="pt-4">
+           <MargemPorOS />
+        </TabsContent>
+
         {/* --- DRE --- / substituido por Margem */}
         <TabsContent value="margem" className="pt-4">
            <MargemOperacional />
         </TabsContent>
 
         {/* --- SEGUROS --- */}
-        <TabsContent value="seguros" className="pt-4">
+        <TabsContent value="seguros-auto" className="pt-4">
            <SegurosFinanceiro />
         </TabsContent>
 
@@ -554,7 +563,12 @@ export default function Financeiro() {
                  </Card>
                </div>
              </TabsContent>
-           </Tabs>
+              </Tabs>
+        </TabsContent>
+
+        {/* --- RELATÓRIOS FINANCEIROS --- */}
+        <TabsContent value="relatorios" className="pt-4">
+          <RelatorioFinanceiroCompleto />
         </TabsContent>
 
       </Tabs>

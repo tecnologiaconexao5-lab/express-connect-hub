@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { ArrowLeft, Save, FileDown, Plus, Trash2, MapPin, Package, Truck, DollarSign, Clock, Lightbulb, Check, Copy, Route } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,8 @@ import { EnderecoCompleto, EnderecoType } from "@/components/ui/EnderecoCompleto
 import { toast } from "sonner";
 import { TIPOS_VEICULO } from "@/constants/tiposVeiculo";
 import { calcularDistancia, type DistanceResult } from "@/services/maps";
+import { supabase } from "@/lib/supabase";
+import { calcularValorPorDistancia, ResultadoCalculo } from "@/services/financeiro/calculoService";
 
 const gerarNumeroOrcamento = () => {
   const now = new Date();
@@ -26,6 +28,90 @@ const gerarNumeroOrcamento = () => {
   const mes = String(now.getMonth() + 1).padStart(2, '0');
   const seq = String(Math.floor(Math.random() * 9000) + 1000);
   return `ORC-${ano}${mes}-${seq}`;
+};
+
+interface TabelaValorRow {
+  id?: string;
+  nome?: string;
+  tipo_veiculo?: string;
+  valor_base?: number;
+  valor_km?: number;
+  valor_km_excedente?: number;
+  valor_minimo?: number;
+  franquia_km?: number;
+  percentual_prestador?: number;
+  pedagio_incluso?: boolean;
+  ativo?: boolean;
+  universal?: boolean;
+  cliente?: string;
+}
+
+const buscarTabelaValores = async (cliente: string, tipoVeiculo: string, km: number): Promise<TabelaValorRow | null> => {
+  try {
+    const tipoNorm = tipoVeiculo?.toLowerCase().trim() || "";
+
+    let { data: clienteTabela, error } = await supabase
+      .from("tabelas_valores")
+      .select("id, nome, tipo_veiculo, valor_base, valor_km, valor_km_excedente, valor_minimo, franquia_km, percentual_prestador, pedagio_incluso, ativo, universal, cliente, cobranca_principais")
+      .ilike("tipo_veiculo", tipoNorm)
+      .eq("ativo", true)
+      .limit(20);
+
+    if (error) {
+      console.error("[OrcamentoForm] Erro busca tabela:", error);
+      return null;
+    }
+
+    if (!clienteTabela || clienteTabela.length === 0) {
+      console.warn("[OrcamentoForm] Nenhuma tabela ativa para veiculo:", tipoVeiculo);
+      return null;
+    }
+
+    const tabelaCliente = clienteTabela.find(t =>
+      t.cliente && t.cliente.toLowerCase().includes(cliente?.toLowerCase() || "")
+    );
+    if (tabelaCliente) return tabelaCliente as unknown as TabelaValorRow;
+
+    const tabelaUniversal = clienteTabela.find(t => t.universal === true);
+    if (tabelaUniversal) return tabelaUniversal as unknown as TabelaValorRow;
+
+    return clienteTabela[0] as unknown as TabelaValorRow;
+  } catch (e) {
+    console.error("[OrcamentoForm] Erro geral buscarTabela:", e);
+    return null;
+  }
+};
+
+const calcularValorAutomatico = (tabela: TabelaValorRow | null, distanciaKm: number, pedagio: number = 0): { valor: number; valorPrestador: number; tabelaNome: string; pendente: boolean; descricao: string; kmExcedente: number; valorKmExcedente: number; percentualPrestador: number } => {
+  if (!tabela) {
+    return { valor: 0, valorPrestador: 0, tabelaNome: "", pendente: true, descricao: "", kmExcedente: 0, valorKmExcedente: 0, percentualPrestador: 80 };
+  }
+
+  const valorBase = Number(tabela.valor_base) || 0;
+  const franquiaKm = Number(tabela.franquia_km) || 0;
+  const valorKmExcedente = Number(tabela.valor_km_excedente) || Number(tabela.valor_km) || 0;
+  const valorMinimo = Number(tabela.valor_minimo) || 0;
+  const percentualPrestador = Number(tabela.percentual_prestador) || 80;
+
+  const kmExcedente = Math.max(0, distanciaKm - franquiaKm);
+  let valorCalculado = valorBase + (kmExcedente * valorKmExcedente);
+  valorCalculado = Math.max(valorCalculado, valorMinimo || valorBase);
+  const valorComPedagio = valorCalculado + pedagio;
+  
+  const valorPrestador = valorComPedagio * (percentualPrestador / 100);
+  
+  const descricao = `Base R$${valorBase.toFixed(2)} (até ${franquiaKm}km) + ${kmExcedente.toFixed(1)}km exced x R$${valorKmExcedente.toFixed(2)} + pedagio R$${pedagio.toFixed(2)} = R$${valorComPedagio.toFixed(2)} | Prest: ${percentualPrestador}% = R$${valorPrestador.toFixed(2)}`;
+
+  return {
+    valor: Math.round(valorComPedagio * 100) / 100,
+    valorPrestador: Math.round(valorPrestador * 100) / 100,
+    tabelaNome: tabela.nome || "Universal",
+    pendente: false,
+    descricao,
+    kmExcedente,
+    valorKmExcedente,
+    percentualPrestador
+  };
 };
 
 interface SugestaoVeiculo {
@@ -102,6 +188,111 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
   const [distanciaRota, setDistanciaRota] = useState<DistanceResult | null>(null);
   const [calculandoDistancia, setCalculandoDistancia] = useState(false);
   const readOnly = modo === "ver";
+
+  // useEffect para buscar distância quando endereços mudam
+  useEffect(() => {
+    const calcularDistanciaAuto = async () => {
+      const enderecos = data.enderecos || [];
+      const cols = enderecos.filter(e => e.tipo === "coleta" && e.endereco?.trim());
+      const ents = enderecos.filter(e => e.tipo === "entrega" && e.endereco?.trim());
+
+      if (cols.length === 0 || ents.length === 0) return;
+
+      const origem = cols[0].endereco;
+      const destino = ents[ents.length - 1].endereco;
+      if (!origem || !destino) return;
+      if (origem.includes("undefined") || destino.includes("undefined")) return;
+
+      console.log("[OrcamentoForm] Calculando distância...");
+      console.log("[OrcamentoForm] VEÍCULO:", data.veiculo.tipo);
+      console.log("[OrcamentoForm] CLIENTE:", data.cliente);
+      console.log("[OrcamentoForm] ORIGEM:", origem);
+      console.log("[OrcamentoForm] DESTINO:", destino);
+
+      setCalculandoDistancia(true);
+      try {
+        const resultado = await calcularDistancia(origem, destino);
+        console.log("[OrcamentoForm] RESULTADO MAPBOX:", resultado);
+
+        if (resultado) {
+          setDistanciaRota(resultado);
+          setData((prev) => ({
+            ...prev,
+            distancia_rota: {
+              distancia_km: resultado.distanciaKm,
+              duracao_min: resultado.duracaoMin,
+              distancia_texto: resultado.distanciaTexto,
+              duracao_texto: resultado.duracaoTexto,
+              maps_provider: "mapbox",
+            },
+          }));
+        }
+      } catch (e) {
+        console.error("[OrcamentoForm] Erro ao calcular distancia:", e);
+      } finally {
+        setCalculandoDistancia(false);
+      }
+    };
+
+    const timerId = setTimeout(calcularDistanciaAuto, 1000);
+    return () => clearTimeout(timerId);
+  }, [data.enderecos]);
+
+  // useEffect para buscar tabela e calcular valor quando distância muda
+  useEffect(() => {
+    const calcularValorAuto = async () => {
+      if (!data.distancia_rota?.distancia_km || !data.distancia_rota.distancia_km > 0) return;
+      if (!data.veiculo.tipo) return;
+
+      const km = data.distancia_rota.distancia_km;
+      console.log("[OrcamentoForm] DISTÂNCIA CALCULADA:", km, "km");
+
+      const tabela = await buscarTabelaValores(data.cliente, data.veiculo.tipo, Math.ceil(km));
+      console.log("[OrcamentoForm] TABELA ENCONTRADA:", tabela);
+
+      if (tabela) {
+        const { valor, valorPrestador, tabelaNome, descricao } = calcularValorAutomatico(tabela, km, data.valores.pedagio || 0);
+        setData((prev) => {
+          const v = { ...prev.valores };
+          v.tabelaVinculada = tabelaNome;
+          v.valorBase = valor;
+          v.custoEstimado = valorPrestador;
+          v.valorFinal = valor + v.adicionais + v.kmExcedente + v.ajudante + v.devolucao + v.reentrega - v.descontos;
+          v.lucroEstimado = v.valorFinal - v.custoEstimado;
+          v.margemEstimada = v.valorFinal > 0 ? Math.round((v.lucroEstimado / v.valorFinal) * 1000) / 10 : 0;
+          return { ...prev, valores: v };
+        });
+      } else {
+        // Fallback para tabela teste local
+        const resultado = calcularValorPorDistancia({
+          distanciaKm: km,
+          tipoVeiculo: data.veiculo.tipo,
+          usarTabelaTeste: true
+        });
+
+        if (resultado.valorCliente > 0) {
+          toast.info("Nenhuma tabela ativa encontrada. Usando tabela teste local para simulação.");
+          setData((prev) => {
+            const v = { ...prev.valores };
+            v.tabelaVinculada = resultado.tabelaAplicada;
+            v.valorBase = resultado.valorCliente;
+            v.custoEstimado = resultado.valorPrestador;
+            v.kmExcedente = resultado.kmExcedente;
+            v.valorFinal = resultado.valorCliente + v.adicionais + v.pedagio + v.ajudante + v.devolucao + v.reentrega - v.descontos;
+            v.lucroEstimado = v.valorFinal - v.custoEstimado;
+            v.margemEstimada = v.valorFinal > 0 ? Math.round((v.lucroEstimado / v.valorFinal) * 1000) / 10 : 0;
+            return { ...prev, valores: v, faixa_aplicada: resultado.faixaAplicada };
+          });
+        } else {
+          console.warn("[OrcamentoForm] Nenhuma tabela ativa encontrada para este veículo.");
+          toast.warning("Nenhuma tabela ativa encontrada para este veículo e distância.");
+        }
+      }
+    };
+
+    const timerId = setTimeout(calcularValorAuto, 500);
+    return () => clearTimeout(timerId);
+  }, [data.distancia_rota?.distancia_km, data.veiculo.tipo, data.cliente]);
 
   const update = (path: string, value: any) => {
     setData((prev) => {
@@ -186,11 +377,92 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
   };
 
   const addEndereco = () => {
-    setData((prev) => ({ ...prev, enderecos: [...prev.enderecos, { ...emptyEndereco(), sequencia: prev.enderecos.length + 1 }] }));
+    const novoTipo = data.enderecos.length === 0 ? "coleta" : "entrega";
+    setData((prev) => ({ ...prev, enderecos: [...prev.enderecos, { ...emptyEndereco(), sequencia: prev.enderecos.length + 1, tipo: novoTipo }] }));
   };
 
   const removeEndereco = (idx: number) => {
     setData((prev) => ({ ...prev, enderecos: prev.enderecos.filter((_, i) => i !== idx).map((e, i) => ({ ...e, sequencia: i + 1 })) }));
+  };
+
+  const sanitizeOrcamentoPayload = (rawPayload: Record<string, any>): { payload: Record<string, any>; removed: string[] } => {
+    const payloadSeguro: Record<string, any> = {
+      numero: rawPayload.numero,
+      data_emissao: rawPayload.data_emissao,
+      cliente: rawPayload.cliente,
+      cliente_id: rawPayload.cliente_id,
+      status: rawPayload.status,
+      valor_cliente: rawPayload.valor_cliente,
+      custo_prestador: rawPayload.custo_prestador,
+      distancia_km: rawPayload.distancia_km,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const allKeys = Object.keys(rawPayload);
+    const usedKeys = Object.keys(payloadSeguro);
+    const removed = allKeys.filter(k => !usedKeys.includes(k));
+
+    console.log("[ORC SAVE] Payload original:", rawPayload);
+    console.log("[ORC SAVE] Payload final enviado:", payloadSeguro);
+    console.log("[ORC SAVE] Campos removidos:", removed);
+
+    return { payload: payloadSeguro, removed };
+  };
+
+  const gerarOS = async () => {
+    try {
+      const rawPayload = {
+        numero: `OS-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}-${Math.floor(Math.random()*9000)+1000}`,
+        data_emissao: new Date().toISOString().split('T')[0],
+        cliente: data.cliente,
+        cliente_id: data.clienteId,
+        status: "rascunho",
+        valor_cliente: data.valor_cliente,
+        custo_prestador: data.custo_prestador,
+        distancia_km: data.distancia_rota?.distancia_km || 0,
+        veiculo_tipo: data.veiculo_tipo,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { payload, removed } = sanitizeOrcamentoPayload(rawPayload);
+      
+      const { data: osResult, error } = await supabase.from("ordens_servico").insert([payload]).select().single();
+      
+      if (error) {
+        console.error("[gerarOS] Erro ao criar OS:", error);
+        toast.error("Erro ao gerar OS: " + error.message);
+        return;
+      }
+      
+      for (const end of data.enderecos) {
+        const { logradouro, numero } = (() => {
+          const match = end.logradouro?.match(/^(.+?),\s*(\d+)\s*[-–]?\s*$/);
+          return match ? { logradouro: match[1].trim(), numero: match[2].trim() } : { logradouro: end.logradouro, numero: end.numero };
+        })();
+        
+        const enderecoFormatado = `${logradouro || ''}${numero ? ', ' + numero : ''} - ${end.bairro || ''}, ${end.cidade || ''}/${end.estado || ''}`.replace(/^ - |\/$/g, "");
+        
+        await supabase.from("os_enderecos").insert([{
+          os_id: osResult.id,
+          sequencia: end.sequencia,
+          tipo: end.tipo,
+          nome_local: end.nome_local,
+          logradouro: logradouro,
+          numero: numero,
+          bairro: end.bairro,
+          cidade: end.cidade,
+          estado: end.estado,
+          endereco: enderecoFormatado
+        }]);
+      }
+      
+      toast.success("Ordem de Serviço criada com sucesso!");
+    } catch (e: any) {
+      console.error("[gerarOS] Erro catch:", e);
+      toast.error("Erro ao gerar OS: " + e.message);
+    }
   };
 
   const handleSalvar = () => {
@@ -230,13 +502,13 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
                 {STATUS_CONFIG[data.status].label}
               </span>
             </div>
-            <p className="text-sm text-muted-foreground">{modo === "novo" ? "Novo orÃ§amento" : data.cliente || "â€”"}</p>
+            <p className="text-sm text-muted-foreground">{modo === "novo" ? "Novo orçamento" : data.cliente || "—"}</p>
           </div>
         </div>
-        <div className="flex gap-2">
+<div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => gerarPdfOrcamento(data)}><FileDown className="w-4 h-4 mr-1" /> Gerar PDF</Button>
-          <Button variant="outline" size="sm" disabled><span className="text-xs mr-1">ðŸ”œ</span> Gerar Contrato</Button>
-          {data.status === "aprovado" && <Button variant="outline" size="sm" disabled><span className="text-xs mr-1">ðŸ”œ</span> Converter em OS</Button>}
+          <Button variant="outline" size="sm" disabled>Gerar Contrato</Button>
+          {data.status === "aprovado" && <Button variant="default" size="sm" onClick={() => gerarOS()}>Converter em OS</Button>}
           {!readOnly && <Button size="sm" className="bg-primary text-primary-foreground" onClick={handleSalvar}><Save className="w-4 h-4 mr-1" /> Salvar</Button>}
         </div>
       </div>
@@ -244,12 +516,12 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
       <Tabs defaultValue="identificacao" className="w-full">
         <TabsList className="flex flex-wrap h-auto gap-1 bg-muted p-1">
           <TabsTrigger value="identificacao" className="text-xs"><Clock className="w-3 h-3 mr-1" />Identificação</TabsTrigger>
-          <TabsTrigger value="enderecos" className="text-xs"><MapPin className="w-3 h-3 mr-1" />Endereços</TabsTrigger>
           <TabsTrigger value="carga" className="text-xs"><Package className="w-3 h-3 mr-1" />Carga</TabsTrigger>
           <TabsTrigger value="veiculo" className="text-xs"><Truck className="w-3 h-3 mr-1" />Veículo</TabsTrigger>
+          <TabsTrigger value="enderecos" className="text-xs"><MapPin className="w-3 h-3 mr-1" />Endereços</TabsTrigger>
           <TabsTrigger value="valores" className="text-xs"><DollarSign className="w-3 h-3 mr-1" />Valores</TabsTrigger>
           <TabsTrigger value="documentos" className="text-xs"><FileDown className="w-3 h-3 mr-1" />Docs e PDF</TabsTrigger>
-          <TabsTrigger value="historico" className="text-xs">Histórico</TabsTrigger>
+          <TabsTrigger value="historico" className="text-xs"><Clock className="w-3 h-3 mr-1" />Histórico</TabsTrigger>
         </TabsList>
 
         {/* IDENTIFICAÇÃO */}
@@ -296,7 +568,7 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
                 <Select value={data.tipoOperacao} onValueChange={(v) => update("tipoOperacao", v)} disabled={readOnly}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="DistribuiÃ§Ã£o">DistribuiÃ§Ã£o</SelectItem>
+                    <SelectItem value="Distribuição">Distribuição</SelectItem>
                     <SelectItem value="TransferÃªncia">TransferÃªncia</SelectItem>
                     <SelectItem value="Coleta e Entrega">Coleta e Entrega</SelectItem>
                     <SelectItem value="Dedicado">Dedicado</SelectItem>
@@ -382,31 +654,35 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
                   </div>
 
                   {readOnly ? (
-                     <Field label="EndereÃ§o Cadastrado"><Input value={`${end.endereco}, ${end.cidade}/${end.uf} - ${end.cep}`} readOnly /></Field>
+                     <Field label="Endereço Cadastrado"><Input value={`${end.endereco}, ${end.cidade}/${end.uf} - ${end.cep}`} readOnly /></Field>
                   ) : (
 <EnderecoCompleto
                          label="Dados do Endereço (ViaCEP)"
                          value={{ cep: end.cep || "", logradouro: end.logradouro || "", numero: end.numero || "", complemento: end.complemento || "", bairro: end.bairro || "", cidade: end.cidade || "", estado: end.uf || "", referencia: end.instrucoes || "" } as any}
                          onChange={(obj) => {
+                            const { logradouro: log, numero: num } = (() => {
+                              const match = obj.logradouro?.match(/^(.+?),\s*(\d+)\s*[-–]?\s*$/);
+                              return match ? { logradouro: match[1].trim(), numero: match[2].trim() } : { logradouro: obj.logradouro, numero: obj.numero };
+                            })();
                             const es = [...data.enderecos];
                             es[idx] = { 
                               ...es[idx], 
                               cep: obj.cep, 
-                              endereco: obj.logradouro ? `${obj.logradouro}, ${obj.numero || ''} - ${obj.bairro}, ${obj.cidade}/${obj.estado}` : (end.nomeLocal || ""),
-                              logradouro: obj.logradouro,
-                              numero: obj.numero,
+                              logradouro: obj.logradouro || log,
+                              numero: obj.numero || num,
                               complemento: obj.complemento,
-                              bairro: obj.bairro,
-                              cidade: obj.cidade,
-                              uf: obj.estado,
-                              instrucoes: obj.referencia || "" 
+                              bairro: obj.bairro || end.bairro || "",
+                              cidade: obj.cidade || end.cidade || "",
+                              uf: obj.estado || end.uf || "",
+                              instrucoes: obj.referencia || "",
+                              endereco: `${obj.logradouro || log}${obj.numero || num ? ', ' + (obj.numero || num) : ''} - ${obj.bairro || ''}, ${obj.cidade || ''}/${obj.estado || ''}`.replace(/^ - |\/$/g, "")
                             };
                             setData((p) => ({ ...p, enderecos: es }));
                          }}
                       />
                   )}
                   
-                  <Field label="InstruÃ§Ãµes EspecÃ­ficas / ReferÃªncia" className="lg:col-span-2">
+                  <Field label="Instruções Específicas / Referência" className="lg:col-span-2">
                      <Input value={end.instrucoes} readOnly={readOnly} onChange={(e) => { const es = [...data.enderecos]; es[idx] = { ...es[idx], instrucoes: e.target.value }; setData((p) => ({ ...p, enderecos: es })); }} />
                   </Field>
                 </CardContent>
@@ -447,7 +723,7 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
               <Field label="Descrição da Carga" className="lg:col-span-2"><Input value={data.carga.descricao} readOnly={readOnly} onChange={(e) => update("carga.descricao", e.target.value)} /></Field>
               <Field label="Volumes"><Input type="number" value={data.carga.volumes || ""} readOnly={readOnly} onChange={(e) => update("carga.volumes", Number(e.target.value))} /></Field>
               <Field label="Peso (kg)"><Input type="number" value={data.carga.peso || ""} readOnly={readOnly} onChange={(e) => update("carga.peso", Number(e.target.value))} /></Field>
-              <Field label="Cubagem (mÂ³)"><Input type="number" value={data.carga.cubagem || ""} readOnly={readOnly} onChange={(e) => update("carga.cubagem", Number(e.target.value))} /></Field>
+              <Field label="Cubagem (m³)"><Input type="number" value={data.carga.cubagem || ""} readOnly={readOnly} onChange={(e) => update("carga.cubagem", Number(e.target.value))} /></Field>
               <Field label="Pallets"><Input type="number" value={data.carga.pallets || ""} readOnly={readOnly} onChange={(e) => update("carga.pallets", Number(e.target.value))} /></Field>
               <Field label="Valor Declarado (R$)"><Input type="number" value={data.carga.valorDeclarado || ""} readOnly={readOnly} onChange={(e) => update("carga.valorDeclarado", Number(e.target.value))} /></Field>
               <div className="flex items-center gap-6 lg:col-span-1">
@@ -483,7 +759,7 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
                     </div>
                   </div>
                   <Button onClick={aplicarSugestaoVeiculo} className="bg-blue-600 hover:bg-blue-700 gap-2">
-                    <Check className="w-4 h-4" /> Usar esta sugestÃ£o
+                    <Check className="w-4 h-4" /> Usar sugestão
                   </Button>
                 </div>
               </CardContent>
@@ -543,36 +819,41 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
                 <Field label="Custo Estimado (R$)"><Input type="number" value={data.valores.custoEstimado || ""} readOnly={readOnly} onChange={(e) => update("valores.custoEstimado", Number(e.target.value))} onBlur={recalcular} /></Field>
               </CardContent>
             </Card>
-            <Card className="bg-muted/30">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Resultado</CardTitle></CardHeader>
+            <Card className="bg-primary/5 border-primary/20">
+              <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><DollarSign className="w-4 h-4"/> Resumo do Resultado</CardTitle></CardHeader>
               <CardContent className="p-4 space-y-4">
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Valor Base</span><span>{fmt(data.valores.valorBase)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Distância</span><span className="font-bold">{data.distancia_rota?.distancia_texto || "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Tabela</span><span className="text-xs font-semibold">{data.valores.tabelaVinculada || "Nenhuma"}</span></div>
+                  {(data as any).faixa_aplicada && <div className="flex justify-between"><span className="text-muted-foreground">Faixa</span><span className="text-xs">{ (data as any).faixa_aplicada }</span></div>}
+                  <hr className="border-primary/10" />
+                  <div className="flex justify-between"><span className="text-muted-foreground">Valor Base Cliente</span><span>{fmt(data.valores.valorBase)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">+ Adicionais</span><span>{fmt(data.valores.adicionais)}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">+ PedÃ¡gio</span><span>{fmt(data.valores.pedagio)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">+ Pedágio</span><span>{fmt(data.valores.pedagio)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">+ Km Excedente</span><span>{fmt(data.valores.kmExcedente)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">+ Ajudante</span><span>{fmt(data.valores.ajudante)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">+ Devolução</span><span>{fmt(data.valores.devolucao)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">+ Reentrega</span><span>{fmt(data.valores.reentrega)}</span></div>
-                  <div className="flex justify-between text-destructive"><span>âˆ’ Descontos</span><span>{fmt(data.valores.descontos)}</span></div>
-                  <hr className="border-border" />
-                  <div className="flex justify-between text-lg font-bold text-primary"><span>Valor Final</span><span>{fmt(data.valores.valorFinal)}</span></div>
+                  <div className="flex justify-between text-destructive"><span>− Descontos</span><span>{fmt(data.valores.descontos)}</span></div>
+                  <hr className="border-primary/20" />
+                  <div className="flex justify-between text-lg font-bold text-primary"><span>Valor Final Cliente</span><span>{fmt(data.valores.valorFinal)}</span></div>
                 </div>
-                <hr className="border-border" />
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Custo Estimado</span><span>{fmt(data.valores.custoEstimado)}</span></div>
+                <div className="pt-2 border-t border-primary/20 space-y-1 text-sm bg-white/50 p-3 rounded-lg">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Custo Prestador</span><span className="font-bold text-orange-600">{fmt(data.valores.custoEstimado)}</span></div>
                   <div className="flex justify-between font-semibold text-green-600"><span>Lucro Estimado</span><span>{fmt(data.valores.lucroEstimado)}</span></div>
-                  <div className="flex justify-between font-semibold"><span className="text-muted-foreground">Margem</span><span>{data.valores.margemEstimada}%</span></div>
-                  {data.distancia_rota && data.distancia_rota.distancia_km > 0 && (
-                    <div className="mt-2 pt-2 border-t border-border">
-                      <div className="text-xs text-muted-foreground mb-1">Sugestão por Distância ({data.distancia_rota.distancia_texto})</div>
-                      <div className="flex justify-between font-medium">
-                        <span className="text-blue-600">Valor Sugerido</span>
-                        <span className="text-blue-600">{fmt(sugerirFretePorDistancia(data.distancia_rota.distancia_km))}</span>
-                      </div>
-                    </div>
-                  )}
+                  <div className="flex justify-between font-semibold"><span className="text-muted-foreground">Margem</span><Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">{data.valores.margemEstimada}%</Badge></div>
                 </div>
+                {!data.distancia_rota?.distancia_km && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-2">
+                    <Lightbulb className="w-4 h-4 text-yellow-600 mt-0.5" />
+                    <p className="text-[10px] text-yellow-700">Preencha os endereços para calcular distância e valor automaticamente.</p>
+                  </div>
+                )}
+                {readOnly ? null : (
+                  <Button variant="outline" size="sm" className="w-full border-primary text-primary hover:bg-primary/5" onClick={calcularDistanciaRota} disabled={calculandoDistancia}>
+                    {calculandoDistancia ? "Calculando..." : "Recalcular pela distância"}
+                  </Button>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -582,7 +863,7 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
         <TabsContent value="documentos">
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm text-primary">Documentos Anexos e GeraÃ§Ã£o de Proposta</CardTitle>
+              <CardTitle className="text-sm text-primary">Documentos Anexos e Geração de Proposta</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="border border-dashed rounded-lg p-10 flex flex-col items-center justify-center text-center text-muted-foreground bg-muted/10">

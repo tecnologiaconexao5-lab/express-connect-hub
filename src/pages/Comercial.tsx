@@ -8,10 +8,14 @@ import SimuladorFrete from "@/components/comercial/SimuladorFrete";
 import CrmBase from "@/components/comercial/crm/CrmBase";
 import PropostasMain from "@/components/comercial/propostas/PropostasMain";
 import MarketingMain from "@/components/comercial/marketing/MarketingMain";
+import LeadsLista from "@/components/comercial/crm/LeadsLista";
+import DashboardComercial from "@/components/comercial/crm/DashboardComercial";
+import { Zap } from "lucide-react";
+import { MonitoramentoCombustivelCard } from "@/components/financeiro/MonitoramentoCombustivel";
 
 const Comercial = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get("tab") || "crm";
+  const activeTab = searchParams.get("tab") || "orcamentos";
 
   return (
     <div className="space-y-4">
@@ -23,14 +27,19 @@ const Comercial = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setSearchParams({ tab: v })}>
-        <TabsList className="bg-muted">
-          <TabsTrigger value="crm"><Users className="w-3.5 h-3.5 mr-1" />CRM</TabsTrigger>
-          <TabsTrigger value="marketing"><Megaphone className="w-3.5 h-3.5 mr-1" />Marketing</TabsTrigger>
-          <TabsTrigger value="propostas"><FileText className="w-3.5 h-3.5 mr-1" />Propostas</TabsTrigger>
-          <TabsTrigger value="orcamentos"><Briefcase className="w-3.5 h-3.5 mr-1" />Orçamentos</TabsTrigger>
-          <TabsTrigger value="tabela"><Calculator className="w-3.5 h-3.5 mr-1" />Tabela de Valores</TabsTrigger>
-          <TabsTrigger value="simulador"><BarChart3 className="w-3.5 h-3.5 mr-1" />Simulador</TabsTrigger>
+        <TabsList className="mb-4">
+          <TabsTrigger value="orcamentos" className="gap-2"><Briefcase className="w-4 h-4"/>Orçamentos</TabsTrigger>
+          <TabsTrigger value="crm" className="gap-2"><Users className="w-4 h-4"/>CRM</TabsTrigger>
+          <TabsTrigger value="marketing" className="gap-2"><Megaphone className="w-4 h-4"/>Marketing</TabsTrigger>
+          <TabsTrigger value="propostas" className="gap-2"><FileText className="w-4 h-4"/>Propostas</TabsTrigger>
+          <TabsTrigger value="tabela" className="gap-2"><Calculator className="w-4 h-4"/>Tabela de Valores</TabsTrigger>
+          <TabsTrigger value="simulador" className="gap-2"><BarChart3 className="w-4 h-4"/>Simulador</TabsTrigger>
+          <TabsTrigger value="automacao" className="gap-2"><Zap className="w-4 h-4"/>Automação</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="orcamentos">
+          <OrcamentosLista />
+        </TabsContent>
 
         <TabsContent value="crm" className="mt-0 pt-2">
           <CrmBase />
@@ -40,11 +49,12 @@ const Comercial = () => {
           <MarketingMain />
         </TabsContent>
 
-        <TabsContent value="orcamentos">
-          <OrcamentosLista />
+        <TabsContent value="propostas">
+          <PropostasMain />
         </TabsContent>
 
-        <TabsContent value="tabela">
+        <TabsContent value="tabela" className="space-y-4">
+          <MonitoramentoCombustivelCard />
           <TabelasValoresLista />
         </TabsContent>
 
@@ -52,8 +62,9 @@ const Comercial = () => {
           <SimuladorFrete />
         </TabsContent>
 
-        <TabsContent value="propostas">
-          <PropostasMain />
+        <TabsContent value="automacao" className="mt-0 pt-2 space-y-4">
+          <DashboardComercial />
+          <LeadsLista />
         </TabsContent>
       </Tabs>
     </div>

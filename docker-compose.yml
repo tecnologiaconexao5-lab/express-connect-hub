@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: n8n_db
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5679:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=123456
+      - N8N_DB_TYPE=postgresdb
+      - N8N_DB_POSTGRESDB_HOST=postgres
+      - N8N_DB_POSTGRESDB_PORT=5432
+      - N8N_DB_POSTGRESDB_USER=postgres
+      - N8N_DB_POSTGRESDB_PASSWORD=postgres
+      - N8N_DB_POSTGRESDB_DATABASE=n8n_db
+      - N8N_REDIS_HOST=redis
+      - N8N_REDIS_PORT=6379
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+  evolution-api:
+    image: evolutionapi/evolution-api:latest
+    ports:
+      - "8081:8080"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/evolution_db?schema=public
+      - REDIS_URL=redis://redis:6379
+      - AUTHENTICATION_API_KEY=change-me-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+volumes:
+  pg_data:
+  redis_data:
+  n8n_data:

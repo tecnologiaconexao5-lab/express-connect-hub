@@ -2,119 +2,74 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { 
-  Clock, Hourglass, FileText, UserCheck, Truck, Package, 
-  MapPin, Home, AlertTriangle, CheckCircle, RefreshCcw, 
-  Share2, XCircle, TrendingUp, TrendingDown, Minus, Loader2
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import {
+  Clock, Hourglass, FileText, UserCheck, Truck, Package,
+  MapPin, Home, AlertTriangle, CheckCircle, RefreshCcw,
+  Share2, XCircle, TrendingUp, TrendingDown, Loader2,
+  Route, Timer, Users
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-const CORES_GRAFICOS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316"];
-
-const statusBadgeColor = (s: string) => {
-  if (s === "Finalizada" || s === "finalizada") return "bg-green-600 text-white";
-  if (s === "Com Ocorrência" || s === "com_ocorrencia") return "bg-red-500 text-white";
-  if (s.includes("Entrega") || s.includes("Rota") || s.includes("Operação") || s.includes("em_entrega") || s.includes("em_rota")) return "bg-emerald-500 text-white";
-  if (s.includes("Coleta") || s.includes("Carregando") || s.includes("em_coleta")) return "bg-teal-500 text-white";
-  if (s.includes("Aguardando") || s.includes("aguardando")) return "bg-yellow-500 text-black";
-  if (s === "Programada" || s === "programada") return "bg-blue-500 text-white";
-  if (s === "Rascunho" || s === "rascunho") return "bg-gray-400 text-white";
-  if (s === "Cancelada" || s === "cancelada") return "bg-gray-600 text-white";
-  return "bg-gray-400 text-white";
-};
+const CORES = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316"];
+const ttStyle = { backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", color: "hsl(var(--foreground))", borderRadius: "8px", fontSize: "12px" };
 
 const statusIcons: Record<string, React.ElementType> = {
-  "Rascunho": Clock,
-  "rascunho": Clock,
-  "Aguardando Aprovação": Hourglass,
-  "Programada": FileText,
-  "programada": FileText,
-  "Aguardando Parceiro": UserCheck,
-  "aguardando_parceiro": UserCheck,
-  "Aguardando Veículo": Truck,
-  "Em Coleta": Package,
-  "em_coleta": Package,
-  "Em Rota": MapPin,
-  "em_rota": MapPin,
-  "Em Entrega": Home,
-  "em_entrega": Home,
-  "Com Ocorrência": AlertTriangle,
-  "com_ocorrencia": AlertTriangle,
-  "Finalizada": CheckCircle,
-  "finalizada": CheckCircle,
-  "Reentrega": RefreshCcw,
-  "Devolução": Share2,
-  "Cancelada": XCircle,
-  "cancelada": XCircle,
+  "rascunho": Clock, "programada": FileText, "aguardando_parceiro": UserCheck,
+  "em_coleta": Package, "em_rota": MapPin, "em_entrega": Home,
+  "com_ocorrencia": AlertTriangle, "finalizada": CheckCircle,
+  "reentrega": RefreshCcw, "devolucao": Share2, "cancelada": XCircle,
 };
 
-const statusColors: Record<string, string> = {
-  "Rascunho": "text-gray-500 bg-gray-100 border-gray-200",
-  "rascunho": "text-gray-500 bg-gray-100 border-gray-200",
-  "Aguardando Aprovação": "text-yellow-600 bg-yellow-100 border-yellow-300",
-  "Programada": "text-blue-600 bg-blue-100 border-blue-300",
-  "programada": "text-blue-600 bg-blue-100 border-blue-300",
-  "Aguardando Parceiro": "text-purple-600 bg-purple-100 border-purple-300",
-  "aguardando_parceiro": "text-purple-600 bg-purple-100 border-purple-300",
-  "Aguardando Veículo": "text-indigo-600 bg-indigo-100 border-indigo-300",
-  "Em Coleta": "text-teal-600 bg-teal-100 border-teal-300",
-  "em_coleta": "text-teal-600 bg-teal-100 border-teal-300",
-  "Carregando": "text-emerald-600 bg-emerald-100 border-emerald-300",
-  "Em Rota": "text-green-600 bg-green-100 border-green-300",
-  "em_rota": "text-green-600 bg-green-100 border-green-300",
-  "Em Operação": "text-green-700 bg-green-100 border-green-300",
-  "Em Entrega": "text-lime-600 bg-lime-100 border-lime-300",
-  "em_entrega": "text-lime-600 bg-lime-100 border-lime-300",
-  "Com Ocorrência": "text-red-600 bg-red-100 border-red-300",
-  "com_ocorrencia": "text-red-600 bg-red-100 border-red-300",
-  "Aguardando Baixa": "text-amber-600 bg-amber-100 border-amber-300",
-  "Finalizada": "text-green-800 bg-green-200 border-green-400",
-  "finalizada": "text-green-800 bg-green-200 border-green-400",
-  "Reentrega": "text-rose-600 bg-rose-100 border-rose-300",
-  "Devolução": "text-red-700 bg-red-100 border-red-300",
-  "Cancelada": "text-gray-600 bg-gray-100 border-gray-300",
-  "cancelada": "text-gray-600 bg-gray-100 border-gray-300",
+const statusBg: Record<string, string> = {
+  "finalizada": "bg-emerald-500", "com_ocorrencia": "bg-red-500", "cancelada": "bg-gray-500",
+  "em_rota": "bg-blue-500", "em_entrega": "bg-lime-500", "em_coleta": "bg-teal-500",
+  "programada": "bg-indigo-500", "aguardando_parceiro": "bg-purple-500", "rascunho": "bg-gray-400",
 };
 
-const getIconBgColor = (nome: string) => {
-  if (nome === "Finalizada" || nome === "finalizada") return "bg-green-500";
-  if (nome === "Com Ocorrência" || nome === "com_ocorrencia") return "bg-red-500";
-  if (nome.includes("Rota") || nome.includes("Entrega") || nome.includes("Operação") || nome.includes("em_")) return "bg-emerald-500";
-  if (nome.includes("Coleta") || nome.includes("Carregando")) return "bg-teal-500";
-  if (nome.includes("Aguardando") || nome.includes("aguardando")) return "bg-yellow-500";
-  if (nome === "Programada" || nome === "programada") return "bg-blue-500";
-  if (nome === "Rascunho" || nome === "rascunho") return "bg-gray-500";
-  return "bg-gray-500";
+const statusBadge = (s: string) => {
+  if (s === "finalizada") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300";
+  if (s === "com_ocorrencia") return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300";
+  if (s === "cancelada") return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+  if (s?.includes("rota") || s?.includes("entrega")) return "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300";
+  return "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300";
 };
 
-const StatusCard = ({ nome, qtd }: { nome: string; qtd: number }) => {
+const StatusCard = ({ nome, qtd, total }: { nome: string; qtd: number; total: number }) => {
   const navigate = useNavigate();
   const Icon = statusIcons[nome] || Clock;
-  
+  const pct = total > 0 ? Math.round((qtd / total) * 100) : 0;
   return (
-    <Card 
-      className="cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 bg-card border-border shadow-sm"
+    <Card
+      className="cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 bg-card border-border shadow-sm group"
       onClick={() => navigate(`/operacao?tab=os&status=${encodeURIComponent(nome)}`)}
     >
       <CardContent className="p-4">
-        <div className="flex items-start justify-between mb-3">
-          <div className={`w-10 h-10 rounded-lg ${getIconBgColor(nome)} flex items-center justify-center shadow-md`}>
-            <Icon className="w-5 h-5 text-white" />
-          </div>
+        <div className={`w-9 h-9 rounded-lg ${statusBg[nome] ?? "bg-gray-500"} flex items-center justify-center mb-3 shadow-sm group-hover:scale-110 transition-transform`}>
+          <Icon className="w-4 h-4 text-white" />
         </div>
-        <div className="mb-3">
-          <p className="text-3xl font-bold text-foreground">{qtd}</p>
-          <p className="text-xs font-medium text-muted-foreground mt-0.5">{nome}</p>
+        <p className="text-2xl font-extrabold text-foreground">{qtd}</p>
+        <p className="text-[10px] font-semibold text-muted-foreground mt-0.5 uppercase tracking-wide truncate">{nome.replace(/_/g, " ")}</p>
+        <div className="mt-2 h-1 w-full bg-muted rounded-full overflow-hidden">
+          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
         </div>
-        <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-          <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min((qtd / 10) * 100, 100)}%` }} />
-        </div>
+        <p className="text-[10px] text-muted-foreground mt-1">{pct}% do total</p>
       </CardContent>
     </Card>
   );
 };
+
+const MetricRow = ({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) => (
+  <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border/40">
+    <div>
+      <p className="text-sm font-semibold text-foreground">{label}</p>
+      {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
+    </div>
+    <span className={`text-base font-extrabold ${color ?? "text-foreground"}`}>{value}</span>
+  </div>
+);
 
 const TabOperacional = () => {
   const [loading, setLoading] = useState(true);
@@ -122,132 +77,218 @@ const TabOperacional = () => {
   const [osRecentes, setOsRecentes] = useState<any[]>([]);
   const [osPorDia, setOsPorDia] = useState<{ dia: string; os: number }[]>([]);
   const [totalOS, setTotalOS] = useState(0);
+  const [prestadoresData, setPrestadoresData] = useState({ total: 0, ativos: 0 });
+  const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [filtroVeiculo, setFiltroVeiculo] = useState("todos");
+  const [veiculoTipos, setVeiculoTipos] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const { data: osData } = await supabase
-          .from("ordens_servico")
-          .select("status, numero, created_at")
-          .order("created_at", { ascending: false })
-          .limit(100);
+        const [osResult, prestResult] = await Promise.all([
+          supabase.from("ordens_servico").select("status, numero, created_at, veiculo_tipo, cliente").order("created_at", { ascending: false }).limit(300),
+          supabase.from("prestadores").select("id, status", { count: "exact" }),
+        ]);
 
-        if (osData) {
-          const statusCount: Record<string, number> = {};
-          osData.forEach(os => {
-            const status = os.status || "sem_status";
-            statusCount[status] = (statusCount[status] || 0) + 1;
-          });
-          
-          const statusArray = Object.entries(statusCount).map(([nome, qtd]) => ({ nome, qtd }));
-          statusArray.sort((a, b) => b.qtd - a.qtd);
-          setOsPorStatus(statusArray);
-          setTotalOS(osData.length);
+        if (osResult.data) {
+          const items = osResult.data;
+          setTotalOS(items.length);
 
-          const diaCount: Record<string, number> = {};
+          const sc: Record<string, number> = {};
+          items.forEach(o => { sc[o.status || "sem_status"] = (sc[o.status || "sem_status"] || 0) + 1; });
+          setOsPorStatus(Object.entries(sc).map(([nome, qtd]) => ({ nome, qtd })).sort((a, b) => b.qtd - a.qtd));
+
+          const tipos = [...new Set(items.map(o => o.veiculo_tipo).filter(Boolean))] as string[];
+          setVeiculoTipos(tipos);
+
+          const diaMap: Record<string, number> = {};
           const hoje = new Date();
           for (let i = 29; i >= 0; i--) {
-            const d = new Date(hoje);
-            d.setDate(d.getDate() - i);
-            const key = d.toISOString().split("T")[0];
-            diaCount[key] = 0;
+            const d = new Date(hoje); d.setDate(d.getDate() - i);
+            diaMap[d.toISOString().split("T")[0]] = 0;
           }
-          osData.forEach(os => {
-            const dia = os.created_at?.split("T")[0];
-            if (dia && diaCount[dia] !== undefined) {
-              diaCount[dia]++;
-            }
-          });
-          const diaArray = Object.entries(diaCount).map(([dia, os]) => ({ dia, os }));
-          setOsPorDia(diaArray);
+          items.forEach(o => { const dia = o.created_at?.split("T")[0]; if (dia && diaMap[dia] !== undefined) diaMap[dia]++; });
+          setOsPorDia(Object.entries(diaMap).map(([dia, os]) => ({ dia: dia.slice(5), os })));
+          setOsRecentes(items.slice(0, 12));
+        }
 
-          setOsRecentes(osData.slice(0, 10));
+        if (prestResult.data) {
+          const total = prestResult.count || 0;
+          const ativos = prestResult.data.filter(p => p.status === "ativo" || p.status === "Ativo").length;
+          setPrestadoresData({ total, ativos });
         }
       } catch (err) {
-        console.error("[TabOperacional] Erro ao carregar dados:", err);
+        console.error("[TabOperacional]", err);
       } finally {
         setLoading(false);
       }
     };
-
     fetchData();
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
-  const topStatus = osPorStatus.filter(s => s.nome !== "finalizada").slice(0, 8);
+  const finalizadas = osPorStatus.find(s => s.nome === "finalizada")?.qtd ?? 0;
+  const emRota = osPorStatus.find(s => s.nome === "em_rota")?.qtd ?? 0;
+  const ocorrencias = osPorStatus.find(s => s.nome === "com_ocorrencia")?.qtd ?? 0;
+  const canceladas = osPorStatus.find(s => s.nome === "cancelada")?.qtd ?? 0;
+  const pendentes = totalOS - finalizadas - canceladas;
+  const slaOk = totalOS > 0 ? Math.round((finalizadas / totalOS) * 100) : 0;
+
+  const osFiltered = osRecentes.filter(o => {
+    if (filtroStatus !== "todos" && o.status !== filtroStatus) return false;
+    if (filtroVeiculo !== "todos" && o.veiculo_tipo !== filtroVeiculo) return false;
+    return true;
+  });
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-        {osPorStatus.slice(0, 12).map((s) => (
-          <StatusCard key={s.nome} nome={s.nome} qtd={s.qtd} />
-        ))}
+      {/* Filtros */}
+      <div className="flex flex-wrap gap-3 items-center p-4 bg-muted/20 border border-border rounded-xl">
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Filtros:</span>
+        <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+          <SelectTrigger className="w-44 h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos os status</SelectItem>
+            {osPorStatus.map(s => <SelectItem key={s.nome} value={s.nome}>{s.nome.replace(/_/g, " ")}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filtroVeiculo} onValueChange={setFiltroVeiculo}>
+          <SelectTrigger className="w-44 h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos os veículos</SelectItem>
+            {veiculoTipos.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">OS por status (top 8)</CardTitle></CardHeader>
+      {/* Status cards grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        {osPorStatus.slice(0, 12).map(s => <StatusCard key={s.nome} nome={s.nome} qtd={s.qtd} total={totalOS} />)}
+      </div>
+
+      {/* Métricas resumo */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="bg-card border border-border rounded-xl p-4 text-center shadow-sm">
+          <p className="text-2xl font-extrabold text-foreground">{totalOS}</p>
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide mt-1">Total OS</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4 text-center shadow-sm">
+          <p className="text-2xl font-extrabold text-emerald-500">{finalizadas}</p>
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide mt-1">Concluídas</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4 text-center shadow-sm">
+          <p className="text-2xl font-extrabold text-amber-500">{pendentes}</p>
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide mt-1">Pendentes</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4 text-center shadow-sm">
+          <p className="text-2xl font-extrabold text-blue-500">{emRota}</p>
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide mt-1">Em Rota</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4 text-center shadow-sm">
+          <p className="text-2xl font-extrabold text-rose-500">{ocorrencias}</p>
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide mt-1">Ocorrências</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4 text-center shadow-sm">
+          <p className="text-2xl font-extrabold text-violet-500">{slaOk}%</p>
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide mt-1">SLA OK</p>
+        </div>
+      </div>
+
+      {/* Prestadores + métricas placeholder */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Users className="w-4 h-4 text-primary"/>Prestadores</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <MetricRow label="Total cadastrados" value={String(prestadoresData.total)} />
+            <MetricRow label="Disponíveis" value={String(prestadoresData.ativos)} color="text-emerald-500" />
+            <MetricRow label="Em rota" value={String(emRota)} color="text-blue-500" sub="estimativa por OS" />
+            <MetricRow label="Inativos" value={String(prestadoresData.total - prestadoresData.ativos)} color="text-muted-foreground" />
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Route className="w-4 h-4 text-primary"/>Métricas de Rota</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <MetricRow label="Distância total rodada" value="—" sub="em preparação" color="text-muted-foreground" />
+            <MetricRow label="Dist. média por OS" value="—" sub="em preparação" color="text-muted-foreground" />
+            <MetricRow label="Tempo médio por entrega" value="—" sub="em preparação" color="text-muted-foreground" />
+            <MetricRow label="Atrasos operacionais" value={String(ocorrencias)} color="text-rose-500" />
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Timer className="w-4 h-4 text-primary"/>Indicadores de Prazo</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <MetricRow label="SLA dentro do prazo" value={`${slaOk}%`} color={slaOk >= 80 ? "text-emerald-500" : "text-rose-500"} />
+            <MetricRow label="Entregas concluídas" value={String(finalizadas)} color="text-emerald-500" />
+            <MetricRow label="Entregas pendentes" value={String(pendentes)} color="text-amber-500" />
+            <MetricRow label="Canceladas" value={String(canceladas)} color="text-gray-400" />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Gráficos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">OS por Status (top 8)</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={topStatus}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,20%,90%)" />
-                <XAxis dataKey="nome" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Bar dataKey="qtd" fill={CORES_GRAFICOS[0]} radius={[4, 4, 0, 0]} />
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={osPorStatus.slice(0, 8)}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="nome" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} angle={-15} textAnchor="end" height={55} tickFormatter={v => v.replace(/_/g, " ")} />
+                <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <Tooltip contentStyle={ttStyle} />
+                <Bar dataKey="qtd" name="OS" radius={[4, 4, 0, 0]}>
+                  {osPorStatus.slice(0, 8).map((_, i) => <Cell key={i} fill={CORES[i % CORES.length]} />)}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">OS por dia (últimos 30 dias)</CardTitle></CardHeader>
+        <Card className="shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">OS por Dia (últimos 30 dias)</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer width="100%" height={260}>
               <LineChart data={osPorDia}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,20%,90%)" />
-                <XAxis dataKey="dia" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Line type="monotone" dataKey="os" stroke={CORES_GRAFICOS[2]} strokeWidth={2} dot={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} interval={6} />
+                <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <Tooltip contentStyle={ttStyle} />
+                <Line type="monotone" dataKey="os" name="OS" stroke={CORES[0]} strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">Últimas {osRecentes.length} ordens de serviço</CardTitle></CardHeader>
+      {/* Tabela OS recentes com filtros */}
+      <Card className="shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Últimas Ordens de Serviço ({osFiltered.length})</CardTitle></CardHeader>
         <CardContent className="p-0">
-          {osRecentes.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">OS</TableHead>
-                  <TableHead className="text-xs">Status</TableHead>
-                  <TableHead className="text-xs">Data</TableHead>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30">
+                <TableHead className="text-xs">OS</TableHead>
+                <TableHead className="text-xs">Cliente</TableHead>
+                <TableHead className="text-xs">Veículo</TableHead>
+                <TableHead className="text-xs">Status</TableHead>
+                <TableHead className="text-xs">Data</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {osFiltered.slice(0, 10).map((o) => (
+                <TableRow key={o.numero} className="hover:bg-muted/20 transition">
+                  <TableCell className="text-xs font-semibold">{o.numero}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{o.cliente || "—"}</TableCell>
+                  <TableCell className="text-xs">{o.veiculo_tipo || "—"}</TableCell>
+                  <TableCell><span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${statusBadge(o.status)}`}>{o.status?.replace(/_/g, " ")}</span></TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{o.created_at?.split("T")[0]}</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {osRecentes.map((o) => (
-                  <TableRow key={o.numero}>
-                    <TableCell className="text-xs font-medium">{o.numero}</TableCell>
-                    <TableCell><span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusBadgeColor(o.status)}`}>{o.status}</span></TableCell>
-                    <TableCell className="text-xs">{o.created_at?.split("T")[0]}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <p className="text-sm text-muted-foreground p-4">Nenhuma OS encontrada</p>
-          )}
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>

@@ -7,7 +7,7 @@ import OrdensServicoLista from "@/components/operacao/OrdensServicoLista";
 import OcorrenciasLista from "@/components/operacao/OcorrenciasLista";
 import EscalaLista from "@/components/operacao/EscalaLista";
 import PodLista from "@/components/operacao/PodLista";
-import RoteirizacaoLista from "@/components/operacao/RoteirizacaoLista";
+import RoteirizadorWeb from "@/components/operacao/RoteirizadorWeb";
 import { Route as MapIconSolid } from "lucide-react";
 
 const Operacao = () => {
@@ -71,7 +71,7 @@ const Operacao = () => {
         </TabsContent>
 
         <TabsContent value="roteirizacao">
-          <RoteirizacaoLista />
+          <RoteirizadorWeb />
         </TabsContent>
 
         <TabsContent value="ocorrencias">

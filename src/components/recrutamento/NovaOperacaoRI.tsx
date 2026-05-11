@@ -1,11 +1,26 @@
 import { useState } from "react";
-import { Copy, Check, Calculator } from "lucide-react";
+import { Copy, Check, Calculator, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+
+// Dados de referência por tipo de veículo
+const DADOS_VEICULO_REFERENCIA: Record<string, { consumoMedio: number; manutencaoKm: number; pneumaticoKm: number; capacidadeKg: number; capacidadeM3: number }> = {
+  "Fiorino": { consumoMedio: 12, manutencaoKm: 0.15, pneumaticoKm: 0.08, capacidadeKg: 600, capacidadeM3: 3.5 },
+  "Kangoo": { consumoMedio: 11, manutencaoKm: 0.18, pneumaticoKm: 0.09, capacidadeKg: 650, capacidadeM3: 4.0 },
+  "Kombi": { consumoMedio: 9, manutencaoKm: 0.20, pneumaticoKm: 0.10, capacidadeKg: 800, capacidadeM3: 5.0 },
+  "Van": { consumoMedio: 8, manutencaoKm: 0.22, pneumaticoKm: 0.11, capacidadeKg: 1200, capacidadeM3: 8.0 },
+  "VUC": { consumoMedio: 7, manutencaoKm: 0.25, pneumaticoKm: 0.12, capacidadeKg: 2000, capacidadeM3: 12.0 },
+  "HR": { consumoMedio: 6, manutencaoKm: 0.28, pneumaticoKm: 0.13, capacidadeKg: 2500, capacidadeM3: 15.0 },
+  "3/4": { consumoMedio: 5.5, manutencaoKm: 0.30, pneumaticoKm: 0.14, capacidadeKg: 4000, capacidadeM3: 20.0 },
+  "Toco": { consumoMedio: 4.5, manutencaoKm: 0.35, pneumaticoKm: 0.15, capacidadeKg: 8000, capacidadeM3: 35.0 },
+  "Truck": { consumoMedio: 4, manutencaoKm: 0.40, pneumaticoKm: 0.16, capacidadeKg: 15000, capacidadeM3: 50.0 },
+  "Carreta": { consumoMedio: 3.5, manutencaoKm: 0.45, pneumaticoKm: 0.18, capacidadeKg: 25000, capacidadeM3: 90.0 },
+  "Bitrem": { consumoMedio: 3, manutencaoKm: 0.50, pneumaticoKm: 0.20, capacidadeKg: 32000, capacidadeM3: 120.0 },
+};
 
 export function NovaOperacaoRI() {
   const [formData, setFormData] = useState({
@@ -40,6 +55,25 @@ export function NovaOperacaoRI() {
   });
 
   const [copied, setCopied] = useState(false);
+
+  const handleVeiculoChange = (veiculo: string) => {
+    const ref = DADOS_VEICULO_REFERENCIA[veiculo];
+    if (ref) {
+      setFormData({
+        ...formData,
+        tipoVeiculo: veiculo,
+        capacidadeKg: String(ref.capacidadeKg),
+        capacidadeM3: String(ref.capacidadeM3),
+        consumoEconomico: ref.consumoMedio * 1.1,
+        consumoNormal: ref.consumoMedio,
+        consumoPesado: ref.consumoMedio * 0.85,
+        manutencaoKm: ref.manutencaoKm,
+        pneumaticoKm: ref.pneumaticoKm,
+      });
+    } else {
+      setFormData({ ...formData, tipoVeiculo: veiculo });
+    }
+  };
 
   const calculateFinanceiro = () => {
     // Diário

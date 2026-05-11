@@ -1,48 +1,39 @@
 import { useState, useEffect } from "react";
-import { DollarSign, Activity, Users, TrendingUp, UserCheck, CheckCircle2, Receipt, Clock, TrendingDown } from "lucide-react";
+import { DollarSign, Activity, Users, TrendingUp, UserCheck, CheckCircle2, Receipt, Clock, TrendingDown, AlertTriangle, Target, Loader2, Star } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart, Area } from "recharts";
 import { supabase } from "@/lib/supabase";
 import { AniversariantesWidget } from "@/components/comunicacao/AniversariantesWidget";
 
-const CORES_GRAFICOS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899"];
-
+const CORES = ["#F97316", "#3B82F6", "#10B981", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F59E0B"];
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const fmtN = (v: number) => v.toLocaleString("pt-BR");
 
-const KpiCard = ({ title, value, icon: Icon, accent = false, trend }: { title: string; value: string; icon: any; accent?: boolean; trend?: "up" | "down" | "neutral" }) => (
-  <Card className={`relative overflow-hidden transition-all hover:shadow-lg hover:-translate-y-0.5 ${accent ? "bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-slate-700 shadow-xl" : "border-border/50 bg-card shadow-sm hover:shadow-md"}`}>
+const ttStyle = { backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", color: "hsl(var(--foreground))", borderRadius: "8px", fontSize: "12px" };
+
+type Trend = "up" | "down" | "neutral";
+
+const KpiCard = ({ title, value, icon: Icon, trend, sub, accent }: {
+  title: string; value: string; icon: any; trend?: Trend; sub?: string; accent?: string;
+}) => (
+  <Card className="relative overflow-hidden border-border/50 bg-card shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5 group">
+    <div className={`absolute top-0 left-0 right-0 h-0.5 ${accent ?? "bg-primary/40"} group-hover:opacity-100 opacity-60 transition-opacity`} />
     <CardContent className="p-5">
       <div className="flex items-start justify-between">
-        <div className="space-y-2 flex-1">
-          <p className={`text-xs font-semibold uppercase tracking-wider ${accent ? "text-slate-300" : "text-muted-foreground"}`}>{title}</p>
-          <p className={`text-3xl font-extrabold tracking-tight ${accent ? "text-white" : "text-foreground"}`}>{value}</p>
+        <div className="space-y-1.5 flex-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+          <p className="text-2xl font-extrabold tracking-tight text-foreground">{value}</p>
+          {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
           {trend && (
-            <div className={`flex items-center gap-1 text-xs ${trend === "up" ? "text-emerald-400" : trend === "down" ? "text-rose-400" : "text-slate-400"}`}>
+            <div className={`flex items-center gap-1 text-xs ${trend === "up" ? "text-emerald-500" : trend === "down" ? "text-rose-500" : "text-muted-foreground"}`}>
               {trend === "up" ? <TrendingUp className="w-3 h-3" /> : trend === "down" ? <TrendingDown className="w-3 h-3" /> : null}
-              <span>{trend === "up" ? "+12%" : trend === "down" ? "-5%" : "0%"}</span>
+              <span>{trend === "up" ? "Em alta" : trend === "down" ? "Em queda" : "Estável"}</span>
             </div>
           )}
         </div>
-        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${accent ? "bg-white/10 text-white" : "bg-primary/10 text-primary"}`}>
-          <Icon className="w-6 h-6" />
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors shrink-0">
+          <Icon className="w-5 h-5" />
         </div>
-      </div>
-    </CardContent>
-    {accent && <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-transparent pointer-events-none" />}
-  </Card>
-);
-
-const KpiSmall = ({ title, value, icon: Icon, subtext }: { title: string; value: string; icon: any; subtext?: string }) => (
-  <Card className="border-border/40 bg-gradient-to-br from-card to-card/80 shadow-sm hover:shadow-md transition-all">
-    <CardContent className="p-4 flex items-center gap-4">
-      <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0">
-        <Icon className="w-5 h-5 text-primary" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide truncate">{title}</p>
-        <p className="text-xl font-bold text-foreground leading-none mt-1 truncate">{value}</p>
-        {subtext && <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{subtext}</p>}
       </div>
     </CardContent>
   </Card>
@@ -55,20 +46,24 @@ const TabExecutivo = () => {
   const [veiculos, setVeiculos] = useState(0);
   const [osTotal, setOsTotal] = useState(0);
   const [osFinalizadas, setOsFinalizadas] = useState(0);
+  const [osEmAberto, setOsEmAberto] = useState(0);
   const [faturamento, setFaturamento] = useState(0);
-  const [osRecentes, setOsRecentes] = useState<any[]>([]);
-  const [osPorStatus, setOsPorStatus] = useState<Record<string, number>>({});
+  const [custoTotal, setCustoTotal] = useState(0);
+  const [osPorStatus, setOsPorStatus] = useState<{ tipo: string; valor: number }[]>([]);
   const [osPorVeiculo, setOsPorVeiculo] = useState<{ tipo: string; valor: number }[]>([]);
+  const [clientesTop, setClientesTop] = useState<{ cliente: string; valor: number }[]>([]);
+  const [evolucaoMensal, setEvolucaoMensal] = useState<{ mes: string; receita: number; custo: number; margem: number }[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [clientesCount, prestadoresCount, veiculosCount, osData, financeiroData] = await Promise.all([
+        const [clientesCount, prestadoresCount, veiculosCount, osData, receberData, pagarData] = await Promise.all([
           supabase.from("clientes").select("id", { count: "exact", head: true }),
           supabase.from("prestadores").select("id", { count: "exact", head: true }),
           supabase.from("veiculos").select("id", { count: "exact", head: true }),
-          supabase.from("ordens_servico").select("status, veiculo_tipo, valor_cliente, numero, created_at").order("created_at", { ascending: false }).limit(100),
-          supabase.from("financeiro_receber").select("valor")
+          supabase.from("ordens_servico").select("status, veiculo_tipo, valor_cliente, custo_prestador, cliente, numero, created_at").order("created_at", { ascending: false }).limit(300),
+          supabase.from("financeiro_receber").select("valor"),
+          supabase.from("financeiro_pagar").select("valor"),
         ]);
 
         setClientes(clientesCount.count || 0);
@@ -76,107 +71,149 @@ const TabExecutivo = () => {
         setVeiculos(veiculosCount.count || 0);
 
         if (osData.data) {
-          setOsTotal(osData.data.length);
-          setOsFinalizadas(osData.data.filter(os => os.status === "finalizada").length);
-          
-          const statusCount: Record<string, number> = {};
-          osData.data.forEach(os => {
-            statusCount[os.status || "sem_status"] = (statusCount[os.status || "sem_status"] || 0) + 1;
+          const items = osData.data;
+          setOsTotal(items.length);
+          const fin = items.filter(o => o.status === "finalizada").length;
+          setOsFinalizadas(fin);
+          setOsEmAberto(items.filter(o => o.status && !["finalizada", "cancelada"].includes(o.status)).length);
+
+          const receita = items.reduce((a, o) => a + (o.valor_cliente || 0), 0);
+          const custo = items.reduce((a, o) => a + (o.custo_prestador || 0), 0);
+          setFaturamento(receita);
+          setCustoTotal(custo);
+
+          // OS por status
+          const sc: Record<string, number> = {};
+          items.forEach(o => { sc[o.status || "sem_status"] = (sc[o.status || "sem_status"] || 0) + 1; });
+          setOsPorStatus(Object.entries(sc).map(([tipo, valor]) => ({ tipo, valor })).sort((a, b) => b.valor - a.valor).slice(0, 8));
+
+          // OS por veiculo
+          const vc: Record<string, number> = {};
+          items.forEach(o => { const t = o.veiculo_tipo || "N/I"; vc[t] = (vc[t] || 0) + 1; });
+          setOsPorVeiculo(Object.entries(vc).map(([tipo, valor]) => ({ tipo, valor })).sort((a, b) => b.valor - a.valor).slice(0, 6));
+
+          // Top 5 clientes
+          const cv: Record<string, number> = {};
+          items.forEach(o => { const c = o.cliente || "Sem cliente"; cv[c] = (cv[c] || 0) + (o.valor_cliente || 0); });
+          setClientesTop(Object.entries(cv).map(([cliente, valor]) => ({ cliente, valor })).sort((a, b) => b.valor - a.valor).slice(0, 5));
+
+          // Evolução mensal (últimos 6 meses)
+          const mesMap: Record<string, { r: number; c: number }> = {};
+          const hoje = new Date();
+          for (let i = 5; i >= 0; i--) {
+            const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            mesMap[key] = { r: 0, c: 0 };
+          }
+          items.forEach(o => {
+            const mes = o.created_at?.slice(0, 7);
+            if (mes && mesMap[mes]) {
+              mesMap[mes].r += o.valor_cliente || 0;
+              mesMap[mes].c += o.custo_prestador || 0;
+            }
           });
-          setOsPorStatus(statusCount);
-
-          const veiculoCount: Record<string, number> = {};
-          osData.data.forEach(os => {
-            const tipo = os.veiculo_tipo || "Não informado";
-            veiculoCount[tipo] = (veiculoCount[tipo] || 0) + 1;
-          });
-          const veiculosArray = Object.entries(veiculoCount).map(([tipo, valor]) => ({ tipo, valor }));
-          setOsPorVeiculo(veiculosArray);
-
-          setOsRecentes(osData.data.slice(0, 5));
-        }
-
-        if (financeiroData.data) {
-          const total = financeiroData.data.reduce((acc, item) => acc + (item.valor || 0), 0);
-          setFaturamento(total);
+          const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+          setEvolucaoMensal(Object.entries(mesMap).map(([key, val]) => {
+            const m = parseInt(key.split("-")[1]) - 1;
+            return { mes: meses[m], receita: val.r, custo: val.c, margem: val.r - val.c };
+          }));
         }
       } catch (err) {
-        console.error("[TabExecutivo] Erro ao carregar dados:", err);
+        console.error("[TabExecutivo] Erro:", err);
       } finally {
         setLoading(false);
       }
     };
-
     fetchData();
   }, []);
 
+  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+
   const ticketMedio = osTotal > 0 ? faturamento / osTotal : 0;
+  const margemLiq = faturamento > 0 ? ((faturamento - custoTotal) / faturamento * 100) : 0;
+  const slaPct = osTotal > 0 ? Math.round((osFinalizadas / osTotal) * 100) : 0;
 
   return (
     <div className="space-y-6">
       <AniversariantesWidget />
 
+      {/* KPIs Principais — 4 colunas */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard title="Faturamento total" value={fmt(faturamento)} icon={DollarSign} accent trend="up" />
+        <KpiCard title="Faturamento Total" value={fmt(faturamento)} icon={DollarSign} trend="up" accent="bg-emerald-500/60" />
+        <KpiCard title="Custo Total" value={fmt(custoTotal)} icon={TrendingDown} accent="bg-rose-500/60" />
+        <KpiCard title="Margem Líquida" value={`${margemLiq.toFixed(1)}%`} icon={Target} trend={margemLiq > 15 ? "up" : "down"} accent="bg-violet-500/60" />
+        <KpiCard title="Ticket Médio" value={fmt(ticketMedio)} icon={Receipt} sub="por OS" accent="bg-blue-500/60" />
+      </div>
+
+      {/* KPIs Secundários — 4 colunas */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-4">
         <KpiCard title="Total de OS" value={fmtN(osTotal)} icon={Activity} trend="up" />
-        <KpiCard title="Prestadores" value={fmtN(prestadores)} icon={Users} />
-        <KpiCard title="Clientes" value={fmtN(clientes)} icon={TrendingUp} trend="neutral" />
+        <KpiCard title="OS Finalizadas" value={fmtN(osFinalizadas)} icon={CheckCircle2} sub={`${slaPct}% do total`} />
+        <KpiCard title="OS em Aberto" value={fmtN(osEmAberto)} icon={Clock} />
+        <KpiCard title="SLA no Prazo" value={`${slaPct}%`} icon={Star} trend={slaPct >= 80 ? "up" : "down"} />
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiSmall title="Veículos" value={fmtN(veiculos)} icon={UserCheck} subtext="cadastrados" />
-        <KpiSmall title="OS finalizadas" value={fmtN(osFinalizadas)} icon={CheckCircle2} subtext={`${osTotal > 0 ? Math.round(osFinalizadas / osTotal * 100) : 0}%`} />
-        <KpiSmall title="Ticket médio" value={fmt(ticketMedio)} icon={Receipt} subtext="por OS" />
-        <KpiSmall title="Em aberto" value={fmtN(osTotal - osFinalizadas)} icon={Clock} subtext="em andamento" />
+      {/* KPIs Cadastrais */}
+      <div className="grid grid-cols-3 gap-4">
+        <KpiCard title="Clientes Ativos" value={fmtN(clientes)} icon={Users} />
+        <KpiCard title="Prestadores" value={fmtN(prestadores)} icon={UserCheck} />
+        <KpiCard title="Veículos" value={fmtN(veiculos)} icon={TrendingUp} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="shadow-sm">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">OS por Status</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie data={Object.entries(osPorStatus).map(([tipo, valor]) => ({ tipo, valor }))} dataKey="valor" nameKey="tipo" cx="50%" cy="50%" outerRadius={95} label={({ tipo, percent }) => `${tipo} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={11}>
-                  {Object.keys(osPorStatus).map((_, i) => <Cell key={i} fill={CORES_GRAFICOS[i % CORES_GRAFICOS.length]} />)}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+      {/* Gráfico Evolução Mensal */}
+      <Card className="shadow-sm hover:shadow-md transition">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-primary" /> Evolução Mensal — Receita × Custo × Margem
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={evolucaoMensal}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="mes" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
+              <YAxis tickFormatter={(v) => `${(v / 1e3).toFixed(0)}k`} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+              <Tooltip formatter={(v: number) => fmt(v)} contentStyle={ttStyle} />
+              <Legend wrapperStyle={{ fontSize: "12px" }} />
+              <Area type="monotone" dataKey="receita" name="Receita" fill={CORES[2] + "33"} stroke={CORES[2]} strokeWidth={2} />
+              <Area type="monotone" dataKey="custo" name="Custo" fill={CORES[3] + "33"} stroke={CORES[3]} strokeWidth={2} />
+              <Line type="monotone" dataKey="margem" name="Margem" stroke={CORES[0]} strokeWidth={2.5} dot={{ r: 4 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
 
-        <Card className="shadow-sm">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">OS por Tipo de Veículo</CardTitle></CardHeader>
+      {/* Top 5 Clientes + Top Veículos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Card className="shadow-sm hover:shadow-md transition">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Top 5 Clientes por Faturamento</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={osPorVeiculo}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(214,20%,90%)" />
-                <XAxis dataKey="tipo" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Bar dataKey="valor" fill={CORES_GRAFICOS[0]} radius={[4, 4, 0, 0]} />
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={clientesTop} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis type="number" tickFormatter={(v) => `${(v / 1e3).toFixed(0)}k`} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <YAxis type="category" dataKey="cliente" width={120} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <Tooltip formatter={(v: number) => fmt(v)} contentStyle={ttStyle} />
+                <Bar dataKey="valor" fill={CORES[0]} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
-      </div>
 
-      <div className="grid grid-cols-1 gap-4">
-        <Card className="shadow-sm">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Últimas OS</CardTitle></CardHeader>
+        <Card className="shadow-sm hover:shadow-md transition">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">OS por Tipo de Veículo</CardTitle></CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {osRecentes.map((os) => (
-                <div key={os.numero} className="flex items-center justify-between p-2 bg-muted/30 rounded">
-                  <div>
-                    <span className="font-medium text-sm">{os.numero}</span>
-                    <span className="text-xs text-muted-foreground ml-2">| {os.status}</span>
-                  </div>
-                  <span className="font-semibold text-sm">{fmt(os.valor_cliente || 0)}</span>
-                </div>
-              ))}
-              {osRecentes.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma OS encontrada</p>}
-            </div>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={osPorVeiculo}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="tipo" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <Tooltip contentStyle={ttStyle} />
+                <Bar dataKey="valor" name="OS" radius={[4, 4, 0, 0]}>
+                  {osPorVeiculo.map((_, i) => <Cell key={i} fill={CORES[i % CORES.length]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>

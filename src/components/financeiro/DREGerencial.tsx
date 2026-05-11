@@ -309,35 +309,38 @@ export default function DREGerencial() {
     setExpanded(newExpanded);
   };
 
+  const receitaBrutaAtual = dadosDRE.find(d => d.id === "1")?.valorAtual || 0;
+
   const DRELineRow = ({ line, level = 0 }: { line: DRELine, level?: number }) => {
     const hasChildren = line.children && line.children.length > 0;
     const isExpanded = expanded.has(line.id);
     
     const getRowStyle = () => {
       switch (line.tipo) {
-        case "titulo": return "bg-slate-100 font-bold text-base";
-        case "resultado": return "bg-emerald-50 font-bold";
-        case "receita": return level > 0 ? "text-slate-600" : "bg-blue-50 font-semibold";
-        case "deducao": return "text-red-600 pl-8";
-        case "custo": return "text-orange-700 pl-4";
-        case "despesa": return "text-slate-700 pl-4";
+        case "titulo": return "bg-muted/60 font-bold text-base";
+        case "resultado": return "bg-primary/5 font-bold border-y border-border/40";
+        case "receita": return level > 0 ? "text-muted-foreground" : "bg-muted/30 font-semibold";
+        case "deducao": return "text-rose-500";
+        case "custo": return "text-amber-600 dark:text-amber-400";
+        case "despesa": return "text-muted-foreground";
         default: return "";
       }
     };
 
     const getValueColor = () => {
-      if (line.tipo === "resultado" || line.id === "3" || line.id === "5" || line.id === "7" || line.id === "9" || line.id === "11" || line.id === "13") {
-        return line.valorAtual >= 0 ? "text-green-700" : "text-red-700";
+      if (["3","5","7","9","11","13"].includes(line.id) || line.tipo === "resultado") {
+        return line.valorAtual >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600";
       }
-      if (line.tipo === "deducao" || line.tipo === "custo" || line.tipo === "despesa") return "text-red-600";
-      return "";
+      if (line.tipo === "deducao" || line.tipo === "custo" || line.tipo === "despesa") return "text-rose-500";
+      return "text-foreground";
     };
 
     const variacao = line.valorAnterior !== 0 ? ((line.valorAtual - line.valorAnterior) / Math.abs(line.valorAnterior)) * 100 : 0;
+    const pctReceita = receitaBrutaAtual > 0 ? (line.valorAtual / receitaBrutaAtual) * 100 : 0;
 
     return (
       <>
-        <TableRow className={`${getRowStyle()} hover:bg-muted/50`}>
+        <TableRow className={`${getRowStyle()} hover:bg-muted/40 transition-colors`}>
           <TableCell className="py-2">
             <div className="flex items-center gap-2" style={{ paddingLeft: `${level * 24}px` }}>
               {hasChildren && (
@@ -346,28 +349,27 @@ export default function DREGerencial() {
                 </button>
               )}
               <span className="text-xs font-mono text-muted-foreground w-6">{line.id}</span>
-              <span>{line.label}</span>
+              <span className="text-sm">{line.label}</span>
             </div>
           </TableCell>
-          <TableCell className={`text-right py-2 font-mono ${getValueColor()}`}>
+          <TableCell className={`text-right py-2 font-mono font-semibold ${getValueColor()}`}>
             {line.tipo !== "titulo" ? fmtFin(line.valorAtual) : ""}
           </TableCell>
-          <TableCell className="text-right py-2 font-mono text-muted-foreground">
+          <TableCell className="text-right py-2 font-mono text-muted-foreground text-sm">
             {line.tipo !== "titulo" ? fmtFin(line.valorAnterior) : ""}
           </TableCell>
-          <TableCell className={`text-right py-2 font-mono font-semibold ${variacao >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+          <TableCell className={`text-right py-2 font-mono text-xs font-semibold ${variacao >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
             {line.tipo !== "titulo" ? varPct(line.valorAtual, line.valorAnterior) : ""}
           </TableCell>
-          <TableCell className={`text-right py-2 font-mono font-semibold ${variacao >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+          <TableCell className={`text-right py-2 font-mono text-xs ${variacao >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
             {line.tipo !== "titulo" ? fmtFin(line.valorAtual - line.valorAnterior) : ""}
+          </TableCell>
+          <TableCell className="text-right py-2 font-mono text-xs text-muted-foreground">
+            {line.tipo !== "titulo" && receitaBrutaAtual > 0 ? `${pctReceita.toFixed(1)}%` : ""}
           </TableCell>
         </TableRow>
         {hasChildren && isExpanded && line.children!.map((child) => (
-          <DRELineRow 
-            key={child.id} 
-            line={child} 
-            level={level + 1} 
-          />
+          <DRELineRow key={child.id} line={child} level={level + 1} />
         ))}
       </>
     );
@@ -551,71 +553,22 @@ export default function DREGerencial() {
 
       {/* Indicadores de Performance */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card className="bg-blue-50 border-blue-200">
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm font-semibold text-blue-900">Receita Bruta</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-blue-700">
-              {fmtFin(dadosDRE.find(d => d.id === "1")?.valorAtual || 0)}
-            </p>
-            <p className="text-xs text-blue-600 mt-1">
-              {varPct(dadosDRE.find(d => d.id === "1")?.valorAtual || 0, dadosDRE.find(d => d.id === "1")?.valorAnterior || 0)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="bg-green-50 border-green-200">
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm font-semibold text-green-900">Receita Líquida</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-green-700">
-              {fmtFin(dadosDRE.find(d => d.id === "3")?.valorAtual || 0)}
-            </p>
-            <p className="text-xs text-green-600 mt-1">
-              {varPct(dadosDRE.find(d => d.id === "3")?.valorAtual || 0, dadosDRE.find(d => d.id === "3")?.valorAnterior || 0)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-50 border-emerald-200">
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm font-semibold text-emerald-900">EBITDA</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-emerald-700">
-              {fmtFin(dadosDRE.find(d => d.id === "7")?.valorAtual || 0)}
-            </p>
-            <p className="text-xs text-emerald-600 mt-1">
-              Margem: {getMargemEbitda().toFixed(1)}%
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="bg-purple-50 border-purple-200">
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm font-semibold text-purple-900">Lucro Líquido</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-purple-700">
-              {fmtFin(dadosDRE.find(d => d.id === "13")?.valorAtual || 0)}
-            </p>
-            <p className="text-xs text-purple-600 mt-1">
-              Margem: {getMargemLiquida().toFixed(1)}%
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="bg-orange-50 border-orange-200">
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm font-semibold text-orange-900">Margem Bruta</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-orange-700">
-              {getMargemBruta().toFixed(1)}%
-            </p>
-            <p className="text-xs text-orange-600 mt-1">
-              Lucro: {fmtFin(dadosDRE.find(d => d.id === "5")?.valorAtual || 0)}
-            </p>
-          </CardContent>
-        </Card>
+        {[
+          { label: "Receita Bruta", value: fmtFin(dadosDRE.find(d => d.id === "1")?.valorAtual || 0), sub: varPct(dadosDRE.find(d => d.id === "1")?.valorAtual || 0, dadosDRE.find(d => d.id === "1")?.valorAnterior || 0), accent: "bg-blue-500", color: "text-blue-500" },
+          { label: "Receita Líquida", value: fmtFin(dadosDRE.find(d => d.id === "3")?.valorAtual || 0), sub: varPct(dadosDRE.find(d => d.id === "3")?.valorAtual || 0, dadosDRE.find(d => d.id === "3")?.valorAnterior || 0), accent: "bg-emerald-500", color: "text-emerald-500" },
+          { label: "EBITDA", value: fmtFin(dadosDRE.find(d => d.id === "7")?.valorAtual || 0), sub: `Margem: ${getMargemEbitda().toFixed(1)}%`, accent: "bg-violet-500", color: "text-violet-500" },
+          { label: "Lucro Líquido", value: fmtFin(dadosDRE.find(d => d.id === "13")?.valorAtual || 0), sub: `Margem: ${getMargemLiquida().toFixed(1)}%`, accent: "bg-purple-500", color: "text-purple-500" },
+          { label: "Margem Bruta", value: `${getMargemBruta().toFixed(1)}%`, sub: fmtFin(dadosDRE.find(d => d.id === "5")?.valorAtual || 0), accent: "bg-amber-500", color: "text-amber-500" },
+        ].map(k => (
+          <Card key={k.label} className="relative overflow-hidden bg-card border-border shadow-sm hover:-translate-y-0.5 transition-transform">
+            <div className={`absolute top-0 left-0 right-0 h-0.5 ${k.accent}`} />
+            <CardContent className="p-4">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{k.label}</p>
+              <p className={`text-xl font-extrabold mt-1 ${k.color}`}>{k.value}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">{k.sub}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {loading ? (
@@ -623,24 +576,22 @@ export default function DREGerencial() {
           <RefreshCw className="w-8 h-8 animate-spin text-primary" />
         </div>
       ) : (
-        <Card>
+        <Card className="shadow-sm">
           <CardContent className="p-0">
             <Table>
-              <TableHeader className="bg-slate-50">
-                <TableRow>
-                  <TableHead className="w-[300px]">Descrição</TableHead>
-                  <TableHead className="text-right w-[120px]">Valor Atual</TableHead>
-                  <TableHead className="text-right w-[120px]">Valor Anterior</TableHead>
-                  <TableHead className="text-right w-[80px]">Var. %</TableHead>
-                  <TableHead className="text-right w-[120px]">Var. R$</TableHead>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="w-[300px] font-semibold">Descrição</TableHead>
+                  <TableHead className="text-right w-[130px] font-semibold">Valor Atual</TableHead>
+                  <TableHead className="text-right w-[130px] font-semibold">Valor Anterior</TableHead>
+                  <TableHead className="text-right w-[80px] font-semibold">Var. %</TableHead>
+                  <TableHead className="text-right w-[120px] font-semibold">Var. R$</TableHead>
+                  <TableHead className="text-right w-[80px] font-semibold">% Receita</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {dadosDRE.map((line) => (
-                  <DRELineRow 
-                    key={line.id} 
-                    line={line} 
-                  />
+                  <DRELineRow key={line.id} line={line} />
                 ))}
               </TableBody>
             </Table>
@@ -649,43 +600,22 @@ export default function DREGerencial() {
       )}
 
       {/* Resumo de Margens */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-blue-50 border-blue-200">
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm font-semibold text-blue-900">Margem Bruta</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-blue-700">{getMargemBruta().toFixed(1)}%</p>
-            <p className="text-xs text-blue-600 mt-1">Lucro Bruto / Receita Líquida</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-50 border-emerald-200">
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm font-semibold text-emerald-900">Margem EBITDA</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-emerald-700">{getMargemEbitda().toFixed(1)}%</p>
-            <p className="text-xs text-emerald-600 mt-1">EBITDA / Receita Líquida</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-purple-50 border-purple-200">
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm font-semibold text-purple-900">Margem Líquida</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-purple-700">{getMargemLiquida().toFixed(1)}%</p>
-            <p className="text-xs text-purple-600 mt-1">Lucro Líquido / Receita Líquida</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-orange-50 border-orange-200">
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm font-semibold text-orange-900">Margem Operacional</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-orange-700">{getMargemOperacional().toFixed(1)}%</p>
-            <p className="text-xs text-orange-600 mt-1">EBIT / Receita Líquida</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Margem Bruta", value: `${getMargemBruta().toFixed(1)}%`, sub: "Lucro Bruto / Rec. Líquida", color: "text-blue-500", accent: "bg-blue-500" },
+          { label: "Margem EBITDA", value: `${getMargemEbitda().toFixed(1)}%`, sub: "EBITDA / Rec. Líquida", color: "text-emerald-500", accent: "bg-emerald-500" },
+          { label: "Margem Líquida", value: `${getMargemLiquida().toFixed(1)}%`, sub: "Lucro Líquido / Rec. Líquida", color: "text-violet-500", accent: "bg-violet-500" },
+          { label: "Margem Operacional", value: `${getMargemOperacional().toFixed(1)}%`, sub: "EBIT / Rec. Líquida", color: "text-amber-500", accent: "bg-amber-500" },
+        ].map(k => (
+          <Card key={k.label} className="relative overflow-hidden bg-card border-border shadow-sm">
+            <div className={`absolute top-0 left-0 right-0 h-0.5 ${k.accent}`} />
+            <CardContent className="p-5">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{k.label}</p>
+              <p className={`text-3xl font-extrabold mt-1 ${k.color}`}>{k.value}</p>
+              <p className="text-xs text-muted-foreground mt-1">{k.sub}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );

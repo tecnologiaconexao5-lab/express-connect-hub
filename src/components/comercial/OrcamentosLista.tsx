@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { mockOrcamentos } from "./mockOrcamentos";
 import { Orcamento, OrcamentoStatus, STATUS_CONFIG } from "./types";
 import OrcamentoForm from "./OrcamentoForm";
+import OrcamentoPreview from "./OrcamentoPreview";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { gerarPdfOrcamento } from "./orcamentoPdf";
@@ -31,11 +32,13 @@ const OrcamentosLista = () => {
   const [modoForm, setModoForm] = useState<"ver" | "editar" | "novo" | null>(null);
   const [dialogReprovar, setDialogReprovar] = useState<Orcamento | null>(null);
   const [motivoReprovacao, setMotivoReprovacao] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
 
   const responsaveis = [...new Set(orcamentos.map((o) => o.responsavel))];
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
+    console.log("[ORCAMENTO REAL] componente carregado: OrcamentosLista");
     fetchOrcamentos();
 
     if (searchParams.get("action") === "novo") {
@@ -48,17 +51,27 @@ const OrcamentosLista = () => {
   const fetchOrcamentos = async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase.from("orcamentos").select("*, orcamento_enderecos(*)").order("numero", { ascending: false });
-      if (error) throw error;
-      if (data && data.length > 0) {
-        setOrcamentos(data);
-      } else {
-        // Fallback for visual demonstration when db is empty
-        setOrcamentos(mockOrcamentos);
+      console.log("[ORCAMENTO REAL CORRIGIDO] Lista sem join carregada");
+      
+      const { data, error } = await supabase
+        .from("orcamentos")
+        .select("*")
+        .order("created_at", { ascending: false });
+      
+      if (error) {
+        console.error("[OrcamentosLista] Erro ao carregar:", error);
+        if (error.code === "42P01") {
+          setOrcamentos([]);
+          toast.info("Nenhum orçamento encontrado");
+          return;
+        }
+        throw error;
       }
+      setOrcamentos((data as any) || []);
     } catch (e: any) {
+      console.error("[OrcamentosLista] Erro catch:", e);
       if (e.code !== "42P01") toast.error("Erro ao carregar orçamentos.");
-      setOrcamentos(mockOrcamentos);
+      setOrcamentos([]);
     } finally {
       setIsLoading(false);
     }
@@ -230,21 +243,21 @@ const OrcamentosLista = () => {
             </TableHeader>
             <TableBody>
               {paginados.map((orc) => (
-                <TableRow key={orc.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setOrcamentoSelecionado(orc); setModoForm("ver"); }}>
+                <TableRow key={orc.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setOrcamentoSelecionado(orc); setShowPreview(true); }}>
                   <TableCell className="font-medium text-primary">{orc.numero}</TableCell>
                   <TableCell>{orc.cliente}</TableCell>
-                  <TableCell>{new Date(orc.dataEmissao).toLocaleDateString("pt-BR")}</TableCell>
-                  <TableCell>{new Date(orc.validade).toLocaleDateString("pt-BR")}</TableCell>
-                  <TableCell className="text-right font-semibold">{fmt(orc.valores.valorFinal)}</TableCell>
+                  <TableCell>{(() => { try { return orc.dataEmissao ? new Date(orc.dataEmissao).toLocaleDateString("pt-BR") : "—" } catch { return "—" } })()}</TableCell>
+                  <TableCell>{(() => { try { return orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "—" } catch { return "—" } })()}</TableCell>
+                  <TableCell className="text-right font-semibold">{fmt(orc.valores?.valorFinal || 0)}</TableCell>
                   <TableCell>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_CONFIG[orc.status].color}`}>
-                      {STATUS_CONFIG[orc.status].label}
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_CONFIG[orc.status]?.color || 'bg-gray-100 text-gray-800'}`}>
+                      {STATUS_CONFIG[orc.status]?.label || orc.status}
                     </span>
                   </TableCell>
-                  <TableCell>{orc.responsavel}</TableCell>
+                  <TableCell>{orc.responsavel || "—"}</TableCell>
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Visualizar" onClick={() => { setOrcamentoSelecionado(orc); setModoForm("ver"); }}><Eye className="w-4 h-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Visualizar" onClick={() => { setOrcamentoSelecionado(orc); setShowPreview(true); }}><Eye className="w-4 h-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar" onClick={() => { setOrcamentoSelecionado(orc); setModoForm("editar"); }}><Edit className="w-4 h-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" title="Gerar PDF" onClick={() => gerarPdfOrcamento(orc)}><FileDown className="w-4 h-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" title="Duplicar" onClick={() => handleDuplicar(orc)}><Copy className="w-4 h-4" /></Button>
@@ -290,6 +303,20 @@ const OrcamentosLista = () => {
             <Button variant="outline" onClick={() => setDialogReprovar(null)}>Cancelar</Button>
             <Button variant="destructive" onClick={handleReprovar} disabled={!motivoReprovacao.trim()}>Confirmar Reprovação</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Preview Orçamento */}
+      <Dialog open={showPreview} onOpenChange={(open) => { if (!open) { setShowPreview(false); setOrcamentoSelecionado(null); } }}>
+        <DialogContent className="max-w-[90vw] max-h-[90vh] w-full h-full overflow-hidden flex flex-col p-0">
+          <DialogHeader className="px-6 py-4 border-b">
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5 text-orange-500" /> Visualização do Orçamento
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            {orcamentoSelecionado && <OrcamentoPreview orcamento={orcamentoSelecionado} onVoltar={() => { setShowPreview(false); setOrcamentoSelecionado(null); }} />}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

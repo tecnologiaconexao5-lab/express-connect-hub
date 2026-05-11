@@ -1,11 +1,11 @@
 // ============================================================
-// MAPEADORES CENTRALIZADOS FRONTEND ↔ SUPABASE
+// MAPEADORES CENTRALIZADOS FRONTEND â†” SUPABASE
 // ============================================================
 // REGRA: Frontend usa camelCase, Banco usa snake_case
 // NUNCA enviar form bruto diretamente para insert/update
 // ============================================================
 
-// ---------------- UTILITÁRIOS ----------------
+// ---------------- UTILITÃRIOS ----------------
 const safeString = (value: unknown, defaultValue = ""): string => {
   if (value === undefined || value === null) return defaultValue;
   return String(value);
@@ -81,7 +81,7 @@ export interface PrestadorForm {
   conta?: string;
   digito?: string;
   tipoConta?: string;
-  favorece?: string;
+  favorecido?: string;
   cpfCnpjFavorecido?: string;
   chavePix?: string;
   tipoChavePix?: string;
@@ -100,6 +100,7 @@ export interface PrestadorForm {
   centroCusto?: string;
   retencoes?: string;
   conferenciManual?: boolean;
+  franquiaKm?: number;
   observacoesFinanceiras?: string;
   scoreInterno?: number;
   avaliacaoOperacional?: string;
@@ -112,6 +113,24 @@ export interface PrestadorForm {
   ultimaAtualizacao?: string;
   ultimoUsuario?: string;
   observacoesTorre?: string;
+  torreControle?: {
+    ocorrenciasGraves: number;
+    sinistro: number;
+    extravio: number;
+    desobediencia: number;
+    atrasos: number;
+    elogios: number;
+    observacoes: string;
+  };
+  permissoes?: {
+    podeVerOS?: boolean;
+    podeAceitarServico?: boolean;
+    podeVerValores?: boolean;
+    podeVerHistorico?: boolean;
+    podeEnviarDocumentos?: boolean;
+    podeAtualizarCadastro?: boolean;
+    podeReceberNotificacoes?: boolean;
+  };
 }
 
 export interface PrestadorRow {
@@ -127,15 +146,9 @@ export interface PrestadorRow {
   email?: string;
   tipo_parceiro?: string;
   status?: string;
-  endereco_cep?: string;
-  endereco_rua?: string;
-  endereco_numero?: string;
-  endereco_complemento?: string;
-  endereco_bairro?: string;
-  endereco_cidade?: string;
-  endereco_estado?: string;
+  endereco?: string;
   regiao_principal?: string;
-  regioes_secundarias?: string;
+  regioes_secundarias?: string[];
   origem_cadastro?: string;
   indicacao?: string;
   disponibilidade?: string;
@@ -169,6 +182,7 @@ export interface PrestadorRow {
   centro_custo?: string;
   retencoes?: string;
   conferencia_manual?: boolean;
+  franquia_km?: number;
   observacoes_financeiras?: string;
   score_interno?: number;
   avaliacao_operacional?: string;
@@ -176,6 +190,8 @@ export interface PrestadorRow {
   indice_aceite?: number;
   indice_comparecimento?: number;
   indice_entrega_prazo?: number;
+  veiculos?: string;
+  documentos?: string;
   data_cadastro?: string;
   data_aprovacao?: string;
   ultima_atualizacao?: string;
@@ -185,142 +201,293 @@ export interface PrestadorRow {
   updated_at?: string;
 }
 
+// Colunas reais da tabela prestadores no banco:
+const PRESTADOR_ALLOWLIST: string[] = [
+  // Identificação
+  'id', 'nome_completo', 'cpf_cnpj', 'nome_fantasia', 'rg_ie', 'data_nascimento',
+  // Contato
+  'telefone', 'whatsapp', 'email',
+  // Dados operacionais
+  'tipo_parceiro', 'status', 'regiao_principal', 'regioes_secundarias',
+  // Endereço
+  'endereco', 'origem_cadastro', 'indicacao', 'disponibilidade',
+  'turnos_preferenciais', 'restricoes_operacionais',
+  // Tipos de operação aceitos
+  'aceita_refrigerada', 'aceita_urbana', 'aceita_dedicada', 'aceita_esporadica',
+  // Contato emergência
+  'contatos_emergencia',
+  // Veículos (JSON)
+  'veiculos',
+  // Documentos (JSON)
+  'documentos',
+  // Dados bancários
+  'banco', 'agencia', 'conta', 'digito', 'tipo_conta',
+  'favorecido', 'cpf_cnpj_favorecido', 'chave_pix', 'tipo_chave_pix',
+  // Valores financeiros
+  'valor_diaria', 'valor_km', 'valor_saida', 'fixo_mensal',
+  'valor_ajudante', 'valor_espera', 'valor_reentrega', 'valor_devolucao',
+  // Pagamento
+  'periodicidade_pagamento', 'prazo_pagamento', 'forma_preferencial_pagamento',
+  'conta_contabil', 'centro_custo', 'retencoes',
+  // Controle
+  'conferencia_manual', 'franquia_km', 'observacoes_financeiras',
+  // Histórico (JSON)
+  'historico_ocorrencias', 'historico_bloqueios', 'historico_alteracoes',
+  // Qualidade
+  'score_interno', 'avaliacao_operacional', 'qtd_operacoes',
+  'indice_aceite', 'indice_comparecimento', 'indice_entrega_prazo',
+  // Controle Torre
+  'observacoes_torre',
+  // Datas
+  'data_cadastro', 'data_aprovacao', 'ultima_atualizacao', 'ultimo_usuario',
+  // Timestamps
+  'created_at', 'updated_at',
+  // Foto
+  'foto'
+];
+
+export const sanitizePrestadorPayload = (payload: Record<string, unknown>): Record<string, unknown> => {
+  const sanitized: Record<string, unknown> = {};
+  for (const key of Object.keys(payload)) {
+    if (PRESTADOR_ALLOWLIST.includes(key)) {
+      sanitized[key] = payload[key];
+    } else {
+      console.warn('[PRESTADOR REMOVIDO DO PAYLOAD] campo inexistente: ' + key);
+    }
+  }
+  console.log('[PRESTADOR SANITIZED PAYLOAD]', sanitized);
+  return sanitized;
+};
+
 export const toPrestadorInsert = (form: Partial<PrestadorForm>): Record<string, unknown> => {
-  const d: Record<string, unknown> = {};
-  const has = (v: unknown) => v !== undefined && v !== null && v !== "";
-
-  if (has(form.foto)) d.foto = String(form.foto);
-  if (has(form.nomeCompleto)) d.nome_completo = String(form.nomeCompleto);
-  if (has(form.cpfCnpj)) d.cpf_cnpj = String(form.cpfCnpj);
-  if (has(form.telefone)) d.telefone = String(form.telefone);
-  if (has(form.whatsapp)) d.whatsapp = String(form.whatsapp);
-  if (has(form.email)) d.email = String(form.email);
-  if (has(form.tipoParceiro)) d.tipo_parceiro = String(form.tipoParceiro);
-  if (has(form.status)) d.status = String(form.status);
-  if (has(form.regiaoPrincipal)) d.regiao_principal = String(form.regiaoPrincipal);
-  if (has(form.dataNascimento)) d.data_nascimento = String(form.dataNascimento);
-  if (has(form.rgIe)) d.rg = String(form.rgIe);
-
-  if (has(form.scoreInterno)) d.score_interno = Number(form.scoreInterno);
-  d.status_operacional = "analise";
-  if (has(form.indiceAceite)) d.indice_aceite = Number(form.indiceAceite);
-  if (has(form.indiceComparecimento)) d.indice_comparecimento = Number(form.indiceComparecimento);
-  if (has(form.indiceEntregaNoPrazo)) d.indice_entrega_prazo = Number(form.indiceEntregaNoPrazo);
-  if (has(form.qtdOperacoes)) d.qtd_operacoes = Number(form.qtdOperacoes);
-
-  if (has(form.aceitaDedicada)) d.aceita_dedicada = form.aceitaDedicada;
-  if (has(form.aceitaUrbana)) d.aceita_urbana = form.aceitaUrbana;
-  if (has(form.conferenciManual)) d.conferencia_manual = form.conferenciManual;
-
-  d.data_cadastro = new Date().toISOString();
-  d.ultima_atualizacao = new Date().toISOString();
-  d.updated_at = new Date().toISOString();
-
+  const has = (v: unknown) => v !== undefined && v !== null && v !== '';
+  const raw: Record<string, unknown> = {};
+  
+  if (has(form.nomeCompleto)) raw.nome_completo = String(form.nomeCompleto);
+  if (has(form.nomeFantasia)) raw.nome_fantasia = String(form.nomeFantasia);
+  if (has(form.cpfCnpj)) raw.cpf_cnpj = String(form.cpfCnpj);
+  if (has(form.rgIe)) raw.rg_ie = String(form.rgIe);
+  if (has(form.dataNascimento)) raw.data_nascimento = String(form.dataNascimento);
+  if (has(form.telefone)) raw.telefone = String(form.telefone);
+  if (has(form.whatsapp)) raw.whatsapp = String(form.whatsapp);
+  if (has(form.email)) raw.email = String(form.email);
+  
+  if (has(form.tipoParceiro)) raw.tipo_parceiro = String(form.tipoParceiro);
+  if (has(form.status)) raw.status = String(form.status);
+  if (has(form.scoreInterno)) raw.score_interno = Number(form.scoreInterno);
+  
+  if (has(form.regiaoPrincipal)) raw.regiao_principal = String(form.regiaoPrincipal);
+  if (has(form.regioesSecundarias) && form.regioesSecundarias?.length) raw.regioes_secundarias = form.regioesSecundarias;
+  if (has(form.origemCadastro)) raw.origem_cadastro = String(form.origemCadastro);
+  if (has(form.indicacao)) raw.indicacao = String(form.indicacao);
+  if (has(form.disponibilidade)) raw.disponibilidade = String(form.disponibilidade);
+  if (has(form.turnosPreferenciais)) raw.turnos_preferenciais = String(form.turnosPreferenciais);
+  if (has(form.restricoesOperacionais)) raw.restricoes_operacionais = String(form.restricoesOperacionais);
+  
+  if (has(form.endereco)) raw.endereco = JSON.stringify(form.endereco);
+  
+  if (form.aceitaRefrigerada !== undefined) raw.aceita_refrigerada = form.aceitaRefrigerada;
+  if (form.aceitaUrbana !== undefined) raw.aceita_urbana = form.aceitaUrbana;
+  if (form.aceitaDedicada !== undefined) raw.aceita_dedicada = form.aceitaDedicada;
+  if (form.aceitaEsporadica !== undefined) raw.aceita_esporadica = form.aceitaEsporadica;
+  
+  // Dados bancários
+  if (has(form.banco)) raw.banco = String(form.banco);
+  if (has(form.agencia)) raw.agencia = String(form.agencia);
+  if (has(form.conta)) raw.conta = String(form.conta);
+  if (has(form.digito)) raw.digito = String(form.digito);
+  if (has(form.tipoConta)) raw.tipo_conta = String(form.tipoConta);
+  if (has(form.favorecido)) raw.favorecido = String(form.favorecido);
+  if (has(form.cpfCnpjFavorecido)) raw.cpf_cnpj_favorecido = String(form.cpfCnpjFavorecido);
+  if (has(form.chavePix)) raw.chave_pix = String(form.chavePix);
+  if (has(form.tipoChavePix)) raw.tipo_chave_pix = String(form.tipoChavePix);
+  
+  // Valores financeiros
+  if (has(form.valorDiaria)) raw.valor_diaria = Number(form.valorDiaria);
+  if (has(form.valorKm)) raw.valor_km = Number(form.valorKm);
+  if (has(form.valorSaida)) raw.valor_saida = Number(form.valorSaida);
+  if (has(form.fixoMensal)) raw.fixo_mensal = Number(form.fixoMensal);
+  if (has(form.valorAjudante)) raw.valor_ajudante = Number(form.valorAjudante);
+  if (has(form.valorEspera)) raw.valor_espera = Number(form.valorEspera);
+  if (has(form.valorReentrega)) raw.valor_reentrega = Number(form.valorReentrega);
+  if (has(form.valorDevolucao)) raw.valor_devolucao = Number(form.valorDevolucao);
+  
+  // Pagamento
+  if (has(form.periodicidadePagamento)) raw.periodicidade_pagamento = String(form.periodicidadePagamento);
+  if (has(form.prazoPagamento)) raw.prazo_pagamento = String(form.prazoPagamento);
+  if (has(form.formaPreferencialPagamento)) raw.forma_preferencial_pagamento = String(form.formaPreferencialPagamento);
+  if (has(form.contaContabil)) raw.conta_contabil = String(form.contaContabil);
+  if (has(form.centroCusto)) raw.centro_custo = String(form.centroCusto);
+  if (has(form.retencoes)) raw.retencoes = String(form.retencoes);
+  if (form.conferenciManual !== undefined) raw.conferencia_manual = form.conferenciManual;
+  if (has(form.franquiaKm)) raw.franquia_km = Number(form.franquiaKm);
+  if (has(form.observacoesFinanceiras)) raw.observacoes_financeiras = String(form.observacoesFinanceiras);
+  
+  // Foto
+  if (has(form.foto)) raw.foto = String(form.foto);
+  
+  // Data de cadastro
+  raw.data_cadastro = new Date().toISOString().split('T')[0];
+  raw.created_at = new Date().toISOString();
+  raw.updated_at = new Date().toISOString();
+  
+  const d = sanitizePrestadorPayload(raw);
+  console.log('[DEBUG toPrestadorInsert] Payload gerado:', JSON.stringify(d, null, 2));
   return d;
 };
 
 export const toPrestadorUpdate = (form: Partial<PrestadorForm>): Record<string, unknown> => {
-  const d: Record<string, unknown> = {};
-  const has = (v: unknown) => v !== undefined && v !== null && v !== "";
-
-  if (has(form.foto)) d.foto = String(form.foto);
-  if (has(form.nomeCompleto)) d.nome_completo = String(form.nomeCompleto);
-  if (has(form.cpfCnpj)) d.cpf_cnpj = String(form.cpfCnpj);
-  if (has(form.telefone)) d.telefone = String(form.telefone);
-  if (has(form.whatsapp)) d.whatsapp = String(form.whatsapp);
-  if (has(form.email)) d.email = String(form.email);
-  if (has(form.tipoParceiro)) d.tipo_parceiro = String(form.tipoParceiro);
-  if (has(form.status)) d.status = String(form.status);
-  if (has(form.regiaoPrincipal)) d.regiao_principal = String(form.regiaoPrincipal);
-  if (has(form.dataNascimento)) d.data_nascimento = String(form.dataNascimento);
-  if (has(form.rgIe)) d.rg = String(form.rgIe);
-
-  if (has(form.scoreInterno)) d.score_interno = Number(form.scoreInterno);
-  if (has(form.indiceAceite)) d.indice_aceite = Number(form.indiceAceite);
-  if (has(form.indiceComparecimento)) d.indice_comparecimento = Number(form.indiceComparecimento);
-  if (has(form.indiceEntregaNoPrazo)) d.indice_entrega_prazo = Number(form.indiceEntregaNoPrazo);
-  if (has(form.qtdOperacoes)) d.qtd_operacoes = Number(form.qtdOperacoes);
-
-  if (has(form.aceitaDedicada)) d.aceita_dedicada = form.aceitaDedicada;
-  if (has(form.aceitaUrbana)) d.aceita_urbana = form.aceitaUrbana;
-  if (has(form.conferenciManual)) d.conferencia_manual = form.conferenciManual;
-
-  d.ultima_atualizacao = new Date().toISOString();
-  d.updated_at = new Date().toISOString();
-
+  const has = (v: unknown) => v !== undefined && v !== null && v !== '';
+  const raw: Record<string, unknown> = {};
+  
+  if (has(form.nomeCompleto)) raw.nome_completo = String(form.nomeCompleto);
+  if (has(form.nomeFantasia)) raw.nome_fantasia = String(form.nomeFantasia);
+  if (has(form.cpfCnpj)) raw.cpf_cnpj = String(form.cpfCnpj);
+  if (has(form.rgIe)) raw.rg_ie = String(form.rgIe);
+  if (has(form.dataNascimento)) raw.data_nascimento = String(form.dataNascimento);
+  if (has(form.telefone)) raw.telefone = String(form.telefone);
+  if (has(form.whatsapp)) raw.whatsapp = String(form.whatsapp);
+  if (has(form.email)) raw.email = String(form.email);
+  
+  if (has(form.tipoParceiro)) raw.tipo_parceiro = String(form.tipoParceiro);
+  if (has(form.status)) raw.status = String(form.status);
+  if (has(form.scoreInterno)) raw.score_interno = Number(form.scoreInterno);
+  
+  if (has(form.regiaoPrincipal)) raw.regiao_principal = String(form.regiaoPrincipal);
+  if (has(form.regioesSecundarias) && form.regioesSecundarias?.length) raw.regioes_secundarias = form.regioesSecundarias;
+  if (has(form.origemCadastro)) raw.origem_cadastro = String(form.origemCadastro);
+  if (has(form.indicacao)) raw.indicacao = String(form.indicacao);
+  if (has(form.disponibilidade)) raw.disponibilidade = String(form.disponibilidade);
+  if (has(form.turnosPreferenciais)) raw.turnos_preferenciais = String(form.turnosPreferenciais);
+  if (has(form.restricoesOperacionais)) raw.restricoes_operacionais = String(form.restricoesOperacionais);
+  
+  if (has(form.endereco)) raw.endereco = JSON.stringify(form.endereco);
+  
+  if (form.aceitaRefrigerada !== undefined) raw.aceita_refrigerada = form.aceitaRefrigerada;
+  if (form.aceitaUrbana !== undefined) raw.aceita_urbana = form.aceitaUrbana;
+  if (form.aceitaDedicada !== undefined) raw.aceita_dedicada = form.aceitaDedicada;
+  if (form.aceitaEsporadica !== undefined) raw.aceita_esporadica = form.aceitaEsporadica;
+  
+  // Dados bancários
+  if (has(form.banco)) raw.banco = String(form.banco);
+  if (has(form.agencia)) raw.agencia = String(form.agencia);
+  if (has(form.conta)) raw.conta = String(form.conta);
+  if (has(form.digito)) raw.digito = String(form.digito);
+  if (has(form.tipoConta)) raw.tipo_conta = String(form.tipoConta);
+  if (has(form.favorecido)) raw.favorecido = String(form.favorecido);
+  if (has(form.cpfCnpjFavorecido)) raw.cpf_cnpj_favorecido = String(form.cpfCnpjFavorecido);
+  if (has(form.chavePix)) raw.chave_pix = String(form.chavePix);
+  if (has(form.tipoChavePix)) raw.tipo_chave_pix = String(form.tipoChavePix);
+  
+  // Valores financeiros
+  if (has(form.valorDiaria)) raw.valor_diaria = Number(form.valorDiaria);
+  if (has(form.valorKm)) raw.valor_km = Number(form.valorKm);
+  if (has(form.valorSaida)) raw.valor_saida = Number(form.valorSaida);
+  if (has(form.fixoMensal)) raw.fixo_mensal = Number(form.fixoMensal);
+  if (has(form.valorAjudante)) raw.valor_ajudante = Number(form.valorAjudante);
+  if (has(form.valorEspera)) raw.valor_espera = Number(form.valorEspera);
+  if (has(form.valorReentrega)) raw.valor_reentrega = Number(form.valorReentrega);
+  if (has(form.valorDevolucao)) raw.valor_devolucao = Number(form.valorDevolucao);
+  
+  // Pagamento
+  if (has(form.periodicidadePagamento)) raw.periodicidade_pagamento = String(form.periodicidadePagamento);
+  if (has(form.prazoPagamento)) raw.prazo_pagamento = String(form.prazoPagamento);
+  if (has(form.formaPreferencialPagamento)) raw.forma_preferencial_pagamento = String(form.formaPreferencialPagamento);
+  if (has(form.contaContabil)) raw.conta_contabil = String(form.contaContabil);
+  if (has(form.centroCusto)) raw.centro_custo = String(form.centroCusto);
+  if (has(form.retencoes)) raw.retencoes = String(form.retencoes);
+  if (form.conferenciManual !== undefined) raw.conferencia_manual = form.conferenciManual;
+  if (has(form.franquiaKm)) raw.franquia_km = Number(form.franquiaKm);
+  if (has(form.observacoesFinanceiras)) raw.observacoes_financeiras = String(form.observacoesFinanceiras);
+  
+  // Foto
+  if (has(form.foto)) raw.foto = String(form.foto);
+  
+  raw.updated_at = new Date().toISOString();
+  
+  const d = sanitizePrestadorPayload(raw);
+  console.log('[DEBUG toPrestadorUpdate] Payload gerado:', JSON.stringify(d, null, 2));
   return d;
 };
 
-export const fromPrestadorRow = (item: PrestadorRow): PrestadorForm => ({
-  id: item.id,
-  foto: item.foto,
-  nomeCompleto: item.nome_completo || item.nomeCompleto || "",
-  nomeFantasia: item.nome_fantasia || item.nomeFantasia || item.nome_completo || "",
-  cpfCnpj: item.cpf_cnpj || item.cpfCnpj || "",
-  rgIe: item.rg_ie || item.rgIe,
-  dataNascimento: item.data_nascimento || item.dataNascimento,
-  telefone: item.telefone || "",
-  whatsapp: item.whatsapp,
-  email: item.email || "",
-  tipoParceiro: item.tipo_parceiro || item.tipoParceiro || "autonomo",
-  status: item.status || item.status || "analise",
-  endereco: {
-    cep: item.endereco_cep || "",
-    rua: item.endereco_rua || "",
-    numero: item.endereco_numero || "",
-    complemento: item.endereco_complemento,
-    bairro: item.endereco_bairro || "",
-    cidade: item.endereco_cidade || "",
-    estado: item.endereco_estado || "",
-  },
-  regiaoPrincipal: item.regiao_principal || item.regiaoPrincipal || "",
-  regioesSecundarias: safeJsonParse(item.regioes_secundarias || item.regioesSecundarias, []),
-  origemCadastro: item.origem_cadastro || item.origemCadastro,
-  indicacao: item.indicacao,
-  disponibilidade: item.disponibilidade,
-  turnosPreferenciais: item.turnos_preferenciais || item.turnosPreferenciais,
-  restricoesOperacionais: item.restricoes_operacionais || item.restricoesOperacionais,
-  aceitaRefrigerada: item.aceita_refrigerada ?? item.aceitaRefrigerada ?? false,
-  aceitaUrbana: item.aceita_urbana ?? item.aceitaUrbana ?? false,
-  aceitaDedicada: item.aceita_dedicada ?? item.aceitaDedicada ?? false,
-  aceptaEsporadica: item.aceita_esporadica ?? item.aceitaEsporadica ?? false,
-  banco: item.banco,
-  agencia: item.agencia,
-  conta: item.conta,
-  digito: item.digito,
-  tipoConta: item.tipo_conta || item.tipoConta,
-  favorece: item.favorecido,
-  cpfCnpjFavorecido: item.cpf_cnpj_favorecido || item.cpfCnpjFavorecido,
-  chavePix: item.chave_pix || item.chavePix,
-  tipoChavePix: item.tipo_chave_pix || item.tipoChavePix,
-  valorDiaria: item.valor_diaria ?? item.valorDiaria,
-  valorKm: item.valor_km ?? item.valorKm,
-  valorSaida: item.valor_saida ?? item.valorSaida,
-  fixoMensal: item.fixo_mensal ?? item.fixoMensal,
-  valorAjudante: item.valor_ajudante ?? item.valorAjudante,
-  valorEspera: item.valor_espera ?? item.valorEspera,
-  valorReentrega: item.valor_reentrega ?? item.valorReentrega,
-  valorDevolucao: item.valor_devolucao ?? item.valorDevolucao,
-  periodicidadePagamento: item.periodicidade_pagamento || item.periodicidadePagamento,
-  prazoPagamento: item.prazo_pagamento || item.prazoPagamento,
-  formaPreferencialPagamento: item.forma_preferencial_pagamento || item.formaPreferencialPagamento,
-  contaContabil: item.conta_contabil || item.contaContabil,
-  centroCusto: item.centro_custo || item.centroCusto,
-  retencoes: item.retencoes,
-  conferenciManual: item.conferencia_manual ?? item.conferenciManual ?? false,
-  observacoesFinanceiras: item.observacoes_financeiras || item.observacoesFinanceiras,
-  scoreInterno: Number(item.score_interno ?? item.scoreInterno ?? 0),
-  avaliacaoOperacional: item.avaliacao_operacional || item.avaliacaoOperacional,
-  qtdOperacoes: item.qtd_operacoes ?? item.qtdOperacoes ?? 0,
-  indiceAceite: Number(item.indice_aceite ?? item.indiceAceite ?? 0),
-  indiceComparecimento: Number(item.indice_comparecimento ?? item.indiceComparecimento ?? 0),
-  indiceEntregaNoPrazo: Number(item.indice_entrega_prazo ?? item.indiceEntregaNoPrazo ?? 0),
-  dataCadastro: item.data_cadastro || item.dataCadastro,
-  dataAprovacao: item.data_aprovacao || item.dataAprovacao,
-  ultimaAtualizacao: item.ultima_atualizacao || item.ultimaAtualizacao,
-  ultimoUsuario: item.ultimo_usuario || item.ultimoUsuario,
-  observacoesTorre: item.observacoes_torre || item.observacoesTorre,
-});
+
+export const fromPrestadorRow = (item: PrestadorRow): PrestadorForm => {
+  // Parse endereco from JSONB or observacoes
+  let enderecoParsed = { cep: "", rua: "", numero: "", complemento: "", bairro: "", cidade: "", estado: "" };
+  if (item.endereco) {
+    try {
+      const parsed = typeof item.endereco === 'string' ? JSON.parse(item.endereco) : item.endereco;
+      if (parsed && typeof parsed === 'object') {
+        enderecoParsed = { ...enderecoParsed, ...parsed };
+      }
+    } catch {
+      // If not JSON, try to extract from observacoes
+    }
+  }
+
+  return {
+    id: item.id,
+    foto: item.foto,
+    nomeCompleto: item.nome_completo || "",
+    nomeFantasia: item.nome_fantasia,
+    cpfCnpj: item.cpf_cnpj || "",
+    rgIe: item.rg_ie,
+    dataNascimento: item.data_nascimento,
+    telefone: item.telefone || "",
+    whatsapp: item.whatsapp,
+    email: item.email || "",
+    tipoParceiro: item.tipo_parceiro || "autonomo",
+    status: item.status || "analise",
+    endereco: enderecoParsed,
+    regiaoPrincipal: item.regiao_principal || "",
+    regioesSecundarias: item.regioes_secundarias || [],
+    origemCadastro: item.origem_cadastro || "",
+    disponibilidade: item.disponibilidade,
+    turnosPreferenciais: item.turnos_preferenciais,
+    restricoesOperacionais: item.restricoes_operacionais,
+    aceitaRefrigerada: item.aceita_refrigerada ?? false,
+    aceitaUrbana: item.aceita_urbana ?? false,
+    aceitaDedicada: item.aceita_dedicada ?? false,
+    aceitaEsporadica: item.aceita_esporadica ?? false,
+    banco: item.banco,
+    agencia: item.agencia,
+    conta: item.conta,
+    digito: item.digito,
+    tipoConta: item.tipo_conta,
+    favorecido: item.favorecido,
+    cpfCnpjFavorecido: item.cpf_cnpj_favorecido,
+    chavePix: item.chave_pix,
+    tipoChavePix: item.tipo_chave_pix,
+    valorDiaria: item.valor_diaria,
+    valorKm: item.valor_km,
+    valorSaida: item.valor_saida,
+    fixoMensal: item.fixo_mensal,
+    valorAjudante: item.valor_ajudante,
+    valorEspera: item.valor_espera,
+    valorReentrega: item.valor_reentrega,
+    valorDevolucao: item.valor_devolucao,
+    periodicidadePagamento: item.periodicidade_pagamento,
+    prazoPagamento: item.prazo_pagamento,
+    formaPreferencialPagamento: item.forma_preferencial_pagamento,
+    contaContabil: item.conta_contabil,
+    centroCusto: item.centro_custo,
+    retencoes: item.retencoes,
+    conferenciManual: item.conferencia_manual ?? false,
+    franquiaKm: item.franquia_km,
+    observacoesFinanceiras: item.observacoes_financeiras,
+    scoreInterno: item.score_interno ?? 0,
+    avaliacaoOperacional: item.avaliacao_operacional,
+    qtdOperacoes: item.qtd_operacoes ?? 0,
+    indiceAceite: item.indice_aceite ?? 0,
+    indiceComparecimento: item.indice_comparecimento ?? 0,
+    indiceEntregaNoPrazo: item.indice_entrega_prazo ?? 0,
+    dataCadastro: item.data_cadastro,
+    dataAprovacao: item.data_aprovacao,
+    ultimaAtualizacao: item.ultima_atualizacao,
+    ultimoUsuario: item.ultimo_usuario,
+    observacoesTorre: item.observacoes_torre,
+  };
+};
 
 // ---------------- CLIENTES ----------------
 
@@ -386,16 +553,19 @@ export interface ClienteRow {
 
 export const toClienteInsert = (form: Partial<ClienteForm>): Record<string, unknown> => {
   const d: Record<string, unknown> = {};
-  const has = (v: unknown) => v !== undefined && v !== null;
+  const has = (v: unknown) => v !== undefined && v !== null && v !== "";
 
   if (has(form.razaoSocial)) d.razao_social = form.razaoSocial;
-  if (has(form.nomeFantasia)) d.nome_fantasia = form.nomeFantasia;
-  else if (has(form.razaoSocial)) d.nome_fantasia = form.razaoSocial;
+  if (has(form.nomeFantasia)) {
+    d.nome_fantasia = form.nomeFantasia;
+  } else if (has(form.razaoSocial)) {
+    d.nome_fantasia = form.razaoSocial;
+  }
   if (has(form.cnpj)) d.cnpj = form.cnpj;
   if (has(form.ie)) d.ie = form.ie;
   if (has(form.segmento)) d.segmento = form.segmento;
   if (has(form.porte)) d.porte = form.porte;
-  if (has(form.status)) d.status = form.status;
+  d.status = has(form.status) ? form.status : "ativo";
   if (has(form.contatoPrincipal)) d.contato_principal = form.contatoPrincipal;
   if (has(form.telefone)) d.telefone = form.telefone;
   if (has(form.whatsapp)) d.whatsapp = form.whatsapp;
@@ -410,24 +580,54 @@ export const toClienteInsert = (form: Partial<ClienteForm>): Record<string, unkn
   if (has(form.responsavelComercial)) d.responsavel_comercial = form.responsavelComercial;
   if (has(form.observacoes)) d.observacoes = form.observacoes;
   if (has(form.origemComercial)) d.origem_comercial = form.origemComercial;
-  if (has(form.exigeAgendamento)) d.exige_agendamento = form.exigeAgendamento;
-  if (has(form.exigeSla)) d.exige_sla = form.exigeSla;
-  if (has(form.exigePortal)) d.exige_portal = form.exigePortal;
-  if (has(form.aceitaApi)) d.aceita_api = form.aceitaApi;
+  if (form.exigeAgendamento !== undefined) d.exige_agendamento = form.exigeAgendamento;
+  if (form.exigeSla !== undefined) d.exige_sla = form.exigeSla;
+  if (form.exigePortal !== undefined) d.exige_portal = form.exigePortal;
+  if (form.aceitaApi !== undefined) d.aceita_api = form.aceitaApi;
 
   d.created_at = new Date().toISOString();
   d.updated_at = new Date().toISOString();
-  if (!form.status) d.status = "ativo";
 
   return d;
 };
 
 export const toClienteUpdate = (form: Partial<ClienteForm>): Record<string, unknown> => {
-  const payload = toClienteInsert(form);
-  delete payload.created_at;
-  delete payload.status;
-  payload.updated_at = new Date().toISOString();
-  return payload;
+  const d: Record<string, unknown> = {};
+  const has = (v: unknown) => v !== undefined && v !== null && v !== "";
+
+  if (has(form.razaoSocial)) d.razao_social = form.razaoSocial;
+  if (has(form.nomeFantasia)) {
+    d.nome_fantasia = form.nomeFantasia;
+  } else if (has(form.razaoSocial)) {
+    d.nome_fantasia = form.razaoSocial;
+  }
+  if (has(form.cnpj)) d.cnpj = form.cnpj;
+  if (has(form.ie)) d.ie = form.ie;
+  if (has(form.segmento)) d.segmento = form.segmento;
+  if (has(form.porte)) d.porte = form.porte;
+  d.status = has(form.status) ? form.status : "ativo";
+  if (has(form.contatoPrincipal)) d.contato_principal = form.contatoPrincipal;
+  if (has(form.telefone)) d.telefone = form.telefone;
+  if (has(form.whatsapp)) d.whatsapp = form.whatsapp;
+  if (has(form.email)) d.email = form.email;
+  if (has(form.site)) d.site = form.site;
+  if (has(form.cidade)) d.cidade = form.cidade;
+  if (has(form.uf)) d.uf = form.uf;
+  if (has(form.logo)) d.logo = form.logo;
+  if (has(form.numOsMes)) d.num_os_mes = form.numOsMes;
+  if (has(form.responsavelOperacional)) d.responsavel_operacional = form.responsavelOperacional;
+  if (has(form.responsavelFinanceiro)) d.responsavel_financeiro = form.responsavelFinanceiro;
+  if (has(form.responsavelComercial)) d.responsavel_comercial = form.responsavelComercial;
+  if (has(form.observacoes)) d.observacoes = form.observacoes;
+  if (has(form.origemComercial)) d.origem_comercial = form.origemComercial;
+  if (form.exigeAgendamento !== undefined) d.exige_agendamento = form.exigeAgendamento;
+  if (form.exigeSla !== undefined) d.exige_sla = form.exigeSla;
+  if (form.exigePortal !== undefined) d.exige_portal = form.exigePortal;
+  if (form.aceitaApi !== undefined) d.aceita_api = form.aceitaApi;
+
+  d.updated_at = new Date().toISOString();
+
+  return d;
 };
 
 export const fromClienteRow = (item: ClienteRow): ClienteForm => ({
@@ -438,7 +638,14 @@ export const fromClienteRow = (item: ClienteRow): ClienteForm => ({
   ie: item.ie,
   segmento: item.segmento,
   porte: item.porte,
-  status: item.status || item.status || "ativo",
+  status: (() => {
+    const s = item.status;
+    if (!s) return "ativo";
+    const lower = s.toLowerCase();
+    if (lower === "ativo" || lower === "active") return "Ativo";
+    if (lower === "inativo" || lower === "inactive") return "Inativo";
+    return s;
+  })(),
   contatoPrincipal: item.contato_principal || item.contatoPrincipal,
   telefone: item.telefone || "",
   whatsapp: item.whatsapp,
@@ -459,7 +666,7 @@ export const fromClienteRow = (item: ClienteRow): ClienteForm => ({
   aceitaApi: item.aceita_api ?? item.aceitaApi ?? false,
 });
 
-// ---------------- VEÍCULOS ----------------
+// ---------------- VEÃCULOS ----------------
 
 export interface VeiculoForm {
   id?: string;
@@ -482,12 +689,15 @@ export interface VeiculoForm {
   tipoCarroceria?: string;
   classificacaoTermica?: string;
   rastreador?: string;
-  seguroApolice?: string;
-  validadeDocumental?: string;
-  prestadorVinculado?: string;
-  unidade?: string;
-  custoKm?: number;
-  custoDiaria?: number;
+  antt?: string;
+  proprietario?: string;
+  cpfCnpjProprietario?: string;
+  tipoCarga?: string;
+  tempMin?: number;
+  tempMax?: number;
+  possuiSeguro?: boolean;
+  restricoesRegiao?: string;
+  observacoesOperacionais?: string;
   status?: string;
   observacoes?: string;
   fotos?: string[];
@@ -515,11 +725,19 @@ export interface VeiculoRow {
   classificacao_termica?: string;
   rastreador?: string;
   seguro_apolice?: string;
+  possui_seguro?: boolean;
   validade_documental?: string;
   prestador_vinculado?: string;
   unidade?: string;
   custo_km?: number;
   custo_diaria?: number;
+  antt?: string;
+  cpf_cnpj_proprietario?: string;
+  tipo_carga?: string;
+  temp_min?: number;
+  temp_max?: number;
+  restricoes_regiao?: string;
+  observacoes_operacionais?: string;
   status?: string;
   observacoes?: string;
   fotos?: string[];
@@ -551,11 +769,19 @@ export const toVeiculoInsert = (form: Partial<VeiculoForm>): Record<string, unkn
   if (has(form.classificacaoTermica)) d.classificacao_termica = form.classificacaoTermica;
   if (has(form.rastreador)) d.rastreador = form.rastreador;
   if (has(form.seguroApolice)) d.seguro_apolice = form.seguroApolice;
+  if (form.possuiSeguro !== undefined) d.possui_seguro = form.possuiSeguro;
   if (has(form.validadeDocumental)) d.validade_documental = form.validadeDocumental;
   if (has(form.prestadorVinculado)) d.prestador_vinculado = form.prestadorVinculado;
   if (has(form.unidade)) d.unidade = form.unidade;
   if (has(form.custoKm)) d.custo_km = form.custoKm;
   if (has(form.custoDiaria)) d.custo_diaria = form.custoDiaria;
+  if (has(form.antt)) d.antt = form.antt;
+  if (has(form.cpfCnpjProprietario)) d.cpf_cnpj_proprietario = form.cpfCnpjProprietario;
+  if (has(form.tipoCarga)) d.tipo_carga = form.tipoCarga;
+  if (has(form.tempMin)) d.temp_min = Number(form.tempMin);
+  if (has(form.tempMax)) d.temp_max = Number(form.tempMax);
+  if (has(form.restricoesRegiao)) d.restricoes_regiao = form.restricoesRegiao;
+  if (has(form.observacoesOperacionais)) d.observacoes_operacionais = form.observacoesOperacionais;
   if (has(form.status)) d.status = form.status;
   if (has(form.observacoes)) d.observacoes = form.observacoes;
   if (form.fotos) d.fotos = JSON.stringify(form.fotos);
@@ -596,17 +822,25 @@ export const fromVeiculoRow = (item: VeiculoRow): VeiculoForm => ({
   classificacaoTermica: item.classificacao_termica || item.classificacaoTermica,
   rastreador: item.rastreador,
   seguroApolice: item.seguro_apolice || item.seguroApolice,
+  possuiSeguro: !!item.possui_seguro,
   validadeDocumental: item.validade_documental || item.validadeDocumental,
   prestadorVinculado: item.prestador_vinculado || item.prestadorVinculado,
   unidade: item.unidade,
   custoKm: item.custo_km ?? item.custoKm,
   custoDiaria: item.custo_diaria ?? item.custoDiaria,
+  antt: item.antt,
+  cpfCnpjProprietario: item.cpf_cnpj_proprietario || item.cpf_cnpj_proprietario,
+  tipoCarga: item.tipo_carga,
+  tempMin: item.temp_min,
+  tempMax: item.temp_max,
+  restricoesRegiao: item.restricoes_regiao,
+  observacoesOperacionais: item.observacoes_operacionais,
   status: item.status || "ativo",
   observacoes: item.observacoes,
   fotos: safeJsonParse(item.fotos || item.fotos, []),
 });
 
-// ---------------- ORDENS DE SERVIÇO ----------------
+// ---------------- ORDENS DE SERVIÃ‡O ----------------
 
 export interface OSForm {
   id?: string;
@@ -676,6 +910,12 @@ export interface OSForm {
   whatsappDestinatario?: string;
   notificarDestinatario?: boolean;
   eventosTracker?: string;
+  distanciaRota?: { distanciaKm?: number; duracaoMin?: number; distanciaTexto?: string; duracaoTexto?: string };
+  faixaAplicada?: string;
+  lucroEstimado?: number;
+  margemLucro?: number;
+  veiculoSugerido?: string;
+  instrucoesOperacionaisOS?: string;
 }
 
 export interface OSRow {
@@ -717,7 +957,7 @@ export interface OSRow {
   conferencia_obrigatoria?: boolean;
   equipamento_obrigatorio?: string;
   condicao_transporte?: string;
-  veiculo_tipo?: string;
+  tipo_veiculo?: string;
   veiculo_subcategoria?: string;
   veiculo_carroceria?: string;
   veiculo_termica?: string;
@@ -746,37 +986,50 @@ export interface OSRow {
   whatsapp_destinatario?: string;
   notificar_destinatario?: boolean;
   eventos_tracker?: string;
+  distancia_rota?: { distancia_km?: number; duracao_min?: number; distancia_texto?: string; duracao_texto?: string };
+  faixa_aplicada?: string;
+  lucro_estimado?: number;
+  margem_lucro?: number;
+  veiculo_sugerido?: string;
+  instrucoes_operacionais_os?: string;
+  composicao_financeira?: any;
   created_at?: string;
   updated_at?: string;
 }
 
-export const toOSInsert = (form: Partial<OSForm>): Record<string, unknown> => {
-  const d: Record<string, unknown> = {};
+export const toOSInsert = (form: Partial<OSForm>): Record<string, any> => {
+  const d: Record<string, any> = {};
   const has = (v: unknown) => v !== undefined && v !== null;
 
-  if (has(form.numero)) d.numero = form.numero;
-  if (has(form.data)) d.data = form.data;
-  if (has(form.cliente)) d.cliente = form.cliente;
-  if (has(form.unidade)) d.unidade = form.unidade;
-  if (has(form.centroCusto)) d.centro_custo = form.centroCusto;
-  if (has(form.orcamentoOrigem)) d.orcamento_origem = form.orcamentoOrigem;
-  if (has(form.prestador)) d.prestador = form.prestador;
-  if (has(form.veiculoAlocado)) d.veiculo_alocado = form.veiculoAlocado;
-  if (has(form.tipoOperacao)) d.tipo_operacao = form.tipoOperacao;
-  if (has(form.modalidade)) d.modalidade = form.modalidade;
-  if (has(form.prioridade)) d.prioridade = form.prioridade;
-  if (has(form.status)) d.status = form.status;
-  if (has(form.responsavel)) d.responsavel = form.responsavel;
-  if (has(form.refCliente)) d.ref_cliente = form.refCliente;
-  if (has(form.pedidoInterno)) d.pedido_interno = form.pedidoInterno;
-  if (has(form.slaOperacao)) d.sla_operacao = form.slaOperacao;
-  if (has(form.observacoesGerais)) d.observacoes_gerais = form.observacoesGerais;
-  if (has(form.comprovanteObrigatorio)) d.comprovante_obrigatorio = form.comprovanteObrigatorio;
-  if (has(form.cteObrigatorio)) d.cte_obrigatorio = form.cteObrigatorio;
-  if (has(form.xmlObrigatorio)) d.xml_obrigatorio = form.xmlObrigatorio;
-  if (has(form.operacaoDedicada)) d.operacao_dedicada = form.operacaoDedicada;
+  // Fallbacks obrigatÃ³rios
+  const s = (v: any) => v || "";
+  const n = (v: any) => Number(v) || 0;
+  const b = (v: any) => !!v;
 
-  if (has(form.cargaTipo)) d.carga_tipo = form.cargaTipo;
+    if (has(form.numero)) d.numero = s(form.numero);
+    if (has(form.data)) d.data = s(form.data);
+    if (has(form.clienteId)) d.cliente_id = s(form.clienteId);
+    if (has(form.cliente)) d.cliente = s(form.cliente);
+    if (has(form.unidade)) d.unidade = s(form.unidade);
+    if (has(form.centroCusto)) d.centro_custo = s(form.centroCusto);
+    if (has(form.orcamentoOrigem)) d.orcamento_origem = s(form.orcamentoOrigem);
+    if (has(form.prestador)) d.prestador = s(form.prestador);
+    if (has(form.veiculoAlocado)) d.veiculo_alocado = s(form.veiculoAlocado);
+    if (has(form.tipoOperacao)) d.tipo_operacao = s(form.tipoOperacao);
+    if (has(form.modalidade)) d.modalidade = s(form.modalidade);
+    if (has(form.prioridade)) d.prioridade = s(form.prioridade);
+    if (has(form.status)) d.status = s(form.status);
+    if (has(form.responsavel)) d.responsavel = s(form.responsavel);
+    if (has(form.refCliente)) d.ref_cliente = s(form.refCliente);
+    if (has(form.pedidoInterno)) d.pedido_interno = s(form.pedidoInterno);
+    if (has(form.slaOperacao)) d.sla_operacao = s(form.slaOperacao);
+    if (has(form.observacoesGerais)) d.observacoes_gerais = s(form.observacoesGerais);
+    if (has(form.comprovanteObrigatorio)) d.comprovante_obrigatorio = b(form.comprovanteObrigatorio);
+    if (has(form.cteObrigatorio)) d.cte_obrigatorio = b(form.cteObrigatorio);
+    if (has(form.xmlObrigatorio)) d.xml_obrigatorio = b(form.xmlObrigatorio);
+    if (has(form.operacaoDedicada)) d.operacao_dedicada = b(form.operacaoDedicada);
+
+    if (has(form.cargaTipo)) d.carga_tipo = s(form.cargaTipo);
   if ((form as any).carga) {
     const c = (form as any).carga;
     if (c.descricao) d.carga_descricao = c.descricao;
@@ -798,46 +1051,76 @@ export const toOSInsert = (form: Partial<OSForm>): Record<string, unknown> => {
       controlada: c.controlada || false,
       conferencia: c.conferencia || false,
       equipamento: c.equipamento || "",
-      condicao: c.condicao || ""
+      condicao: c.condicao || "",
+      comprimento: c.comprimento || 0,
+      largura: c.largura || 0,
+      altura: c.altura || 0,
+      pesoPorVolume: c.pesoPorVolume || 0,
+      temperaturaMinima: c.temperaturaMinima || 0,
+      temperaturaMaxima: c.temperaturaMaxima || 0,
+      observacoesCarga: c.observacoesCarga || ""
     };
   }
 
-  if (has(form.veiculoTipo)) d.veiculo_tipo = form.veiculoTipo;
-  if (has(form.veiculoSubcategoria)) d.veiculo_subcategoria = form.veiculoSubcategoria;
-  if (has(form.veiculoCarroceria)) d.veiculo_carroceria = form.veiculoCarroceria;
-  if (has(form.veiculoTermica)) d.veiculo_termica = form.veiculoTermica;
-  if (has(form.isReserva)) d.is_reserva = form.isReserva;
-  if (has(form.retornoObrigatorio)) d.retorno_obrigatorio = form.retornoObrigatorio;
+    if (has(form.veiculoTipo)) d.tipo_veiculo = s(form.veiculoTipo);
+    if (has(form.veiculoSubcategoria)) d.veiculo_subcategoria = s(form.veiculoSubcategoria);
+    if (has(form.veiculoCarroceria)) d.veiculo_carroceria = s(form.veiculoCarroceria);
+    if (has(form.veiculoTermica)) d.veiculo_termica = s(form.veiculoTermica);
+    if (has(form.veiculoPlaca)) d.veiculo_placa = s(form.veiculoPlaca);
+    if (has(form.isReserva)) d.is_reserva = b(form.isReserva);
+    if (has(form.retornoObrigatorio)) d.retorno_obrigatorio = b(form.retornoObrigatorio);
+  
+  // Campos de agendamento - usar apenas campos que existem no banco
+    if (has(form.dataAgendada)) d.data_agendada = s(form.dataAgendada);
+    if (has(form.observacaoAgendamento)) d.observacao_agendamento = s(form.observacaoAgendamento);
 
-  if (has(form.dataProgramada)) d.data_programada = form.dataProgramada;
-  if (has(form.janelaOperacional)) d.janela_operacional = form.janelaOperacional;
-  if (has(form.previsaoInicio)) d.previsao_inicio = form.previsaoInicio;
-  if (has(form.previsaoTermino)) d.previsao_termino = form.previsaoTermino;
-  if (has(form.tipoEscala)) d.tipo_escala = form.tipoEscala;
-  if (has(form.instrucoesOperacionais)) d.instrucoes_operacionais = form.instrucoesOperacionais;
-  if (has(form.observacaoTorre)) d.observacao_torre = form.observacaoTorre;
+    if (has(form.dataProgramada)) d.data_programada = s(form.dataProgramada);
+    if (has(form.janelaOperacional)) d.janela_operacional = s(form.janelaOperacional);
+    if (has(form.previsaoInicio)) d.previsao_inicio = s(form.previsaoInicio);
+    if (has(form.previsaoTermino)) d.previsao_termino = s(form.previsaoTermino);
+    if (has(form.tipoEscala)) d.tipo_escala = s(form.tipoEscala);
+    if (has(form.instrucoesOperacionais)) d.instrucoes_operacionais = s(form.instrucoesOperacionais);
+    if (has(form.observacaoTorre)) d.observacao_torre = s(form.observacaoTorre);
 
-  if (has(form.tabelaAplicada)) d.tabela_aplicada = form.tabelaAplicada;
-  if (has(form.valorCliente)) d.valor_cliente = form.valorCliente;
-  if (has(form.custoPrestador)) d.custo_prestador = form.custoPrestador;
-  if (has(form.pedagio)) d.pedagio = form.pedagio;
-  if (has(form.ajudante)) d.ajudante = form.ajudante;
-  if (has(form.adicionais)) d.adicionais = form.adicionais;
-  if (has(form.descontos)) d.descontos = form.descontos;
-  if (has(form.reembolsoPrevisto)) d.reembolso_previsto = form.reembolsoPrevisto;
-  if (has(form.contaContabil)) d.conta_contabil = form.contaContabil;
-  if (has(form.centroCustoFin)) d.centro_custo_fin = form.centroCustoFin;
-  if (has(form.statusFaturamento)) d.status_faturamento = form.statusFaturamento;
-  if (has(form.statusPagamento)) d.status_pagamento = form.statusPagamento;
+    if (has(form.tabelaAplicada)) d.tabela_aplicada = s(form.tabelaAplicada);
+    if (has(form.valorCliente)) d.valor_cliente = n(form.valorCliente);
+    if (has(form.custoPrestador)) d.custo_prestador = n(form.custoPrestador);
+    if (has(form.pedagio)) d.pedagio = n(form.pedagio);
+    if (has(form.ajudante)) d.ajudante = n(form.ajudante);
+    if (has(form.adicionais)) d.adicionais = n(form.adicionais);
+    if (has(form.descontos)) d.descontos = n(form.descontos);
+    if (has(form.reembolsoPrevisto)) d.reembolso_previsto = n(form.reembolsoPrevisto);
+    if (has(form.contaContabil)) d.conta_contabil = s(form.contaContabil);
+    if (has(form.centroCustoFin)) d.centro_custo_fin = s(form.centroCustoFin);
+    if (has(form.statusFaturamento)) d.status_faturamento = s(form.statusFaturamento);
+    if (has(form.statusPagamento)) d.status_pagamento = s(form.statusPagamento);
 
-  if (has(form.emailDestinatario)) d.email_destinatario = form.emailDestinatario;
-  if (has(form.whatsappDestinatario)) d.whatsapp_destinatario = form.whatsappDestinatario;
-  if (has(form.notificarDestinatario)) d.notificar_destinatario = form.notificarDestinatario;
-  if (has(form.eventosTracker)) d.eventos_tracker = form.eventosTracker;
+    if (has(form.emailDestinatario)) d.email_destinatario = s(form.emailDestinatario);
+    if (has(form.whatsappDestinatario)) d.whatsapp_destinatario = s(form.whatsappDestinatario);
+    if (has(form.notificarDestinatario)) d.notificar_destinatario = b(form.notificarDestinatario);
+    if (has(form.eventosTracker)) d.eventos_tracker = s(form.eventosTracker);
 
-  // Campos não mapeados no OSForm mas presentes no OrdemServico
+    if (has(form.faixaAplicada)) d.faixa_aplicada = s(form.faixaAplicada);
+    if (has(form.lucroEstimado)) d.lucro_estimado = n(form.lucroEstimado);
+    if (has(form.margemLucro)) d.margem_lucro = n(form.margemLucro);
+    if (has(form.veiculoSugerido)) d.veiculo_sugerido = s(form.veiculoSugerido);
+    if (has(form.instrucoesOperacionaisOS)) d.instrucoes_operacionais_os = s(form.instrucoesOperacionaisOS);
+
+    if (has(form.recebedorNome)) d.recebedor_nome = s(form.recebedorNome);
+    if (has(form.recebedorDocumento)) d.recebedor_documento = s(form.recebedorDocumento);
+  if (has(form.localizacaoEntregaJson)) d.localizacao_entrega_json = form.localizacaoEntregaJson;
+
+  // Campos nÃ£o mapeados no OSForm mas presentes no OrdemServico
   if ((form as any).enderecos) (d as any).enderecos = (form as any).enderecos;
   if ((form as any).historico) (d as any).historico = (form as any).historico;
+  if ((form as any).distanciaRota) {
+    (d as any).distancia_rota = {
+      distancia_km: (form as any).distanciaRota?.distanciaKm,
+      duracao_min: (form as any).distanciaRota?.duracaoMin,
+      distancia_texto: (form as any).distanciaRota?.distanciaTexto,
+      duracao_texto: (form as any).distanciaRota?.duracaoTexto,
+    };
+  }
 
   d.created_at = new Date().toISOString();
   d.updated_at = new Date().toISOString();
@@ -845,7 +1128,7 @@ export const toOSInsert = (form: Partial<OSForm>): Record<string, unknown> => {
   return d;
 };
 
-export const toOSUpdate = (form: Partial<OSForm>): Record<string, unknown> => {
+export const toOSUpdate = (form: Partial<OSForm>): Record<string, any> => {
   const payload = toOSInsert(form);
   delete payload.created_at;
   delete payload.id;
@@ -894,14 +1177,25 @@ export const fromOSRow = (item: OSRow): OSForm => ({
     risco: item.carga_risco ?? item.cargaRisco ?? false,
     conferencia: item.conferencia_obrigatoria ?? item.conferenciasObrigatoria ?? false,
     equipamento: item.equipamento_obrigatorio || item.equipamentoObrigatorio || "",
-    condicao: item.condicao_transporte || item.condicaoTransporte || ""
+    condicao: item.condicao_transporte || item.condicaoTransporte || "",
+    comprimento: (item as any).carga?.comprimento || 0,
+    largura: (item as any).carga?.largura || 0,
+    altura: (item as any).carga?.altura || 0,
+    pesoPorVolume: (item as any).carga?.pesoPorVolume || 0,
+    temperaturaMinima: (item as any).carga?.temperaturaMinima || 0,
+    temperaturaMaxima: (item as any).carga?.temperaturaMaxima || 0,
+    observacoesCarga: (item as any).carga?.observacoesCarga || ""
   },
-  veiculoTipo: item.veiculo_tipo || item.veiculoTipo,
+  veiculoTipo: item.tipo_veiculo || item.veiculoTipo,
   veiculoSubcategoria: item.veiculo_subcategoria || item.veiculoSubcategoria,
   veiculoCarroceria: item.veiculo_carroceria || item.veiculoCarroceria,
   veiculoTermica: item.veiculo_termica || item.veiculoTermica,
+  veiculoPlaca: item.veiculo_placa || item.veiculoPlaca,
   isReserva: item.is_reserva ?? item.isReserva ?? false,
   retornoObrigatorio: item.retorno_obrigatorio ?? item.retornoObrigatorio ?? false,
+  // agendado removido - usar dataProgramada/dataAgendada para controle
+  dataAgendada: item.data_agendada || item.dataAgendada,
+  observacaoAgendamento: item.observacao_agendamento || item.observacaoAgendamento,
   dataProgramada: item.data_programada || item.dataProgramada,
   janelaOperacional: item.janela_operacional || item.janelaOperacional,
   previsaoInicio: item.previsao_inicio || item.previsaoInicio,
@@ -925,9 +1219,19 @@ export const fromOSRow = (item: OSRow): OSForm => ({
   whatsappDestinatario: item.whatsapp_destinatario || item.whatsappDestinatario,
   notificarDestinatario: item.notificar_destinatario ?? item.notificarDestinatario ?? false,
   eventosTracker: item.eventos_tracker || item.eventosTracker,
+  recebedorNome: item.recebedor_nome || item.recebedorNome,
+  recebedorDocumento: item.recebedor_documento || item.recebedorDocumento,
+  localizacaoEntregaJson: item.localizacao_entrega_json || item.localizacaoEntregaJson,
+  faixaAplicada: item.faixa_aplicada || item.faixaAplicada,
+  lucroEstimado: item.lucro_estimado || item.lucroEstimado,
+  margemLucro: item.margem_lucro || item.margemLucro,
+  veiculoSugerido: item.veiculo_sugerido || item.veiculoSugerido,
+  instrucoesOperacionaisOS: item.instrucoes_operacionais_os || item.instrucoesOperacionaisOS,
+  // ComposiÃ§Ã£o Financeira (pode vir via join ou separado)
+  composicaoFinanceira: item.composicao_financeira || (item as any).composicaoFinanceira || undefined,
 });
 
-// ---------------- ORÇAMENTOS/PROPOSTAS ----------------
+// ---------------- ORÃ‡AMENTOS/PROPOSTAS ----------------
 
 export interface OrcamentoForm {
   id?: string;
@@ -991,7 +1295,7 @@ export interface OrcamentoRow {
   carga_refrigerado?: boolean;
   carga_ajudante?: boolean;
   carga_observacoes?: string;
-  veiculo_tipo?: string;
+  tipo_veiculo?: string;
   veiculo_subcategoria?: string;
   veiculo_carroceria?: string;
   valor_base?: number;
@@ -1007,7 +1311,7 @@ export interface OrcamentoRow {
 
 export const toOrcamentoInsert = (form: Partial<OrcamentoForm>): Record<string, unknown> => {
   const d: Record<string, unknown> = {};
-  const has = (v: unknown) => v !== undefined && v !== null;
+  const has = (v: unknown) => v !== undefined && v !== null && v !== "";
 
   if (has(form.numero)) d.numero = form.numero;
   if (has(form.cliente)) d.cliente = form.cliente;
@@ -1016,7 +1320,7 @@ export const toOrcamentoInsert = (form: Partial<OrcamentoForm>): Record<string, 
   if (has(form.centroCusto)) d.centro_custo = form.centroCusto;
   if (has(form.responsavel)) d.responsavel = form.responsavel;
   if (has(form.dataEmissao)) d.data_emissao = form.dataEmissao;
-  if (has(form.validade)) d.validade = form.validade;
+  d.validade = has(form.validade) ? form.validade : null;
   if (has(form.tipoOperacao)) d.tipo_operacao = form.tipoOperacao;
   if (has(form.modalidade)) d.modalidade = form.modalidade;
   if (has(form.prioridade)) d.prioridade = form.prioridade;
@@ -1034,7 +1338,7 @@ export const toOrcamentoInsert = (form: Partial<OrcamentoForm>): Record<string, 
   if (has(form.cargaAjudante)) d.carga_ajudante = form.cargaAjudante;
   if (has(form.cargaObservacoes)) d.carga_observacoes = form.cargaObservacoes;
 
-  if (has(form.veiculoTipo)) d.veiculo_tipo = form.veiculoTipo;
+  if (has(form.veiculoTipo)) d.tipo_veiculo = form.veiculoTipo;
   if (has(form.veiculoSubcategoria)) d.veiculo_subcategoria = form.veiculoSubcategoria;
   if (has(form.veiculoCarroceria)) d.veiculo_carroceria = form.veiculoCarroceria;
 
@@ -1047,7 +1351,7 @@ export const toOrcamentoInsert = (form: Partial<OrcamentoForm>): Record<string, 
 
   if (form.historico) d.historico = form.historico;
 
-  // Campos não mapeados no OrcamentoForm mas presentes no Orcamento
+  // Campos nÃ£o mapeados no OrcamentoForm mas presentes no Orcamento
   // enderecos, carga, veiculo, valores, distancia_rota, frete_sugerido, motivoReprovacao
   if ((form as any).enderecos) (d as any).enderecos = (form as any).enderecos;
   if ((form as any).carga) (d as any).carga = (form as any).carga;
@@ -1096,7 +1400,7 @@ export const fromOrcamentoRow = (item: OrcamentoRow): OrcamentoForm => ({
   cargaRefrigerado: item.carga_refrigerado ?? item.cargaRefrigerado ?? false,
   cargaAjudante: item.carga_ajudante ?? item.cargaAjudante ?? false,
   cargaObservacoes: item.carga_observacoes || item.cargaObservacoes,
-  veiculoTipo: item.veiculo_tipo || item.veiculoTipo,
+  veiculoTipo: item.tipo_veiculo || item.veiculoTipo,
   veiculoSubcategoria: item.veiculo_subcategoria || item.veiculoSubcategoria,
   veiculoCarroceria: item.veiculo_carroceria || item.veiculoCarroceria,
   valorBase: item.valor_base ?? item.valorBase ?? 0,
@@ -1468,4 +1772,155 @@ export const fromContratoRow = (item: ContratoRow): ContratoForm => ({
   data: item.data || "",
   status: item.status || "Aguardando",
   usuario: item.usuario || "",
+});
+
+// ---------------- TABELA PRESTADOR ----------------
+
+export interface TabelaPrestadorForm {
+  id?: string;
+  nome?: string;
+  tipoVeiculo?: string;
+  regiao?: string;
+  valorMinimo?: number;
+  kmIncluso?: number;
+  valorKm?: number;
+  ativo?: boolean;
+  prestadorId?: string;
+}
+
+export interface TabelaPrestadorRow {
+  id?: string;
+  nome?: string;
+  tipo_veiculo?: string;
+  regiao?: string;
+  valor_minimo?: number;
+  km_incluso?: number;
+  valor_km?: number;
+  ativo?: boolean;
+  prestador_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const toTabelaPrestadorInsert = (form: Partial<TabelaPrestadorForm>): Record<string, unknown> => {
+  const d: Record<string, unknown> = {};
+  const has = (v: unknown) => v !== undefined && v !== null;
+
+  if (has(form.nome)) d.nome = form.nome;
+  if (has(form.tipoVeiculo)) d.tipo_veiculo = form.tipoVeiculo;
+  if (has(form.regiao)) d.regiao = form.regiao;
+  if (has(form.valorMinimo)) d.valor_minimo = form.valorMinimo;
+  if (has(form.kmIncluso)) d.km_incluso = form.kmIncluso;
+  if (has(form.valorKm)) d.valor_km = form.valorKm;
+  if (has(form.ativo)) d.ativo = form.ativo;
+  if (has(form.prestadorId)) d.prestador_id = form.prestadorId;
+
+  d.created_at = new Date().toISOString();
+  d.updated_at = new Date().toISOString();
+
+  return d;
+};
+
+export const toTabelaPrestadorUpdate = (form: Partial<TabelaPrestadorForm>): Record<string, unknown> => {
+  const payload = toTabelaPrestadorInsert(form);
+  delete payload.created_at;
+  delete payload.id;
+  payload.updated_at = new Date().toISOString();
+  return payload;
+};
+
+export const fromTabelaPrestadorRow = (item: TabelaPrestadorRow): TabelaPrestadorForm => ({
+  id: item.id,
+  nome: item.nome || "",
+  tipoVeiculo: item.tipo_veiculo || item.tipoVeiculo || "",
+  regiao: item.regiao || "",
+  valorMinimo: item.valor_minimo ?? item.valorMinimo ?? 0,
+  kmIncluso: item.km_incluso ?? item.kmIncluso ?? 0,
+  valorKm: item.valor_km ?? item.valorKm ?? 0,
+  ativo: item.ativo ?? item.ativo ?? true,
+  prestadorId: item.prestador_id || item.prestadorId,
+});
+
+// ---------------- COMPOSIÃ‡ÃƒO FINANCEIRA ----------------
+
+export interface ComposicaoFinanceiraForm {
+  id?: string;
+  osId?: string;
+  valorCliente?: number;
+  valorPrestador?: number;
+  impostos?: number;
+  seguro?: number;
+  pedagio?: number;
+  outros?: number;
+  margemBruta?: number;
+  margemLiquida?: number;
+  percentualMargemBruta?: number;
+  percentualMargemLiquida?: number;
+  custosOperacionais?: number;
+}
+
+export interface ComposicaoFinanceiraRow {
+  id?: string;
+  os_id?: string;
+  valor_cliente?: number;
+  valor_prestador?: number;
+  impostos?: number;
+  seguro?: number;
+  pedagio?: number;
+  outros?: number;
+  margem_bruta?: number;
+  margem_liquida?: number;
+  percentual_margem_bruta?: number;
+  percentual_margem_liquida?: number;
+  custos_operacionais?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const toComposicaoFinanceiraInsert = (form: Partial<ComposicaoFinanceiraForm>): Record<string, unknown> => {
+  const d: Record<string, unknown> = {};
+  const has = (v: unknown) => v !== undefined && v !== null;
+
+  if (has(form.osId)) d.os_id = form.osId;
+  if (has(form.valorCliente)) d.valor_cliente = form.valorCliente;
+  if (has(form.valorPrestador)) d.valor_prestador = form.valorPrestador;
+  if (has(form.impostos)) d.impostos = form.impostos;
+  if (has(form.seguro)) d.seguro = form.seguro;
+  if (has(form.pedagio)) d.pedagio = form.pedagio;
+  if (has(form.outros)) d.outros = form.outros;
+  if (has(form.margemBruta)) d.margem_bruta = form.margemBruta;
+  if (has(form.margemLiquida)) d.margem_liquida = form.margemLiquida;
+  if (has(form.percentualMargemBruta)) d.percentual_margem_bruta = form.percentualMargemBruta;
+  if (has(form.percentualMargemLiquida)) d.percentual_margem_liquida = form.percentualMargemLiquida;
+  if (has(form.custosOperacionais)) d.custos_operacionais = form.custosOperacionais;
+
+  d.created_at = new Date().toISOString();
+  d.updated_at = new Date().toISOString();
+
+  return d;
+};
+
+export const toComposicaoFinanceiraUpdate = (form: Partial<ComposicaoFinanceiraForm>): Record<string, unknown> => {
+  const payload = toComposicaoFinanceiraInsert(form);
+  delete payload.created_at;
+  delete payload.id;
+  delete payload.os_id;
+  payload.updated_at = new Date().toISOString();
+  return payload;
+};
+
+export const fromComposicaoFinanceiraRow = (item: ComposicaoFinanceiraRow): ComposicaoFinanceiraForm => ({
+  id: item.id,
+  osId: item.os_id || item.osId,
+  valorCliente: item.valor_cliente ?? item.valorCliente ?? 0,
+  valorPrestador: item.valor_prestador ?? item.valorPrestador ?? 0,
+  impostos: item.impostos ?? item.impostos ?? 0,
+  seguro: item.seguro ?? item.seguro ?? 0,
+  pedagio: item.pedagio ?? item.pedagio ?? 0,
+  outros: item.outros ?? item.outros ?? 0,
+  margemBruta: item.margem_bruta ?? item.margemBruta ?? 0,
+  margemLiquida: item.margem_liquida ?? item.margemLiquida ?? 0,
+  percentualMargemBruta: item.percentual_margem_bruta ?? item.percentualMargemBruta ?? 0,
+  percentualMargemLiquida: item.percentual_margem_liquida ?? item.percentualMargemLiquida ?? 0,
+  custosOperacionais: item.custos_operacionais ?? item.custosOperacionais ?? 0,
 });

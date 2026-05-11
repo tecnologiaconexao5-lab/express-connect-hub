@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Teste ENV - TMS</title>
+</head>
+<body>
+  <h1>Verifique o console (F12)</h1>
+  <script type="module">
+    console.log("=== TESTE ENV TMS ===");
+    console.log("SUPABASE URL:", import.meta.env.VITE_SUPABASE_URL ? "OK" : "FALHOU");
+    console.log("SUPABASE KEY:", import.meta.env.VITE_SUPABASE_ANON_KEY ? "OK" : "FALHOU");
+    console.log("MAPBOX:", import.meta.env.VITE_MAPBOX_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ? "OK" : "FALHOU");
+    console.log("EVOLUTION API URL:", import.meta.env.VITE_EVOLUTION_API_URL || "NÃO CONFIGURADO");
+    console.log("EVOLUTION API KEY:", import.meta.env.VITE_EVOLUTION_API_KEY || "NÃO CONFIGURADO");
+    console.log("N8N URL:", import.meta.env.VITE_N8N_WEBHOOK_URL || "NÃO CONFIGURADO");
+    console.log("GROQ API KEY:", import.meta.env.VITE_GROQ_API_KEY || "NÃO CONFIGURADO");
+    console.log("IA PROVIDER:", import.meta.env.VITE_AI_PROVIDER || "PADRÃO");
+    console.log("=== FIM ===");
+  </script>
+</body>
+</html>

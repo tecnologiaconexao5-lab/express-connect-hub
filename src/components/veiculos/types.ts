@@ -18,6 +18,7 @@ export interface Veiculo {
   qtdPallets?: number;
   tipoCarroceria?: string;
   classificacaoTermica?: string;
+  tipoCarga?: "seco" | "refrigerado";
   rastreador?: string;
   seguroApolice?: string;
   validadeDocumental?: string;

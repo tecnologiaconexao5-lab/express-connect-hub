@@ -1,21 +1,49 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Sparkles, MessageCircle, Truck, FileText, Activity, ShieldAlert, Cpu, Bot, Key, AlignLeft, BarChart3, Clock, Settings2, Play, Pause, Save, Check } from "lucide-react";
+import { Sparkles, MessageCircle, Truck, FileText, Activity, ShieldAlert, Cpu, Bot, Key, AlignLeft, BarChart3, Clock, Settings2, Play, Pause, Save, Check, RefreshCw, Terminal, Zap, Brain } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useIA, getModelosPorProvider, IAProvider, DEFAULT_CONFIG } from "@/services/ia/iaService";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
 export default function IAAutomacoes() {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = searchParams.get("tab") || "dashboard";
   const handleTabChange = (val: string) => setSearchParams({ tab: val });
   const [iaStatus, setIaStatus] = useState("automático");
+  const { config, updateConfig, logs, reloadLogs } = useIA();
+  const [editConfig, setEditConfig] = useState({ ...config });
+  const modelos = getModelosPorProvider(editConfig.provider as IAProvider);
+
+  useEffect(() => { setEditConfig({ ...config }); }, [config]);
 
   const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const fmtTs = (ts: string) => { try { return new Date(ts).toLocaleTimeString("pt-BR"); } catch { return ts; } };
+
+  const providerLabels: Record<string, string> = {
+    none:      "Desativado",
+    groq:      "Groq (Llama/Mixtral)",
+    gemini:    "Google Gemini",
+    anthropic: "Anthropic Claude",
+  };
+
+  const envVarMap: Record<string, string> = {
+    none:      "",
+    groq:      "VITE_GROQ_API_KEY",
+    gemini:    "VITE_GEMINI_API_KEY",
+    anthropic: "VITE_ANTHROPIC_API_KEY",
+  };
+
+  const logStatusColor = (s: string) => s === "ok" ? "bg-green-50 text-green-700" : s === "erro" ? "bg-red-50 text-red-700" : "bg-yellow-50 text-yellow-700";
+
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto">
@@ -35,15 +63,17 @@ export default function IAAutomacoes() {
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full">
-           <TabsTrigger value="dashboard" className="px-5"><BarChart3 className="w-4 h-4 mr-2"/> Dashboard Executivo</TabsTrigger>
-           <TabsTrigger value="whatsapp" className="px-5"><MessageCircle className="w-4 h-4 mr-2"/> Agente WhatsApp</TabsTrigger>
-           <TabsTrigger value="cte" className="px-5"><FileText className="w-4 h-4 mr-2"/> Fatorador CT-e (IA)</TabsTrigger>
-           <TabsTrigger value="semiauto" className="px-5">
-              <ShieldAlert className="w-4 h-4 mr-2"/> Fila de Validação Humana 
-              <Badge variant="destructive" className="ml-2 py-0 h-5 px-1.5 text-[10px]">3 Pendentes</Badge>
-           </TabsTrigger>
-           <TabsTrigger value="config" className="px-5"><Key className="w-4 h-4 mr-2"/> Integrações & Engine</TabsTrigger>
-        </TabsList>
+          <TabsTrigger value="dashboard" className="px-5"><BarChart3 className="w-4 h-4 mr-2"/>Dashboard Executivo</TabsTrigger>
+          <TabsTrigger value="whatsapp" className="px-5"><MessageCircle className="w-4 h-4 mr-2"/>Agente WhatsApp</TabsTrigger>
+          <TabsTrigger value="cte" className="px-5"><FileText className="w-4 h-4 mr-2"/>Fatorador CT-e (IA)</TabsTrigger>
+          <TabsTrigger value="semiauto" className="px-5">
+             <ShieldAlert className="w-4 h-4 mr-2"/>Fila de Validação Humana
+             <Badge variant="destructive" className="ml-2 py-0 h-5 px-1.5 text-[10px]">3 Pendentes</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="ia_config" className="px-5"><Brain className="w-4 h-4 mr-2"/>Configuração IA</TabsTrigger>
+          <TabsTrigger value="ia_logs" className="px-5"><Terminal className="w-4 h-4 mr-2"/>Logs IA</TabsTrigger>
+          <TabsTrigger value="config" className="px-5"><Key className="w-4 h-4 mr-2"/>Integrações & Engine</TabsTrigger>
+       </TabsList>
 
         {/* --- DASHBOARD IA --- */}
         <TabsContent value="dashboard" className="pt-4 space-y-4">
@@ -201,22 +231,176 @@ export default function IAAutomacoes() {
            </Card>
         </TabsContent>
 
-        {/* --- CONFIG --- */}
+        {/* --- CONFIG IA REAL --- */}
+        <TabsContent value="ia_config" className="pt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Brain className="w-5 h-5 text-purple-600"/>Configuração IA Operacional</CardTitle>
+              <CardDescription>Configure o provedor, modelo, prompt e comportamento da IA. Chaves via variáveis de ambiente (.env).</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Provedor IA</Label>
+                  <Select value={editConfig.provider} onValueChange={(v) => setEditConfig(p => ({ ...p, provider: v as IAProvider, modelo: "" }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(providerLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Modelo</Label>
+                  <Select value={editConfig.modelo} onValueChange={(v) => setEditConfig(p => ({ ...p, modelo: v }))} disabled={editConfig.provider === "none"}>
+                    <SelectTrigger><SelectValue placeholder="Selecione o modelo" /></SelectTrigger>
+                    <SelectContent>
+                      {modelos.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {editConfig.provider !== "none" && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-xs font-semibold text-amber-800">🔐 Variável de ambiente necessária:</p>
+                  <p className="text-xs font-mono text-amber-700 mt-1">{envVarMap[editConfig.provider]}=sua_chave_aqui</p>
+                  <p className="text-xs text-amber-600 mt-1">Adicione no arquivo <code>.env</code> e reinicie o servidor. Nunca exponha chaves no código.</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Setor / Contexto</Label>
+                  <Select value={editConfig.setor} onValueChange={(v) => setEditConfig(p => ({ ...p, setor: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="operacional">Operacional</SelectItem>
+                      <SelectItem value="comercial">Comercial</SelectItem>
+                      <SelectItem value="financeiro">Financeiro</SelectItem>
+                      <SelectItem value="recrutamento">Recrutamento</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Tom de Linguagem</Label>
+                  <Select value={editConfig.tomLinguagem} onValueChange={(v) => setEditConfig(p => ({ ...p, tomLinguagem: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="formal">Formal e Corporativo</SelectItem>
+                      <SelectItem value="empatico">Empático e Casual</SelectItem>
+                      <SelectItem value="tecnico">Técnico Seco</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Prompt Operacional (System Prompt)</Label>
+                <Textarea
+                  rows={4}
+                  value={editConfig.promptOperacional}
+                  onChange={(e) => setEditConfig(p => ({ ...p, promptOperacional: e.target.value }))}
+                  placeholder="Descreva o comportamento e contexto da IA..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Mensagem de Fallback (quando IA indisponível)</Label>
+                <Textarea
+                  rows={2}
+                  value={editConfig.fallback}
+                  onChange={(e) => setEditConfig(p => ({ ...p, fallback: e.target.value }))}
+                />
+              </div>
+
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border">
+                <Switch
+                  checked={editConfig.ativo}
+                  onCheckedChange={(v) => setEditConfig(p => ({ ...p, ativo: v }))}
+                />
+                <div>
+                  <p className="text-sm font-semibold">{editConfig.ativo ? "IA Ativada" : "IA Desativada"}</p>
+                  <p className="text-xs text-muted-foreground">{editConfig.ativo ? "Sistema usará IA para responder automaticamente" : "Modo fallback — respostas manuais"}</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button className="flex-1" onClick={() => updateConfig(editConfig)}>
+                  <Save className="w-4 h-4 mr-2" />Salvar Configuração
+                </Button>
+                <Button variant="outline" onClick={() => setEditConfig(DEFAULT_CONFIG)}>
+                  Restaurar Padrões
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* --- LOGS IA --- */}
+        <TabsContent value="ia_logs" className="pt-4 space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2"><Terminal className="w-5 h-5 text-slate-600"/>Logs de Decisões IA</CardTitle>
+                <CardDescription>Histórico persistido de chamadas ao modelo — últimas 100 entradas.</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={reloadLogs}><RefreshCw className="w-4 h-4 mr-1"/>Atualizar</Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              {logs.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Terminal className="w-10 h-10 mx-auto mb-2 opacity-20"/>
+                  <p>Nenhum log registrado ainda.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader><TableRow>
+                    <TableHead>Timestamp</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Provider</TableHead>
+                    <TableHead>Mensagem</TableHead>
+                    <TableHead>Tokens</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow></TableHeader>
+                  <TableBody>
+                    {logs.slice(0, 50).map(l => (
+                      <TableRow key={l.id}>
+                        <TableCell className="text-xs font-mono">{fmtTs(l.timestamp)}</TableCell>
+                        <TableCell><Badge variant="outline" className="text-[10px]">{l.tipo}</Badge></TableCell>
+                        <TableCell className="text-xs font-semibold text-purple-600">{l.provider}</TableCell>
+                        <TableCell className="text-xs max-w-xs truncate">{l.mensagem}</TableCell>
+                        <TableCell className="text-xs font-mono">{l.tokens ? `${l.tokens}tk` : "—"}</TableCell>
+                        <TableCell><Badge className={`text-[10px] border-0 ${logStatusColor(l.status)}`}>{l.status}</Badge></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* --- CONFIG INTEGRAÇÕES (mantida) --- */}
         <TabsContent value="config" className="pt-4 space-y-4">
            <Card className="max-w-2xl mx-auto mt-6">
-              <CardHeader className="text-center pb-2"><Key className="w-12 h-12 text-slate-300 mx-auto mb-4"/><CardTitle>Chaves de Integração (Anthropic)</CardTitle><CardDescription>Configure aqui os Tokens essenciais para o motor Claude-Sonnet assumir as funções estruturais.</CardDescription></CardHeader>
+              <CardHeader className="text-center pb-2"><Key className="w-12 h-12 text-slate-300 mx-auto mb-4"/><CardTitle>Chaves de Integração</CardTitle><CardDescription>Configure as variáveis de ambiente no arquivo .env para ativar cada provider.</CardDescription></CardHeader>
               <CardContent className="space-y-4 pt-6">
-                 <div>
-                    <label className="text-sm font-bold text-slate-700 mb-2 block">API Key Anthropic (sk-ant...)</label>
-                    <Input type="password" placeholder="Cole sua chave gerada no Anthropic Console" className="font-mono text-sm h-12" value="sk-ant-api03-P21x9jLq2...mocked..."/>
+                 <div className="space-y-3">
+                   {[
+                     { label: "Groq API Key",     env: "VITE_GROQ_API_KEY",     desc: "llama3, mixtral — rápido e gratuito" },
+                     { label: "Gemini API Key",   env: "VITE_GEMINI_API_KEY",   desc: "Google Gemini 1.5/2.0" },
+                     { label: "Anthropic API Key",env: "VITE_ANTHROPIC_API_KEY",desc: "Claude Sonnet / Haiku" },
+                   ].map(item => (
+                     <div key={item.env} className="p-3 border rounded-lg bg-slate-50">
+                       <p className="text-sm font-bold">{item.label}</p>
+                       <p className="text-xs font-mono text-slate-500">{item.env}=sua_chave_aqui</p>
+                       <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                     </div>
+                   ))}
                  </div>
-                 <div>
-                    <label className="text-sm font-bold text-slate-700 mb-2 block">Modelo Padrão da Arquitetura</label>
-                    <Input value="claude-sonnet-4-20250514" readOnly className="font-mono text-sm bg-slate-50 text-slate-500"/>
-                    <p className="text-xs text-muted-foreground mt-2">Recomendamos deixar travado na série Sonnet para equilibrar latência Rápida (Cálculos WhatsApp) com Cognição Densa (CTe).</p>
-                 </div>
-                 <div className="pt-6">
-                    <Button className="w-full h-12 bg-slate-800 text-white font-bold"><Save className="w-5 h-5 mr-2"/> Persistir Tokens no Secret Edge</Button>
+                 <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                   <p className="text-xs font-semibold text-blue-800">💡 Como configurar</p>
+                   <p className="text-xs text-blue-700 mt-1">1. Adicione as chaves no arquivo <code>.env</code> na raiz do projeto.<br/>2. Reinicie o servidor (<code>npm run dev</code>).<br/>3. Selecione o provider e modelo na aba <strong>Configuração IA</strong>.</p>
                  </div>
               </CardContent>
            </Card>

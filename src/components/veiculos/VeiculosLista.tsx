@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Search, Plus, Filter, Edit, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
@@ -15,6 +16,7 @@ interface Props {
 
 const VeiculosLista = ({ onSelect, onNew }: Props) => {
   const [busca, setBusca] = useState("");
+  const [tipoCargaFilter, setTipoCargaFilter] = useState("todos");
   const [veiculos, setVeiculos] = useState<Veiculo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -41,10 +43,12 @@ const VeiculosLista = ({ onSelect, onNew }: Props) => {
     }
   };
 
-  const filtered = veiculos.filter((v) =>
-    (v.placa || "").toLowerCase().includes(busca.toLowerCase()) || 
-    (v.prestador_vinculado || "").toLowerCase().includes(busca.toLowerCase())
-  );
+  const filtered = veiculos.filter((v) => {
+    const matchBusca = (v.placa || "").toLowerCase().includes(busca.toLowerCase()) ||
+      (v.prestador_vinculado || "").toLowerCase().includes(busca.toLowerCase());
+    const matchTipoCarga = tipoCargaFilter === "todos" || v.tipoCarga === tipoCargaFilter;
+    return matchBusca && matchTipoCarga;
+  });
 
   return (
     <div className="space-y-4">
@@ -63,7 +67,16 @@ const VeiculosLista = ({ onSelect, onNew }: Props) => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input placeholder="Buscar por placa ou prestador..." value={busca} onChange={(e) => setBusca(e.target.value)} className="pl-9" />
         </div>
-        <Button variant="outline" size="sm" className="gap-1.5"><Filter className="w-4 h-4" /> Filtros</Button>
+        <Select value={tipoCargaFilter} onValueChange={setTipoCargaFilter}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Tipo Carga" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos</SelectItem>
+            <SelectItem value="seco">Seco</SelectItem>
+            <SelectItem value="refrigerado">Refrigerado</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <Card>
@@ -73,6 +86,7 @@ const VeiculosLista = ({ onSelect, onNew }: Props) => {
               <TableRow>
                 <TableHead>Placa</TableHead>
                 <TableHead>Tipo</TableHead>
+                <TableHead>Tipo Carga</TableHead>
                 <TableHead>Marca/Modelo</TableHead>
                 <TableHead>Ano</TableHead>
                 <TableHead>Prestador Vinculado</TableHead>
@@ -83,14 +97,19 @@ const VeiculosLista = ({ onSelect, onNew }: Props) => {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-10">Carregando...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-10">Carregando...</TableCell></TableRow>
               ) : filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">Nenhum veículo encontrado.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">Nenhum veículo encontrado.</TableCell></TableRow>
               ) : (
                 filtered.map((v) => (
                   <TableRow key={v.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelect(v.id)}>
                     <TableCell className="font-semibold">{v.placa.toUpperCase()}</TableCell>
                     <TableCell className="text-sm">{v.tipo_veiculo || "—"}</TableCell>
+                    <TableCell>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${v.tipoCarga === 'refrigerado' ? 'bg-blue-100 text-blue-700' : v.tipoCarga === 'seco' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {v.tipoCarga || 'Nao definido'}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-sm">{v.marca} {v.modelo}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{v.ano_fabricacao}/{v.ano_modelo}</TableCell>
                     <TableCell className="text-sm truncate max-w-[150px]">{v.prestador_vinculado || "—"}</TableCell>

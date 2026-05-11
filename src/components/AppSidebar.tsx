@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { ChevronDown, ChevronLeft, Truck } from "lucide-react";
-import { sidebarItems, SidebarItem } from "@/lib/sidebarData";
+import { sidebarItems, getVisibleSidebarItems, SidebarItem } from "@/lib/sidebarData";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -43,8 +43,8 @@ const SidebarItemComponent = ({
         className={cn(
           "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 group",
           isActive
-            ? "bg-tms-sidebar-active text-primary-foreground font-medium"
-            : "text-tms-sidebar-fg hover:bg-tms-sidebar-hover"
+            ? "bg-tms-sidebar-active text-tms-sidebar-active-fg font-medium shadow-sm"
+            : "text-tms-sidebar-fg hover:bg-tms-sidebar-hover hover:text-tms-sidebar-fg"
         )}
         title={collapsed ? item.title : undefined}
       >
@@ -55,7 +55,7 @@ const SidebarItemComponent = ({
             {hasChildren && (
               <ChevronDown
                 className={cn(
-                  "w-4 h-4 transition-transform duration-200",
+                  "w-4 h-4 transition-transform duration-200 opacity-60",
                   open && "rotate-180"
                 )}
               />
@@ -64,7 +64,7 @@ const SidebarItemComponent = ({
         )}
       </button>
       {!collapsed && hasChildren && open && (
-        <div className="ml-6 mt-1 space-y-0.5 border-l border-tms-sidebar-hover pl-3">
+        <div className="ml-5 mt-1 space-y-0.5 border-l-2 border-tms-sidebar-hover/50 pl-3">
           {item.children!.map((child) => (
             <button
               key={child.path}
@@ -72,8 +72,8 @@ const SidebarItemComponent = ({
               className={cn(
                 "w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors",
                 location.pathname + location.search === child.path
-                  ? "text-tms-sidebar-active font-medium"
-                  : "text-tms-sidebar-fg/70 hover:text-tms-sidebar-fg"
+                  ? "text-tms-sidebar-active font-semibold bg-tms-sidebar-active/10"
+                  : "text-tms-sidebar-fg/70 hover:text-tms-sidebar-fg hover:bg-tms-sidebar-hover/50"
               )}
             >
               {child.title}
@@ -89,26 +89,26 @@ const AppSidebar = ({ collapsed, onToggle }: Props) => {
   return (
     <aside
       className={cn(
-        "h-screen bg-tms-sidebar flex flex-col transition-all duration-300 shrink-0",
+        "h-screen bg-tms-sidebar flex flex-col transition-all duration-300 shrink-0 border-r border-tms-sidebar-hover/30",
         collapsed ? "w-16" : "w-60"
       )}
     >
       {/* Logo */}
-      <div className="h-16 flex items-center px-4 border-b border-tms-sidebar-hover">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
+      <div className="h-16 flex items-center px-4 border-b border-tms-sidebar-hover/30">
+        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 shadow-sm">
           <Truck className="w-4 h-4 text-primary-foreground" />
         </div>
         {!collapsed && (
           <div className="ml-3 overflow-hidden">
-            <h2 className="text-sm font-bold text-primary-foreground truncate">
+            <h2 className="text-sm font-bold text-tms-sidebar-fg truncate tracking-tight">
               Conexão Express
             </h2>
-            <p className="text-[10px] text-tms-sidebar-fg/60">TMS</p>
+            <p className="text-[10px] text-tms-sidebar-fg/50 font-medium">TMS</p>
           </div>
         )}
         <button
           onClick={onToggle}
-          className="ml-auto p-1 rounded-md hover:bg-tms-sidebar-hover text-tms-sidebar-fg transition"
+          className="ml-auto p-1.5 rounded-md hover:bg-tms-sidebar-hover text-tms-sidebar-fg/60 hover:text-tms-sidebar-fg transition"
         >
           <ChevronLeft
             className={cn(
@@ -121,7 +121,7 @@ const AppSidebar = ({ collapsed, onToggle }: Props) => {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-1">
-        {sidebarItems.map((item) => (
+        {getVisibleSidebarItems().map((item) => (
           <SidebarItemComponent key={item.path} item={item} collapsed={collapsed} />
         ))}
       </nav>

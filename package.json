@@ -10,7 +10,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "auditoria:financeiro-final": "tsx scripts/auditoria-financeiro-final.ts",
+    "auditoria:financeiro-ux": "tsx scripts/auditoria-financeiro-ux.ts",
+    "auditoria:fluxo-operacional-final": "tsx scripts/auditoria-fluxo-operacional-final.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -42,11 +45,13 @@
     "@radix-ui/react-toggle-group": "^1.1.10",
     "@radix-ui/react-tooltip": "^1.2.7",
     "@tanstack/react-query": "^5.83.0",
+    "@types/dotenv": "^6.1.1",
     "@types/mapbox-gl": "^3.4.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
+    "dotenv": "^17.4.2",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "jspdf": "^4.2.1",
@@ -54,6 +59,7 @@
     "lucide-react": "^0.462.0",
     "mapbox-gl": "^3.20.0",
     "next-themes": "^0.3.0",
+    "papaparse": "^5.5.3",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
@@ -66,6 +72,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
+    "xlsx": "^0.18.5",
     "zod": "^3.25.76"
   },
   "devDependencies": {

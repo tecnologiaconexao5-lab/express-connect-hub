@@ -53,10 +53,11 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
   };
 
   const handleToggleCobranca = (cb: string) => {
-    if (data.cobrancaPrincipais.includes(cb)) {
-       update("cobrancaPrincipais", data.cobrancaPrincipais.filter(x => x !== cb));
+    const cobrancas = data.cobrancaPrincipais || [];
+    if (cobrancas.includes(cb)) {
+       update("cobrancaPrincipais", cobrancas.filter(x => x !== cb));
     } else {
-       update("cobrancaPrincipais", [...data.cobrancaPrincipais, cb]);
+       update("cobrancaPrincipais", [...cobrancas, cb]);
     }
   };
 
@@ -64,7 +65,7 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
     const f: RegraFaixa = {
       id: String(Date.now()), pesoIni: 0, pesoFim: 0, kmIni: 0, kmFim: 0, cubagemIni: 0, cubagemFim: 0, regioesDestino: [], cepIni: "", cepFim: "", cidadeUF: "", prazoEstimado: 24, valorBase: 0, adicionalValor: 0, restricaoVeiculo: "", prioridade: 1, obs: ""
     };
-    update("faixas", [...data.faixas, f]);
+    update("faixas", [...(data.faixas || []), f]);
   };
 
 
@@ -148,7 +149,7 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
                      <Label className="font-bold text-indigo-900 border-b border-indigo-100 pb-1 flex w-full">Método de Cobrança Base</Label>
                      {TIPOS_COBRANCA.map(cb => (
                         <div key={cb.id} className="flex items-center space-x-2 w-full hover:bg-white p-1 rounded transition">
-                          <Switch checked={data.cobrancaPrincipais.includes(cb.id)} onCheckedChange={() => handleToggleCobranca(cb.id)} disabled={readOnly} id={`cb-${cb.id}`}/>
+                          <Switch checked={(data.cobrancaPrincipais || []).includes(cb.id)} onCheckedChange={() => handleToggleCobranca(cb.id)} disabled={readOnly} id={`cb-${cb.id}`}/>
                           <Label htmlFor={`cb-${cb.id}`} className="text-xs cursor-pointer flex-1">{cb.label}</Label>
                         </div>
                      ))}
@@ -169,15 +170,21 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
                     <Field label="Exigência Térmica"><Select value={data.classificacaoTermica} onValueChange={v => update("classificacaoTermica", v)} disabled={readOnly}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="seco">Seco</SelectItem><SelectItem value="refrigerado">Refrigerado</SelectItem></SelectContent></Select></Field>
                     <Field label="Arredondamento de Cálculos"><Select value={data.arredondamento} onValueChange={v => update("arredondamento", v)} disabled={readOnly}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="normal">Matemático Normal</SelectItem><SelectItem value="cima">Sempre p/ Cima</SelectItem></SelectContent></Select></Field>
 
-                    <div className="col-span-3 grid grid-cols-3 gap-4 border-t pt-4">
-                       <Field label="Valor Base Tarifa (R$)"><Input type="number" value={data.valorBase} onChange={e => update("valorBase", Number(e.target.value))} readOnly={readOnly} className="font-bold text-blue-700 bg-blue-50"/></Field>
-                       <Field label="Valor Mínimo Faturável (R$)"><Input type="number" value={data.minimoFaturavel} onChange={e => update("minimoFaturavel", Number(e.target.value))} readOnly={readOnly} /></Field>
-                       <Field label="Valor Franquia/Km Incluso"><Input type="number" value={data.franquiaKm} onChange={e => update("franquiaKm", Number(e.target.value))} readOnly={readOnly} placeholder="ex: 100km gratuitos"/></Field>
-                       
-                       <Field label="Valor por Km Excedente (R$)"><Input type="number" value={data.valorKmExcedente} onChange={e => update("valorKmExcedente", Number(e.target.value))} readOnly={readOnly} /></Field>
-                       <Field label="Custo Teto do Prestador (R$)"><Input type="number" value={data.custoPrestador} onChange={e => update("custoPrestador", Number(e.target.value))} readOnly={readOnly} className="text-orange-700"/></Field>
-                       <Field label="Markup Desejável (%)"><Input type="number" value={data.markupPercent} onChange={e => update("markupPercent", Number(e.target.value))} readOnly={readOnly} className="font-bold text-green-700 bg-green-50"/></Field>
-                    </div>
+<div className="col-span-3 grid grid-cols-3 gap-4 border-t pt-4">
+                        <Field label="Valor Mínimo (Franquia) (R$)"><Input type="number" value={data.valorBase} onChange={e => update("valorBase", Number(e.target.value))} readOnly={readOnly} className="font-bold text-blue-700 bg-blue-50"/></Field>
+                        <Field label="KM Incluído na Franquia"><Input type="number" value={data.franquiaKm} onChange={e => update("franquiaKm", Number(e.target.value))} readOnly={readOnly} placeholder="km incluidos"/></Field>
+                        
+                        <Field label="Valor por Km Excedente (R$)"><Input type="number" value={data.valorKmExcedente} onChange={e => update("valorKmExcedente", Number(e.target.value))} readOnly={readOnly} /></Field>
+                        
+                        <div className="col-span-3 mt-2 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                          <p className="text-xs text-blue-800 font-medium">
+                            Cálculo: <span className="font-bold">R$ {data.valorBase || 0}</span> até <span className="font-bold">{data.franquiaKm || 0}km</span> + <span className="font-bold">R$ {data.valorKmExcedente || 0}</span>/km excedente
+                          </p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            Exemplo 10km: R$ {data.valorBase || 0} + {Math.max(0, 10 - (data.franquiaKm || 0)) * (data.valorKmExcedente || 0)} = R$ {(data.valorBase || 0) + Math.max(0, 10 - (data.franquiaKm || 0)) * (data.valorKmExcedente || 0)}
+                          </p>
+                        </div>
+                     </div>
                  </div>
               </CardContent>
            </Card>
@@ -202,17 +209,17 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
                      </TableRow>
                   </TableHeader>
                   <TableBody>
-                     {data.faixas.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground text-sm">Sem regras condicionais cadastradas. Use o valor base ou faixas se necessário.</TableCell></TableRow> : data.faixas.map((f, i) => (
+                     {(data.faixas || []).length === 0 ? <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground text-sm">Sem regras condicionais cadastradas. Use o valor base ou faixas se necessário.</TableCell></TableRow> : (data.faixas || []).map((f, i) => (
                         <TableRow key={f.id}>
-                           <TableCell><div className="flex gap-1 items-center"><Input className="w-16 h-8 text-xs p-1" value={f.pesoIni} onChange={e => {const t=[...data.faixas]; t[i].pesoIni = Number(e.target.value); update("faixas", t)}}/>- <Input className="w-16 h-8 text-xs p-1" value={f.pesoFim} onChange={e => {const t=[...data.faixas]; t[i].pesoFim = Number(e.target.value); update("faixas", t)}}/></div></TableCell>
-                           <TableCell><div className="flex gap-1 items-center"><Input className="w-16 h-8 text-xs p-1" value={f.kmIni} onChange={e => {const t=[...data.faixas]; t[i].kmIni = Number(e.target.value); update("faixas", t)}}/>- <Input className="w-16 h-8 text-xs p-1" value={f.kmFim} onChange={e => {const t=[...data.faixas]; t[i].kmFim = Number(e.target.value); update("faixas", t)}}/></div></TableCell>
-                           <TableCell><div className="flex gap-1 items-center"><Input className="w-20 h-8 text-xs p-1" placeholder="CEP Ini" value={f.cepIni} onChange={e => {const t=[...data.faixas]; t[i].cepIni = e.target.value; update("faixas", t)}}/>- <Input className="w-20 h-8 text-xs p-1" placeholder="CEP Fim" value={f.cepFim} onChange={e => {const t=[...data.faixas]; t[i].cepFim = e.target.value; update("faixas", t)}}/></div></TableCell>
-                           <TableCell><Input className="w-24 h-8 text-xs font-bold text-green-700 bg-green-50" type="number" value={f.adicionalValor} onChange={e => {const t=[...data.faixas]; t[i].adicionalValor = Number(e.target.value); update("faixas", t)}}/></TableCell>
-                           <TableCell><Input className="w-14 h-8 text-xs text-center" type="number" value={f.prioridade} onChange={e => {const t=[...data.faixas]; t[i].prioridade = Number(e.target.value); update("faixas", t)}}/></TableCell>
+                           <TableCell><div className="flex gap-1 items-center"><Input className="w-16 h-8 text-xs p-1" value={f.pesoIni} onChange={e => {const t=[...(data.faixas || [])]; t[i].pesoIni = Number(e.target.value); update("faixas", t)}}/>- <Input className="w-16 h-8 text-xs p-1" value={f.pesoFim} onChange={e => {const t=[...(data.faixas || [])]; t[i].pesoFim = Number(e.target.value); update("faixas", t)}}/></div></TableCell>
+                           <TableCell><div className="flex gap-1 items-center"><Input className="w-16 h-8 text-xs p-1" value={f.kmIni} onChange={e => {const t=[...(data.faixas || [])]; t[i].kmIni = Number(e.target.value); update("faixas", t)}}/>- <Input className="w-16 h-8 text-xs p-1" value={f.kmFim} onChange={e => {const t=[...(data.faixas || [])]; t[i].kmFim = Number(e.target.value); update("faixas", t)}}/></div></TableCell>
+                           <TableCell><div className="flex gap-1 items-center"><Input className="w-20 h-8 text-xs p-1" placeholder="CEP Ini" value={f.cepIni} onChange={e => {const t=[...(data.faixas || [])]; t[i].cepIni = e.target.value; update("faixas", t)}}/>- <Input className="w-20 h-8 text-xs p-1" placeholder="CEP Fim" value={f.cepFim} onChange={e => {const t=[...(data.faixas || [])]; t[i].cepFim = e.target.value; update("faixas", t)}}/></div></TableCell>
+                           <TableCell><Input className="w-24 h-8 text-xs font-bold text-green-700 bg-green-50" type="number" value={f.adicionalValor} onChange={e => {const t=[...(data.faixas || [])]; t[i].adicionalValor = Number(e.target.value); update("faixas", t)}}/></TableCell>
+                           <TableCell><Input className="w-14 h-8 text-xs text-center" type="number" value={f.prioridade} onChange={e => {const t=[...(data.faixas || [])]; t[i].prioridade = Number(e.target.value); update("faixas", t)}}/></TableCell>
                            {!readOnly && (
                               <TableCell className="text-right space-x-1">
-                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" onClick={() => update("faixas", [...data.faixas, {...f, id: String(Date.now())}])}><Copy className="w-3.5 h-3.5"/></Button>
-                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => update("faixas", data.faixas.filter((_, idx) => idx !== i))}><Trash2 className="w-3.5 h-3.5"/></Button>
+<Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500" onClick={() => update("faixas", [...(data.faixas || []), {...f, id: String(Date.now())}])}><Copy className="w-3.5 h-3.5"/></Button>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => update("faixas", (data.faixas || []).filter((_, idx) => idx !== i))}><Trash2 className="w-3.5 h-3.5"/></Button>
                               </TableCell>
                            )}
                         </TableRow>
@@ -227,10 +234,28 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
            <Card>
              <CardHeader className="bg-slate-50 border-b pb-4"><CardTitle className="text-sm">Acessórios, Tarifas de Serviço e Penalidades</CardTitle></CardHeader>
              <CardContent className="pt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.entries(data.adicionais).map(([k, cfg]: [string, any]) => (
-                   <div key={k} className={`p-4 rounded-xl border flex flex-col gap-3 ${cfg.ativo ? 'border-primary/50 bg-primary/5 shadow-sm' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
-                      <div className="flex justify-between items-center">
-                         <Label className="font-bold text-slate-800 uppercase text-xs truncate max-w-[150px]">{k}</Label>
+                {Object.entries(data.adicionais || {}).map(([k, cfg]: [string, any]) => (
+<div key={k} className={`p-4 rounded-xl border flex flex-col gap-3 ${cfg.ativo ? 'border-primary/50 bg-primary/5 shadow-sm' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                       <div className="flex justify-between items-center">
+                          <Label className="font-bold text-slate-800 uppercase text-xs truncate max-w-[150px]">
+                            {k === 'espera' ? 'ESPERA (Tolerância + Valor/Hora)' : 
+                             k === 'pedagio' ? 'PEDÁGIO' :
+                             k === 'ajudante' ? 'AJUDANTE' :
+                             k === 'descarga' ? 'DESCARGA' :
+                             k === 'taxaAdmin' ? 'TAXA ADMIN' :
+                             k === 'devolucao' ? 'DEVOLUÇÃO' :
+                             k === 'reentrega' ? 'REENTREGA' :
+                             k === 'pernoite' ? 'PERNOITE' :
+                             k === 'taxaRisco' ? 'TAXA RISCO' :
+                             k === 'acessoDificil' ? 'ACESSO DIFÍCIL' :
+                             k === 'estacionamento' ? 'ESTACIONAMENTO' :
+                             k === 'agendamento' ? 'AGENDAMENTO' :
+                             k === 'escolta' ? 'ESCOLTA' :
+                             k === 'estadia' ? 'ESTADIA' :
+                             k === 'diariaExtra' ? 'DIÁRIA EXTRA' :
+                             k === 'segundaTentativa' ? '2ª TENTATIVA' :
+                             k}
+                          </Label>
                          <Switch disabled={readOnly} checked={cfg.ativo} onCheckedChange={(v) => updateNested("adicionais", k as any, { ativo: v })} />
                       </div>
                       <div className="flex gap-2 w-full mt-2">
@@ -246,12 +271,12 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
                          {cfg.valorPorcent !== undefined && (
                             <div className="relative w-full"><Input disabled={!cfg.ativo || readOnly} type="number" value={cfg.valorPorcent} onChange={(e) => updateNested("adicionais", k as any, { valorPorcent: Number(e.target.value) })} className="h-9 pr-8"/><span className="absolute right-3 top-2.5 text-xs text-muted-foreground">%</span></div>
                          )}
-                         {cfg.valorHora !== undefined && (
-                            <div className="w-full flex flex-col gap-1">
-                               <Input disabled={!cfg.ativo || readOnly} type="number" value={cfg.minutosFree} onChange={(e) => updateNested("adicionais", k as any, { minutosFree: Number(e.target.value) })} className="h-8 text-xs" placeholder="Min Free"/>
-                               <Input disabled={!cfg.ativo || readOnly} type="number" value={cfg.valorHora} onChange={(e) => updateNested("adicionais", k as any, { valorHora: Number(e.target.value) })} className="h-8 text-xs" placeholder="R$/Hora extra"/>
-                            </div>
-                         )}
+{cfg.valorHora !== undefined && (
+                             <div className="w-full flex flex-col gap-1">
+                                <Input disabled={!cfg.ativo || readOnly} type="number" value={cfg.minutosFree} onChange={(e) => updateNested("adicionais", k as any, { minutosFree: Number(e.target.value) })} className="h-8 text-xs" placeholder="Tolerância (min)"/>
+                                <Input disabled={!cfg.ativo || readOnly} type="number" value={cfg.valorHora} onChange={(e) => updateNested("adicionais", k as any, { valorHora: Number(e.target.value) })} className="h-8 text-xs" placeholder="R$/hora"/>
+                             </div>
+                          )}
                       </div>
                    </div>
                 ))}

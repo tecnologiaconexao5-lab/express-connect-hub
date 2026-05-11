@@ -123,6 +123,18 @@ const TorreControle = () => {
         <StatCard title="Concluídas Hoje" value={stats.concluidasHoje} icon={CheckCircle} colorClass="text-blue-600" borderClass="border-b-4 border-blue-500" bgLight="bg-blue-100 dark:bg-blue-500/10" />
       </div>
 
+      <Card className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
+        <CardContent className="py-3 px-4 flex items-center gap-3">
+          <div className="bg-blue-100 dark:bg-blue-900/50 p-2 rounded-full">
+            <MapPin className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">Rastreamento em tempo real disponível após ativação do App/PWA do Prestador</p>
+            <p className="text-xs text-blue-700 dark:text-blue-300">O rastreamento será habilitado automaticamente quando o prestador ativar o App Conexão Express, permitir geolocalização e aceitar uma ordem de serviço vinculada.</p>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex flex-col xl:flex-row gap-6 h-[650px]">
         {/* ESQUERDA - MAPA (65%) */}
         <div className="xl:w-[65%] flex flex-col gap-2">

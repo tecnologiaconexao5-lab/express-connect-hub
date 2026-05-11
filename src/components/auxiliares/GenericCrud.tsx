@@ -50,8 +50,8 @@ export const GenericCrud = ({ tableName, title, fields, searchFields }: GenericC
       if (error) throw error;
       setData(res || []);
     } catch (error: any) {
-      if (error.code !== "42P01") { // Ignore table does not exist for UI demos, but log others
-        toast.error(`Erro ao carregar dados de ${title}. Tabela "${tableName}" pode não existir.`);
+      if (error.code !== "42P01") {
+        console.warn(`[GenericCrud] Tabela "${tableName}" não existe ou erro:`, error.message);
       }
       setData([]);
     } finally {

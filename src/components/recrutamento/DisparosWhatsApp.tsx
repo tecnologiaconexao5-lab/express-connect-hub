@@ -8,21 +8,65 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
+import { enviarMensagem as WhatsAppEnviar } from "@/services/integracoes/whatsappService";
+import { registrarLog } from "@/services/integracoes/integrationLogger";
 
 export function DisparosWhatsApp() {
   const [mensagem, setMensagem] = useState("");
   const [numeros, setNumeros] = useState("");
   const [enviado, setEnviado] = useState(false);
+  const [enviando, setEnviando] = useState(false);
 
-  const handleDisparoManual = () => {
+  const handleDisparoManual = async () => {
     if (!mensagem || !numeros) return;
-    // Simulação do envio
-    setEnviado(true);
-    setTimeout(() => {
-      setEnviado(false);
+
+    const listaNumeros = numeros.split(/[\n,]+/).filter(n => n.trim().length > 0);
+    if (listaNumeros.length === 0) return;
+
+    setEnviando(true);
+    const startTime = Date.now();
+    let sucessos = 0;
+    let erros = 0;
+
+    for (const numero of listaNumeros) {
+      const telefoneLimpo = numero.replace(/\D/g, '');
+
+      try {
+        const result = await WhatsAppEnviar(telefoneLimpo, mensagem);
+
+        if (result.ok) {
+          sucessos++;
+        } else {
+          erros++;
+          console.warn(`[WhatsApp] Erro ao enviar para ${telefoneLimpo}:`, result.error);
+        }
+      } catch (e: any) {
+        erros++;
+        console.warn(`[WhatsApp] Exception para ${telefoneLimpo}:`, e);
+      }
+    }
+
+    const duracao = Date.now() - startTime;
+
+    await registrarLog({
+      tipo: 'whatsapp',
+      acao: 'disparo_lote',
+      status: erros > 0 ? 'aviso' : 'sucesso',
+      mensagem: `Disparo lote: ${sucessos} OK, ${erros} erros`,
+      payload: { total: listaNumeros.length, sucessos, erros },
+      duracaoMs: duracao
+    });
+
+    setEnviando(false);
+
+    if (sucessos > 0) {
+      toast.success(`${sucessos} mensagem(s) enviada(s)${erros > 0 ? `, ${erros} erro(s)` : ''}`);
       setMensagem("");
       setNumeros("");
-    }, 3000);
+    } else {
+      toast.error(`Falha no envio: ${erros} erro(s)`);
+    }
   };
 
   return (
@@ -75,17 +119,17 @@ export function DisparosWhatsApp() {
                    </div>
                 </CardContent>
                 <CardFooter className="bg-slate-50/50 justify-between border-t mt-2 flex items-center py-3">
-                   <div className="text-xs text-muted-foreground font-semibold">
-                      {numeros ? numeros.split(/[\n,]+/).filter(n => n.trim().length > 0).length : 0} contatos identificados
-                   </div>
-                   <Button 
-                     onClick={handleDisparoManual} 
-                     disabled={!numeros || !mensagem || enviado} 
-                     className="bg-green-600 hover:bg-green-700 text-white font-bold gap-2"
-                   >
-                     {enviado ? <CheckCircle2 className="w-4 h-4" /> : <Send className="w-4 h-4" />}
-                     {enviado ? "Disparos Iniciados!" : "Enviar Lote WhatsApp"}
-                   </Button>
+<div className="text-xs text-muted-foreground font-semibold">
+                       {numeros ? numeros.split(/[\n,]+/).filter(n => n.trim().length > 0).length : 0} contato(s) identificado(s)
+                    </div>
+<Button 
+                      onClick={handleDisparoManual} 
+                      disabled={!numeros || !mensagem || enviando} 
+                      className="bg-green-600 hover:bg-green-700 text-white font-bold gap-2"
+                    >
+                      {enviando ? <History className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      {enviando ? "Enviando..." : "Enviar Lote WhatsApp"}
+                    </Button>
                 </CardFooter>
              </Card>
 

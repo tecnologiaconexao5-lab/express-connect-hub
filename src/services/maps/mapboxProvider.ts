@@ -4,7 +4,7 @@ import type { MapsProvider, DistanceResult, GeocodingResult, Coordinates } from 
 const MAPBOX_GEOCODING_URL = "https://api.mapbox.com/geocoding/v5/mapbox.places";
 const MAPBOX_DIRECTIONS_URL = "https://api.mapbox.com/directions/v5/mapbox/driving";
 
-function getMapboxToken(): string | null {
+export function getMapboxToken(): string | null {
   const token = 
     import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ||
     import.meta.env.VITE_MAPBOX_TOKEN?.trim() ||
@@ -133,6 +133,23 @@ export const mapboxProvider: MapsProvider = {
     }
 
     const rota = await buscarRota(origemGeocoded.coordinates, destinoGeocoded.coordinates, token);
+    if (!rota) {
+      console.error("[Mapbox] Não foi possível calcular a rota");
+      return null;
+    }
+
+    return rota;
+  },
+
+  async calcularRotaCoordenadas(origem: Coordinates, destino: Coordinates): Promise<DistanceResult | null> {
+    const token = getMapboxToken();
+
+    if (!token) {
+      console.error("[Mapbox] Token não configurado");
+      return null;
+    }
+
+    const rota = await buscarRota(origem, destino, token);
     if (!rota) {
       console.error("[Mapbox] Não foi possível calcular a rota");
       return null;

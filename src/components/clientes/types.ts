@@ -60,15 +60,9 @@ export interface TabelaCliente {
 export interface ContratoCliente {
   id?: string;
   numero: string;
-  vigenciaInicio: string;
-  vigenciaFim: string;
-  reajuste?: string;
-}
-
-export interface ContratoCliente {
-  id?: string;
-  numero: string;
-  vigencia_inicio: string;
-  vigencia_fim: string;
+  vigenciaInicio?: string;
+  vigenciaFim?: string;
+  vigencia_inicio?: string;
+  vigencia_fim?: string;
   reajuste?: string;
 }

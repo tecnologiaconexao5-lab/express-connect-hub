@@ -1,4 +1,4 @@
-import { LayoutDashboard } from "lucide-react";
+import { LayoutDashboard, Activity, TrendingUp, DollarSign, Bell } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DashboardTopbar from "@/components/dashboard/DashboardTopbar";
 import TabExecutivo from "@/components/dashboard/TabExecutivo";
@@ -9,23 +9,40 @@ import TabAlertas from "@/components/dashboard/TabAlertas";
 
 const Dashboard = () => (
   <div className="animate-fade-in">
-    <div className="flex items-center gap-3 mb-4">
-      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-        <LayoutDashboard className="w-5 h-5 text-primary" />
+    {/* Header enterprise */}
+    <div className="flex items-center gap-4 mb-6">
+      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shadow-sm">
+        <LayoutDashboard className="w-6 h-6 text-primary" />
       </div>
-      <h1 className="text-2xl font-bold">Dashboard</h1>
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Visão consolidada de operações, comercial e financeiro</p>
+      </div>
     </div>
 
     <DashboardTopbar />
 
     <Tabs defaultValue="executivo" className="w-full">
-      <TabsList className="mb-4 bg-muted/60">
-        <TabsTrigger value="executivo">Executivo</TabsTrigger>
-        <TabsTrigger value="operacional">Operacional</TabsTrigger>
-        <TabsTrigger value="comercial">Comercial</TabsTrigger>
-        <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
-        <TabsTrigger value="alertas">Alertas</TabsTrigger>
-      </TabsList>
+      {/* Underline tabs — enterprise style */}
+      <div className="border-b border-border mb-6">
+        <TabsList className="h-auto bg-transparent p-0 gap-0">
+          <TabsTrigger value="executivo" className="gap-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5">
+            <Activity className="w-4 h-4"/>Executivo
+          </TabsTrigger>
+          <TabsTrigger value="operacional" className="gap-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5">
+            <TrendingUp className="w-4 h-4"/>Operacional
+          </TabsTrigger>
+          <TabsTrigger value="comercial" className="gap-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5">
+            <DollarSign className="w-4 h-4"/>Comercial
+          </TabsTrigger>
+          <TabsTrigger value="financeiro" className="gap-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5">
+            <TrendingUp className="w-4 h-4"/>Financeiro
+          </TabsTrigger>
+          <TabsTrigger value="alertas" className="gap-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5">
+            <Bell className="w-4 h-4"/>Alertas
+          </TabsTrigger>
+        </TabsList>
+      </div>
 
       <TabsContent value="executivo"><TabExecutivo /></TabsContent>
       <TabsContent value="operacional"><TabOperacional /></TabsContent>
@@ -37,3 +54,4 @@ const Dashboard = () => (
 );
 
 export default Dashboard;
+

@@ -15,6 +15,7 @@ export interface DistanceResult {
 
 export interface MapsProvider {
   calcularRota(origem: string, destino: string): Promise<DistanceResult | null>;
+  calcularRotaCoordenadas(origem: Coordinates, destino: Coordinates): Promise<DistanceResult | null>;
 }
 
 export interface GeocodingResult {

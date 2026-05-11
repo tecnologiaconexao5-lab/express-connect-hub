@@ -82,20 +82,20 @@ const AppTopbar = () => {
   const markAllRead = () => setNotifs(notifs.map(n => ({ ...n, lida: true })));
 
   return (
-    <header className="h-16 bg-tms-topbar flex items-center px-6 gap-4 shrink-0 border-b border-border/50">
+    <header className="h-16 bg-tms-topbar flex items-center px-6 gap-4 shrink-0 border-b border-tms-topbar-border">
       {/* Search */}
       <div className="flex-1 max-w-md relative flex items-center gap-4">
         <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tms-topbar-fg/50" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setShowSearch(true)}
             placeholder="Buscar OS, cliente, prestador..."
-            className="w-full pl-10 pr-16 py-2 rounded-lg bg-secondary/80 border-0 text-sm text-tms-topbar-fg placeholder:text-tms-topbar-fg/40 focus:outline-none focus:ring-2 focus:ring-primary/50 transition z-20 relative"
+            className="w-full pl-10 pr-16 py-2 rounded-lg bg-muted border-0 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 transition z-20 relative"
           />
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-tms-topbar-fg/40 bg-secondary/50 px-1.5 py-0.5 rounded">
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-muted-foreground/60 bg-muted px-1.5 py-0.5 rounded border border-border/50">
             <Command className="w-3 h-3" />K
           </div>
           {showSearch && (
@@ -149,47 +149,47 @@ const AppTopbar = () => {
         )}
       </div>
 
-      <div className="flex items-center gap-2 ml-auto">
+      <div className="flex items-center gap-1.5 ml-auto">
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
-          className="p-2 rounded-lg hover:bg-secondary/50 text-tms-topbar-fg transition"
+          className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition"
           title={theme === "dark" ? "Modo claro" : "Modo escuro"}
         >
-          {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
 
-        {/* Inbox Comunicacoes */}
-        <button 
+        {/* Inbox */}
+        <button
           onClick={() => navigate('/configuracoes?tab=comunicacoes-inbox')}
-          className="relative p-2 rounded-lg hover:bg-secondary/50 text-tms-topbar-fg transition"
+          className="relative p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition"
           title="Inbox de Mensagens"
         >
-          <Inbox className="w-5 h-5" />
-          <span className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center text-[9px] font-bold text-white bg-blue-600 rounded-full">3</span>
+          <Inbox className="w-4 h-4" />
+          <span className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center text-[9px] font-bold text-white bg-blue-500 rounded-full">3</span>
         </button>
 
         {/* Central de Comunicacao */}
-        <button 
+        <button
           onClick={() => navigate('/comunicacao')}
-          className="p-2 rounded-lg hover:bg-secondary/50 text-tms-topbar-fg transition text-orange-500 bg-orange-500/10 hover:bg-orange-500/20"
+          className="p-2 rounded-lg hover:bg-primary/10 text-primary transition"
           title="Central de Comunicação"
         >
-          <Megaphone className="w-5 h-5" />
+          <Megaphone className="w-4 h-4" />
         </button>
 
         {/* Notifications */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="relative p-2 rounded-lg hover:bg-secondary/50 text-tms-topbar-fg transition">
-              <Bell className="w-5 h-5" />
-              {naoLidas > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center text-[9px] font-bold text-white bg-red-600 rounded-full">{naoLidas}</span>}
+            <button className="relative p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition">
+              <Bell className="w-4 h-4" />
+              {naoLidas > 0 && <span className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center text-[9px] font-bold text-white bg-destructive rounded-full">{naoLidas}</span>}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80">
             <DropdownMenuLabel className="flex justify-between items-center">
-              <span>Notificações</span>
-              {naoLidas > 0 && <Button variant="ghost" size="sm" onClick={markAllRead} className="h-6 text-[10px] text-muted-foreground p-0 px-2 uppercase hover:bg-muted font-bold">Marcar Todas c/ Lidas</Button>}
+              <span className="text-sm font-semibold">Notificações</span>
+              {naoLidas > 0 && <Button variant="ghost" size="sm" onClick={markAllRead} className="h-6 text-[10px] text-muted-foreground p-0 px-2 font-medium">Marcar Todas c/ Lidas</Button>}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <div className="max-h-[300px] overflow-y-auto">
@@ -200,8 +200,8 @@ const AppTopbar = () => {
                          {IconType(n.tipo)}
                        </div>
                        <div className="flex-1 flex flex-col gap-0.5 min-w-0">
-                          <p className={`text-sm leading-tight ${n.lida ? 'font-medium' : 'font-bold'}`}>{n.mensagem}</p>
-                          <span className="text-[10px] text-muted-foreground font-semibold uppercase">{n.tempo}</span>
+                          <p className={`text-sm leading-tight ${n.lida ? 'font-medium' : 'font-semibold'}`}>{n.mensagem}</p>
+                          <span className="text-[10px] text-muted-foreground font-medium uppercase">{n.tempo}</span>
                        </div>
                     </div>
                  </DropdownMenuItem>
@@ -216,18 +216,18 @@ const AppTopbar = () => {
 
         {/* Unit */}
         {user && (
-          <span className="text-xs text-tms-topbar-fg/70 hidden md:block">
+          <span className="text-xs text-muted-foreground/70 hidden md:block ml-2">
             {user.unit}
           </span>
         )}
 
         {/* Avatar */}
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-semibold text-primary">
+        <div className="flex items-center gap-2 ml-1">
+          <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center text-sm font-semibold text-primary">
             {user?.name?.charAt(0) ?? "U"}
           </div>
           {user && (
-            <span className="text-sm text-tms-topbar-fg font-medium hidden md:block">
+            <span className="text-sm text-foreground font-medium hidden md:block">
               {user.name}
             </span>
           )}
@@ -235,7 +235,7 @@ const AppTopbar = () => {
 
         <button
           onClick={handleLogout}
-          className="p-2 rounded-lg hover:bg-destructive/20 text-tms-topbar-fg transition"
+          className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition ml-1"
           title="Sair"
         >
           <LogOut className="w-4 h-4" />

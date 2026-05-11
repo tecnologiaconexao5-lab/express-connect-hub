@@ -26,12 +26,12 @@ export default function Frota() {
       </div>
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full">
-           <TabsTrigger value="manutencao" className="px-5"><Wrench className="w-4 h-4 mr-2"/> Manutenção</TabsTrigger>
-           <TabsTrigger value="abastecimento" className="px-5"><Fuel className="w-4 h-4 mr-2"/> Abastecimento</TabsTrigger>
-           <TabsTrigger value="documentos" className="px-5"><FileText className="w-4 h-4 mr-2"/> Documentos</TabsTrigger>
-           <TabsTrigger value="seguros" className="px-5"><Shield className="w-4 h-4 mr-2"/> Seguros</TabsTrigger>
-           <TabsTrigger value="custos" className="px-5"><PieChart className="w-4 h-4 mr-2"/> Custos por Veículo</TabsTrigger>
+        <TabsList className="mb-4 justify-start overflow-x-auto flex-wrap">
+           <TabsTrigger value="manutencao" className="gap-2"><Wrench className="w-4 h-4"/>Manutenção</TabsTrigger>
+           <TabsTrigger value="abastecimento" className="gap-2"><Fuel className="w-4 h-4"/>Abastecimento</TabsTrigger>
+           <TabsTrigger value="documentos" className="gap-2"><FileText className="w-4 h-4"/>Documentos</TabsTrigger>
+           <TabsTrigger value="seguros" className="gap-2"><Shield className="w-4 h-4"/>Seguros</TabsTrigger>
+           <TabsTrigger value="custos" className="gap-2"><PieChart className="w-4 h-4"/>Custos por Veículo</TabsTrigger>
         </TabsList>
 
         <div className="mt-4 p-4 bg-blue-50/50 border border-blue-100 rounded-lg text-sm text-blue-800 flex items-center gap-3">

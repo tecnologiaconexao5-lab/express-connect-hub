@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Settings, Building2, Users, Table as TableIcon, Link as LinkIcon, Bell, Save, AppWindow, CheckCircle2, Copy, Shield, User, ChevronDown, Upload, Image, Palette } from "lucide-react";
+import { Settings, Building2, Users, Table as TableIcon, Link as LinkIcon, Bell, Save, AppWindow, CheckCircle2, Copy, Shield, User, ChevronDown, Upload, Image, Palette, MessageCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +20,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useLogo } from "@/hooks/useLogo";
+import { CentralIntegracoes } from "@/components/configuracoes/CentralIntegracoes";
+import { MonitoramentoCombustivelCard } from "@/components/financeiro/MonitoramentoCombustivel";
 
 type Permissao = "ver" | "criar" | "editar" | "excluir" | "aprovar";
 
@@ -267,13 +271,15 @@ export default function Configuracoes() {
       </div>
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full">
-           <TabsTrigger value="empresa" className="px-5"><Building2 className="w-4 h-4 mr-2"/> Dados Empresa</TabsTrigger>
-           <TabsTrigger value="identidade" className="px-5"><Palette className="w-4 h-4 mr-2"/> Identidade Visual</TabsTrigger>
-           <TabsTrigger value="usuarios" className="px-5"><Users className="w-4 h-4 mr-2"/> Usuários e Perfis</TabsTrigger>
-           <TabsTrigger value="tabela" className="px-5"><TableIcon className="w-4 h-4 mr-2"/> Tab. de Valores</TabsTrigger>
-           <TabsTrigger value="integracoes" className="px-5"><LinkIcon className="w-4 h-4 mr-2"/> Integrações</TabsTrigger>
-           <TabsTrigger value="notificacoes" className="px-5"><Bell className="w-4 h-4 mr-2"/> Notificações</TabsTrigger>
+        <TabsList className="mb-4 justify-start overflow-x-auto flex-wrap">
+           <TabsTrigger value="empresa" className="gap-2"><Building2 className="w-4 h-4"/>Dados Empresa</TabsTrigger>
+           <TabsTrigger value="identidade" className="gap-2"><Palette className="w-4 h-4"/>Identidade Visual</TabsTrigger>
+           <TabsTrigger value="usuarios" className="gap-2"><Users className="w-4 h-4"/>Usuários e Perfis</TabsTrigger>
+           <TabsTrigger value="tabela" className="gap-2"><TableIcon className="w-4 h-4"/>Tab. de Valores</TabsTrigger>
+           <TabsTrigger value="integracoes" className="gap-2"><LinkIcon className="w-4 h-4"/>Integrações Básicas</TabsTrigger>
+           <TabsTrigger value="central-integracoes" className="gap-2"><AppWindow className="w-4 h-4"/>Central de Integrações</TabsTrigger>
+           <TabsTrigger value="notificacoes" className="gap-2"><Bell className="w-4 h-4"/>Notificações</TabsTrigger>
+           <TabsTrigger value="whatsapp-ia" className="gap-2"><MessageCircle className="w-4 h-4"/>WhatsApp / IA</TabsTrigger>
         </TabsList>
 
         {/* --- EMPRESA --- */}
@@ -623,7 +629,9 @@ export default function Configuracoes() {
         </TabsContent>
 
         {/* --- TABELA DE VALORES --- */}
-        <TabsContent value="tabela" className="pt-4">
+        <TabsContent value="tabela" className="pt-4 space-y-4">
+           <MonitoramentoCombustivelCard />
+           
            <Card>
              <CardHeader>
                 <CardTitle className="text-lg">Tabelas Ativas para Cálculo Automático</CardTitle>
@@ -676,6 +684,11 @@ export default function Configuracoes() {
                 </CardContent>
               </Card>
            </div>
+        </TabsContent>
+
+        {/* --- CENTRAL DE INTEGRAÇÕES --- */}
+        <TabsContent value="central-integracoes" className="pt-4">
+           <CentralIntegracoes />
         </TabsContent>
 
         {/* --- NOTIFICAÇÕES --- */}

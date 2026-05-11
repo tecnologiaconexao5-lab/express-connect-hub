@@ -167,13 +167,15 @@ export default function ReciboRapido() {
           </CardHeader>
           <CardContent className="flex justify-center p-6">
             <div className="w-full max-w-sm bg-white rounded-lg shadow border p-6 font-sans text-slate-800 scale-95 transform origin-top">
-               <div className="text-center border-b pb-4 mb-4">
-                  {shouldShowLogo('recibosPdf') && config.logoUrl ? (
-                    <img src={config.logoUrl} alt="Logo" className="w-[100px] h-auto object-contain mx-auto mb-2" />
-                  ) : (
-                    <div className="w-[100px] h-[40px]bg-slate-100 flex items-center justify-center mx-auto mb-2 text-xs font-bold text-slate-400">[LOGO AQUI]</div>
-                  )}
-                  <h3 className="font-bold text-xl uppercase tracking-widest text-slate-700">RECIBO</h3>
+<div className="text-center border-b pb-4 mb-4">
+                   {shouldShowLogo('recibosPdf') && config.logoUrl ? (
+                     <img src={config.logoUrl} alt="Logo" className="w-[100px] h-auto object-contain mx-auto mb-2" />
+                   ) : (
+                     <div className="mx-auto mb-2">
+                       <h3 className="text-lg font-bold text-orange-500">Conexão Express</h3>
+                     </div>
+                   )}
+                   <h3 className="font-bold text-xl uppercase tracking-widest text-slate-700">RECIBO</h3>
                   <p className="text-sm text-slate-500">Nº 202604-0012</p>
                </div>
                <div className="bg-slate-100 p-3 rounded-md mb-6 text-center">

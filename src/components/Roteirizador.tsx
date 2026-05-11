@@ -333,7 +333,7 @@ export default function Roteirizador() {
               <div className="text-center text-muted-foreground">
                 <MapPin className="w-16 h-16 mx-auto mb-4 opacity-50" />
                 <p className="font-medium">Mapa Interativo</p>
-                <p className="text-sm">Configure a API do Mapbox para visualizar as rotas</p>
+                <p className="text-sm">Configure a integração de mapas para visualizar as rotas</p>
                 <p className="text-xs mt-2">{paradas.length} paradas carregadas</p>
               </div>
             </CardContent>

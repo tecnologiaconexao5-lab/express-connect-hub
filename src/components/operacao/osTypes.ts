@@ -1,38 +1,37 @@
-export type OSStatus = 
-  | "rascunho" | "aguardando aprovacao" | "aguardando programacao" | "em programacao"
-  | "programada" | "aguardando parceiro" | "aguardando veiculo" | "aguardando coleta"
-  | "em coleta" | "carregando" | "saiu para rota" | "em operacao" | "em entrega"
-  | "com ocorrencia" | "aguardando baixa" | "finalizada" | "faturada" | "cancelada"
-  | "sem reserva" | "sem confirmacao" | "pendencia documental" | "pendencia financeira"
-  | "reentrega" | "devolucao" | "retorno a base";
+import type { DistanceResult } from "@/services/maps/types";
 
-export const STATUS_CORES: Record<OSStatus, { label: string; twClass: string }> = {
+export type OSStatus = 
+  | "rascunho" | "pendente" | "agendada" | "em_andamento" | "em_rota" 
+  | "coletado" | "entregue" | "finalizada" | "cancelada" | "ocorrencia";
+
+export const STATUS_OPERACIONAL: Record<OSStatus, { label: string; twClass: string }> = {
   "rascunho": { label: "Rascunho", twClass: "bg-gray-200 text-gray-800" },
-  "aguardando aprovacao": { label: "Aguard. Aprovação", twClass: "bg-yellow-100 text-yellow-800" },
-  "aguardando programacao": { label: "Aguard. Programação", twClass: "bg-yellow-300 text-yellow-900" },
-  "em programacao": { label: "Em Programação", twClass: "bg-blue-100 text-blue-800" },
-  "programada": { label: "Programada", twClass: "bg-blue-300 text-blue-900" },
-  "aguardando parceiro": { label: "Aguard. Parceiro", twClass: "bg-orange-100 text-orange-800" },
-  "aguardando veiculo": { label: "Aguard. Veículo", twClass: "bg-orange-400 text-white" },
-  "aguardando coleta": { label: "Aguard. Coleta", twClass: "bg-purple-100 text-purple-800" },
-  "em coleta": { label: "Em Coleta", twClass: "bg-purple-500 text-white" },
-  "carregando": { label: "Carregando", twClass: "bg-indigo-300 text-indigo-900" },
-  "saiu para rota": { label: "Saiu p/ Rota", twClass: "bg-blue-800 text-white" },
-  "em operacao": { label: "Em Operação", twClass: "bg-green-100 text-green-800" },
-  "em entrega": { label: "Em Entrega", twClass: "bg-green-500 text-white" },
-  "com ocorrencia": { label: "Com Ocorrência", twClass: "bg-red-500 text-white" },
-  "aguardando baixa": { label: "Aguard. Baixa", twClass: "bg-yellow-600 text-white" },
+  "pendente": { label: "Pendente", twClass: "bg-yellow-100 text-yellow-800" },
+  "agendada": { label: "Agendada", twClass: "bg-blue-100 text-blue-800" },
+  "em_andamento": { label: "Em Andamento", twClass: "bg-blue-500 text-white" },
+  "em_rota": { label: "Em Rota", twClass: "bg-indigo-600 text-white" },
+  "coletado": { label: "Coletado", twClass: "bg-purple-600 text-white" },
+  "entregue": { label: "Entregue", twClass: "bg-green-500 text-white" },
   "finalizada": { label: "Finalizada", twClass: "bg-green-800 text-white" },
-  "faturada": { label: "Faturada", twClass: "bg-emerald-400 text-emerald-900" },
-  "cancelada": { label: "Cancelada", twClass: "bg-gray-800 text-white" },
-  "sem reserva": { label: "Sem Reserva", twClass: "bg-pink-300 text-pink-900" },
-  "sem confirmacao": { label: "Sem Confirmação", twClass: "bg-orange-200 text-orange-900" },
-  "pendencia documental": { label: "Pend. Documental", twClass: "bg-orange-600 text-white" },
-  "pendencia financeira": { label: "Pend. Financeira", twClass: "bg-red-800 text-white" },
-  "reentrega": { label: "Reentrega", twClass: "bg-sky-200 text-sky-900" },
-  "devolucao": { label: "Devolução", twClass: "bg-slate-400 text-white" },
-  "retorno a base": { label: "Retorno à Base", twClass: "bg-amber-800 text-white" },
+  "cancelada": { label: "Cancelada", twClass: "bg-red-600 text-white" },
+  "ocorrencia": { label: "Ocorrência", twClass: "bg-orange-500 text-white" },
 };
+
+export const STATUS_CORES: Record<OSStatus, { label: string; twClass: string }> = STATUS_OPERACIONAL;
+
+export type TipoOperacao = 
+  | "Coleta"
+  | "Entrega"
+  | "Coleta e Entrega"
+  | "Transferência"
+  | "Retirada"
+  | "Distribuição"
+  | "Reentrega"
+  | "Devolução"
+  | "Apoio Operacional"
+  | "Dedicado"
+  | "Emergencial"
+  | "Agendado";
 
 export interface OSEndereco {
   id?: string;
@@ -40,6 +39,13 @@ export interface OSEndereco {
   sequencia: number;
   tipo: "coleta" | "entrega" | "apoio" | "devolucao" | "retorno";
   nomeLocal: string;
+  setor?: string;
+  responsavel?: string;
+  telefone?: string;
+  email?: string;
+  ramal?: string;
+  enviarWhatsApp?: boolean;
+  observacaoPonto?: string;
   endereco: string;
   cep?: string;
   logradouro?: string;
@@ -48,10 +54,13 @@ export interface OSEndereco {
   bairro?: string;
   cidade?: string;
   estado?: string;
+  latitude?: number;
+  longitude?: number;
+  enderecoFormatado?: string;
+  mapboxPlaceId?: string;
   referencia: string;
   instrucoes: string;
   contato: string;
-  telefone: string;
   janelaInicio: string;
   janelaFim: string;
   tempoSla?: string;
@@ -73,7 +82,7 @@ export interface OSHistorico {
 }
 
 export interface OSCarga {
-  tipo?: string;
+  tipo?: "Seca" | "Refrigerada" | "Congelada" | "Mista";
   descricao?: string;
   volumes?: number;
   peso?: number;
@@ -91,6 +100,54 @@ export interface OSCarga {
   conferencia?: boolean;
   equipamento?: string;
   condicao?: string;
+  comprimento?: number;
+  largura?: number;
+  altura?: number;
+  pesoPorVolume?: number;
+  temperaturaMinima?: number;
+  temperaturaMaxima?: number;
+  observacoesCarga?: string;
+  cubagemCalculada?: number;
+  cubagemManual?: boolean;
+}
+
+export interface OSVeiculoSugestao {
+  tipo: string;
+  label: string;
+  motivo: string;
+  kgNecessario: number;
+  m3Necessario: number;
+  dimensoesMinimas: string;
+}
+
+export interface OSComprovante {
+  recebedorNome?: string;
+  recebedorDocumento?: string;
+  recebedorFuncao?: string;
+  dataEntrega?: string;
+  horaEntrega?: string;
+  observacaoEntrega?: string;
+  fotosEntrega?: string[];
+  fotoColetaUrl?: string;
+  fotoCanhotoUrl?: string;
+  assinaturaDigital?: string;
+}
+
+export interface ComposicaoFinanceira {
+  id?: string;
+  osId?: string;
+  valorCliente: number;
+  valorPrestador: number;
+  impostos: number;
+  seguro: number;
+  pedagio: number;
+  outros: number;
+  margemBruta: number;
+  margemLiquida: number;
+  percentualMargemBruta: number;
+  percentualMargemLiquida: number;
+  custosOperacionais: number;
+  valorManual?: boolean;
 }
 
 export interface OrdemServico {
@@ -98,6 +155,7 @@ export interface OrdemServico {
   numero: string;
   data: string;
   cliente: string;
+  clienteId?: string;
   unidade: string;
   centroCusto: string;
   orcamentoOrigem: string;
@@ -119,13 +177,20 @@ export interface OrdemServico {
 
   carga: OSCarga;
 
+  // Agendamento
+  agendado?: boolean;
+  dataAgendada?: string;
+  observacaoAgendamento?: string;
+
   // Veiculo
+  veiculoPlaca?: string;
   veiculoTipo: string;
   veiculoSubcategoria: string;
   veiculoCarroceria: string;
   veiculoTermica: string;
   isReserva: boolean;
   retornoObrigatorio: boolean;
+  veiculoSugerido?: string;
 
   // Prog
   dataProgramada: string;
@@ -133,11 +198,12 @@ export interface OrdemServico {
   previsaoInicio: string;
   previsaoTermino: string;
   tipoEscala: string;
-  instrucoesOperacionais: string;
+  instrucoesOperacionaisOS: string;
   observacaoTorre: string;
 
   // Fin
   tabelaAplicada: string;
+  faixaAplicada?: string;
   valorCliente: number;
   custoPrestador: number;
   pedagio: number;
@@ -147,13 +213,61 @@ export interface OrdemServico {
   reembolsoPrevisto: number;
   contaContabil: string;
   centroCustoFin: string;
-  statusFaturamento: "a faturar" | "faturada" | "paga";
+  statusFaturamento: "a vista" | "a faturar" | "contrato" | "cortesia" | "cancelado" | "faturada" | "paga";
   statusPagamento: "a pagar" | "pago";
+  lucroEstimado?: number;
+  margemLucro?: number;
+
+  // TAREFA 5 - Margem
+  margem?: number;
+  percentualMargem?: number;
+
+  // TAREFA 3 - Mapa/Rota
+  distanciaKm?: number;
+  tempoEstimado?: string;
+  mapboxOrigem?: string;
+  mapboxDestino?: string;
+  pontosJson?: any[];
+  rotaCalculada?: boolean;
+
+  // TAREFA 4 - Financeiro
+  financeiroGerado?: boolean;
+  reciboGerado?: boolean;
+  financeiroReceberId?: string;
+  financeiroPagarId?: string;
+
+  // NOVA COMPOSIÇÃO FINANCEIRA
+  composicaoFinanceira?: ComposicaoFinanceira;
+
+  // TAREFA 8 - App Motorista
+  motoristaStatus?: string;
+  aceiteMotorista?: boolean;
+  dataAceiteMotorista?: string;
+  dataChegadaColeta?: string;
+  dataColeta?: string;
+  dataChegadaEntrega?: string;
+  dataEntrega?: string;
+  comprovanteUrl?: string;
+  assinaturaUrl?: string;
+  fotoEntregaUrl?: string;
+  localizacaoEntregaJson?: any;
+  recebedorNome?: string;
+  recebedorDocumento?: string;
+  recebedorFuncao?: string;
+  comprovante?: OSComprovante;
+
+  // TAREFA 9 - Painel Cliente
+  visivelCliente?: boolean;
+  statusCliente?: string;
+  linkRastreamento?: string;
+  previsaoEntrega?: string;
+  mensagemCliente?: string;
 
   emailDestinatario?: string;
   whatsappDestinatario?: string;
   notificarDestinatario?: boolean;
   eventosTracker?: string;
+  distanciaRota?: DistanceResult;
 
   enderecos: OSEndereco[];
   historico: OSHistorico[];

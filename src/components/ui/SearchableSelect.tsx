@@ -7,6 +7,7 @@ interface SearchableSelectProps {
   table: string;
   labelField: string;
   valueField?: string;
+  returnField?: string;
   searchFields: string[];
   placeholder?: string;
   value: string | null;
@@ -19,6 +20,7 @@ export function SearchableSelect({
   table,
   labelField,
   valueField = "id",
+  returnField,
   searchFields,
   placeholder = "Buscar...",
   value,
@@ -99,7 +101,8 @@ export function SearchableSelect({
     setSelectedValue(record);
     setSearchTerm(record[labelField]);
     setIsOpen(false);
-    onChange(record[valueField], record);
+    const returnVal = returnField ? record[returnField] : record[valueField];
+    onChange(returnVal, record);
   };
 
   const handleClear = (e: React.MouseEvent) => {

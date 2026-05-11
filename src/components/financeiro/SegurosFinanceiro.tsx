@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -53,6 +55,89 @@ export default function SegurosFinanceiro() {
   const [apolices, setApolices] = useState<Apolice[]>(mockApolices);
   const [averbacoes] = useState<Averbacao[]>(mockAverbacoes);
   const [showModalAverbacao, setShowModalAverbacao] = useState(false);
+      const [showModalSinistro, setShowModalSinistro] = useState(false);
+  const [sinistros, setSinistros] = useState<any[]>([
+    { id: "1", data: "20/03/2026", os: "OS-10450-3200", tipo: "Tombamento", estimativa: 45000, protocolo: "P-923184/26", status: "Em Análise Técnica" },
+    { id: "2", data: "05/02/2026", os: "OS-990-22", tipo: "Roubo / Assalto", estimativa: 120000, protocolo: "P-011234/26", status: "Indenizado (Pago)" }
+  ]);
+  const [formSinistro, setFormSinistro] = useState({
+    os_id: '',
+    tipo_sinistro: '',
+    data_evento: new Date().toISOString().split('T')[0],
+    valor_estimado: 0,
+    seguradora: '',
+    descricao: ''
+  });
+
+  const handleSalvarSinistro = async () => {
+    try {
+      const payload = {
+        ...formSinistro,
+        status: 'em_analise'
+      };
+      const { error } = await supabase.from('sinistros').insert([payload]);
+      if (error && error.code !== '42P01') throw error;
+      
+      toast.success('Sinistro registrado com sucesso!');
+      setShowModalSinistro(false);
+      setSinistros([{
+        id: Math.random().toString(),
+        data: new Date(formSinistro.data_evento).toLocaleDateString('pt-BR'),
+        os: formSinistro.os_id,
+        tipo: formSinistro.tipo_sinistro,
+        estimativa: formSinistro.valor_estimado,
+        protocolo: 'Aguardando',
+        status: 'Em Análise Inicial'
+      }, ...sinistros]);
+    } catch (e: any) {
+      toast.error('Erro ao registrar sinistro: ' + e.message);
+    }
+  };
+
+  const [showModalApolice, setShowModalApolice] = useState(false);
+  const [formApolice, setFormApolice] = useState({
+    seguradora: '',
+    numero_apolice: '',
+    tipo_seguro: '',
+    veiculo_id: '',
+    vigencia_inicio: '',
+    vigencia_fim: '',
+    valor_premio: 0,
+    forma_pagamento: '',
+    status: 'ativa',
+    observacao: ''
+  });
+
+  const handleSalvarApolice = async () => {
+    try {
+      const payload = {
+        ...formApolice,
+        veiculo_id: formApolice.veiculo_id || null
+      };
+      const { error } = await supabase.from('seguros_auto_apolices').insert([payload]);
+      if (error && error.code !== '42P01') {
+         throw error;
+      }
+      toast.success('Apólice salva com sucesso!');
+      setShowModalApolice(false);
+      setApolices([...apolices, {
+        id: Math.random().toString(),
+        seguradora: formApolice.seguradora,
+        numero: formApolice.numero_apolice,
+        tipo: formApolice.tipo_seguro,
+        vigencia: formApolice.vigencia_inicio + ' até ' + formApolice.vigencia_fim,
+        valorCobertura: 0,
+        premioMensal: formApolice.valor_premio,
+        percentualPremio: 0,
+        valorMinimoAverbacao: 0,
+        formaCalculo: 'valor_fixo',
+        status: formApolice.status as any
+      }]);
+    } catch (e: any) {
+      toast.error('Erro ao salvar apólice: ' + e.message);
+    }
+  };
+
   const [novaAverbacao, setNovaAverbacao] = useState({
     os: "",
     apoliceId: "",
@@ -97,7 +182,7 @@ export default function SegurosFinanceiro() {
           <Card>
             <CardHeader className="flex flex-row justify-between items-center py-4">
               <div><CardTitle>Apólices Vigentes Corporativas</CardTitle></div>
-              <Button className="bg-blue-600"><Plus className="w-4 h-4 mr-1"/> Nova Apólice</Button>
+              <Button className="bg-blue-600" onClick={() => setShowModalApolice(true)}><Plus className="w-4 h-4 mr-1"/> Nova Apólice</Button>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -238,6 +323,136 @@ export default function SegurosFinanceiro() {
         </div>
       )}
 
+      <Dialog open={showModalApolice} onOpenChange={setShowModalApolice}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Nova Apólice</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="space-y-2">
+              <Label>Seguradora *</Label>
+              <Input value={formApolice.seguradora} onChange={e => setFormApolice({...formApolice, seguradora: e.target.value})} placeholder="Nome da Seguradora" />
+            </div>
+            <div className="space-y-2">
+              <Label>Número da Apólice *</Label>
+              <Input value={formApolice.numero_apolice} onChange={e => setFormApolice({...formApolice, numero_apolice: e.target.value})} placeholder="Ex: 123456789" />
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de Seguro</Label>
+              <Input value={formApolice.tipo_seguro} onChange={e => setFormApolice({...formApolice, tipo_seguro: e.target.value})} placeholder="RCTR-C, Frota, etc." />
+            </div>
+            <div className="space-y-2">
+              <Label>Veículo Vinculado (Opcional)</Label>
+              <Input value={formApolice.veiculo_id} onChange={e => setFormApolice({...formApolice, veiculo_id: e.target.value})} placeholder="ID do Veículo" />
+            </div>
+            <div className="space-y-2">
+              <Label>Vigência Início *</Label>
+              <Input type="date" value={formApolice.vigencia_inicio} onChange={e => setFormApolice({...formApolice, vigencia_inicio: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Vigência Fim *</Label>
+              <Input type="date" value={formApolice.vigencia_fim} onChange={e => setFormApolice({...formApolice, vigencia_fim: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Valor Prêmio (R$)</Label>
+              <Input type="number" value={formApolice.valor_premio || ''} onChange={e => setFormApolice({...formApolice, valor_premio: parseFloat(e.target.value) || 0})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Forma de Pagamento</Label>
+              <Select value={formApolice.forma_pagamento} onValueChange={v => setFormApolice({...formApolice, forma_pagamento: v})}>
+                <SelectTrigger><SelectValue placeholder="Selecione"/></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Boleto">Boleto</SelectItem>
+                  <SelectItem value="Cartão">Cartão</SelectItem>
+                  <SelectItem value="Débito em Conta">Débito em Conta</SelectItem>
+                  <SelectItem value="Pix">Pix</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={formApolice.status} onValueChange={v => setFormApolice({...formApolice, status: v})}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ativa">Ativa</SelectItem>
+                  <SelectItem value="vencendo">Vencendo</SelectItem>
+                  <SelectItem value="vencida">Vencida</SelectItem>
+                  <SelectItem value="cancelada">Cancelada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label>Observação</Label>
+              <Input value={formApolice.observacao} onChange={e => setFormApolice({...formApolice, observacao: e.target.value})} placeholder="Anotações gerais" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowModalApolice(false)}>Cancelar</Button>
+            <Button className="bg-green-600" onClick={handleSalvarApolice}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showModalSinistro} onOpenChange={setShowModalSinistro}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Abertura de Sinistro</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="space-y-2">
+              <Label>OS Vinculada *</Label>
+              <Input value={formSinistro.os_id} onChange={e => setFormSinistro({...formSinistro, os_id: e.target.value})} placeholder="Busque a OS" />
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de Sinistro *</Label>
+              <Select value={formSinistro.tipo_sinistro} onValueChange={v => setFormSinistro({...formSinistro, tipo_sinistro: v})}>
+                <SelectTrigger><SelectValue placeholder="Selecione"/></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="roubo">Roubo / Assalto</SelectItem>
+                  <SelectItem value="avaria">Avaria de Carga</SelectItem>
+                  <SelectItem value="tombamento">Tombamento</SelectItem>
+                  <SelectItem value="extravio">Extravio / Sumiço</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Data do Evento *</Label>
+              <Input type="date" value={formSinistro.data_evento} onChange={e => setFormSinistro({...formSinistro, data_evento: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Estimativa de Prejuízo (R$)</Label>
+              <Input type="number" value={formSinistro.valor_estimado || ''} onChange={e => setFormSinistro({...formSinistro, valor_estimado: parseFloat(e.target.value) || 0})} />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label>Seguradora (Apólice Acionada) *</Label>
+              <Select value={formSinistro.seguradora} onValueChange={v => setFormSinistro({...formSinistro, seguradora: v})}>
+                <SelectTrigger><SelectValue placeholder="Selecione a seguradora ativa"/></SelectTrigger>
+                <SelectContent>
+                  {apolices.map(a => (
+                    <SelectItem key={a.id} value={a.seguradora}>{a.seguradora} - {a.tipo}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label>Descrição do Ocorrido</Label>
+              <Input value={formSinistro.descricao} onChange={e => setFormSinistro({...formSinistro, descricao: e.target.value})} placeholder="Relato breve do incidente" />
+            </div>
+            <div className="space-y-2 col-span-2 mt-2 p-4 border border-dashed rounded flex flex-col items-center justify-center bg-slate-50 cursor-pointer hover:bg-slate-100">
+              <Upload className="w-6 h-6 text-slate-400 mb-2"/>
+              <span className="text-sm text-slate-600 font-medium">Anexar BO, Fotos ou Relatórios</span>
+              <span className="text-xs text-slate-400">Arraste os arquivos ou clique para buscar</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowModalSinistro(false)}>Cancelar</Button>
+            <Button className="bg-red-600 hover:bg-red-700" onClick={handleSalvarSinistro}>Registrar Sinistro</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
+
       {aba === "averbacoes" && (
         <div className="space-y-4">
           <Card>
@@ -290,7 +505,7 @@ export default function SegurosFinanceiro() {
           <Card>
             <CardHeader className="flex flex-row justify-between items-center py-4">
               <div><CardTitle>Gerenciamento de Sinistros e Eventos</CardTitle></div>
-              <Button className="bg-red-600 hover:bg-red-700 text-white"><Plus className="w-4 h-4 mr-1"/> Abrir Sinistro</Button>
+              <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={() => setShowModalSinistro(true)}><Plus className="w-4 h-4 mr-1"/> Abrir Sinistro</Button>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -306,24 +521,17 @@ export default function SegurosFinanceiro() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow>
-                    <TableCell className="text-sm">20/03/2026</TableCell>
-                    <TableCell className="font-bold">OS-10450-3200</TableCell>
-                    <TableCell><Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700">Tombamento</Badge></TableCell>
-                    <TableCell className="text-right font-medium text-red-600">{fmtFin(45000)}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">P-923184/26</TableCell>
-                    <TableCell><Badge variant="outline" className="text-blue-700 bg-blue-50">Em Análise Técnica</Badge></TableCell>
-                    <TableCell className="text-right"><Button variant="ghost" size="sm" className="h-8"><Download className="w-4 h-4 text-slate-500"/></Button></TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="text-sm">05/02/2026</TableCell>
-                    <TableCell className="font-bold">OS-990-22</TableCell>
-                    <TableCell><Badge variant="outline" className="border-red-200 bg-red-50 text-red-700">Roubo / Assalto</Badge></TableCell>
-                    <TableCell className="text-right font-medium text-red-600">{fmtFin(120000)}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">P-011234/26</TableCell>
-                    <TableCell><Badge variant="outline" className="text-green-700 bg-green-50 border-green-200">Indenizado (Pago)</Badge></TableCell>
-                    <TableCell className="text-right"><Button variant="ghost" size="sm" className="h-8"><Download className="w-4 h-4 text-slate-500"/></Button></TableCell>
-                  </TableRow>
+                  {sinistros.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="text-sm">{s.data}</TableCell>
+                      <TableCell className="font-bold">{s.os}</TableCell>
+                      <TableCell><Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700">{s.tipo}</Badge></TableCell>
+                      <TableCell className="text-right font-medium text-red-600">{fmtFin(s.estimativa)}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">{s.protocolo}</TableCell>
+                      <TableCell><Badge variant="outline" className="text-blue-700 bg-blue-50">{s.status}</Badge></TableCell>
+                      <TableCell className="text-right"><Button variant="ghost" size="sm" className="h-8"><Download className="w-4 h-4 text-slate-500"/></Button></TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </CardContent>

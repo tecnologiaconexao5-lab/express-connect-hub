@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code - Evolution API</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .qr-container {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+        .qr-container img {
+            display: block;
+            width: 280px;
+            height: 280px;
+        }
+        .instructions {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: left;
+            margin-top: 20px;
+        }
+        .instructions h3 {
+            color: #333;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        .instructions ol {
+            color: #555;
+            font-size: 13px;
+            line-height: 1.8;
+            padding-left: 20px;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        .status.ready {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 QR Code WhatsApp</h1>
+        <p class="subtitle">Evolution API - Conexão Express</p>
+        
+        <div class="qr-container">
+            <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAVwAAAFcCAYAAACEFgYsAAAjBElEQVR4AezB0Y1kyY5EwdMXJYXrRV0ogutCvahG73zyK4BAZt2Zt6DZn7//YK211q97WGut9YqHtdZar3hYa631ioe11lqveFhrrfWKh7XWWq94WGut9YqHtdZar3hYa631ioe11lqveFhrrfWKHy7JwZs6ixM5mDqLSQ4+0VlMcnDSWUxyMHUWkxx8U2cxycFJZ3EiByedxYkcTJ3FJAdTZzHJwdRZTHJw0lmcyMHUWdyQg5PO4kQOTjqLSQ5udBYncnDSWUxycNJZTHIwdRaTHEydxSfk4E2dxY2HtdZar3hYa631ioe11lqv+OFDncU3ycEn5OCksziRg0/IwYkcTJ3FiRxMncW/qbOY5GDqLKbOYpKDEzmYOouTzuKGHPyb5OATncWJHExyMHUWU2dxIgdTZzHJwQ05OJGDG53FSWfxTXLwiYe11lqveFhrrfWKh7XWWq/44cvk4EZncUMOTjqLSQ4mOZg6ixudxSQHNzqLSQ6mzuKGHEydxUlnMcnB1FmcyMFNOZg6i0kOTuRg6iwmOZg6i0kObsjB1FlMcjB1FidycNJZTHIwdRaTHEydxSQHU2dx0ln8b3IwSQ5udBYncnDSWUxycNJZTHIwdRaTHEydxSQHJ53FiRxMncUkBydyMHUWkxycyMHUWXyis/jEw1prrVc8rLXWesXDWmutV/z4P66z+IQc3OgsJjm40Vmc5OBGZzHJwY3O4iQHkxxMncUkB1Nn8W+Sg0kOJnIwyd/8n+TgE53FiRzckIOTzmKSg5PO4kQOTjqLqbM4kYOps7jxsNZa6xUPa621XvGw1lrrFT/8j+ssrnYWJzq40VlMcnDSWUxycKOzOJGDqbO4IQf/Jjk46SwmOTjpLCY5mDqLqbf4hBz8m+TgE53FiRzc6CxO5GDqLCY5mDqLqbM4kYOps/hf8rDWWusVD2uttV7xsNZa6xU//I/prE90Fi85uNFZTHJw0llMcnCjs5jkYOosbsjBd8nB1FmcyMEkB5McTJ3FJAeTHJzIwUln8Qk5uNFZnMjB1FlMcjB1FpMcTJ3FJAeTHHyis5jk4KQzmOTgpLOY5OBEDqbO4sYDHtZaay1EPKy11nrFw1prrVf88D+us7jRWUxyMHUWkxxMcjB1Fjfk4EZncUMOTjqLSQ6mzuKGHEydxYkcTJ3FSTm40VncCH/IwSQHJ3Iwyd/8m+TgE53FiRzc6CxO5GDqLKbO4kQOTjqLqbM4kYOps7jxsNZa6xUPa621XvGw1lrrFT/8j+ssbnQWkxzckIOpszjpLD4hByedxSQHU2d5Qw6mzuKks5jkYOosTjqLqbM4kYOps7gRlZzIwY3O4qQc3OgsJjmYOotJDqbO4qQc3OgsTjqLk87ipLO4IQc3OouTcnCjs5jk4KQzmOTgpLOY5OBGZ3FDDqbO4sbDmmutRTystdZ6xcNaa61X/PA/rrM40VlMcnCjs5jkYOosbjqLqaO4IQdTZ3FDDqbO4kQOTjqLqbM4kYOps7ghB5McfKKzmORg6iymzuJEDqbO4kQOTjqLqbM4kYOps7gRlZzIwY3O4qQc3OgsTjqLk87ipLO4IQc3OouTcnCjs5jk4KQzmOTgpLOY5OD/AQ==" alt="QR Code" />
+        </div>
+        
+        <div class="status connecting" id="status">
+            ⏳ Escaneie o QR Code com seu WhatsApp
+        </div>
+        
+        <div class="instructions">
+            <h3>Como conectar:</h3>
+            <ol>
+                <li>Abra o WhatsApp no seu celular</li>
+                <li>Toque em <strong>Menu</strong> > <strong>Dispositivos conectados</strong></li>
+                <li>Toque em <strong>Conectar um dispositivo</strong></li>
+                <li>Aponte a câmera para o QR Code acima</li>
+                <li>Aguarde a conexão ser estabelecida</li>
+            </ol>
+        </div>
+    </div>
+    
+    <script>
+        // Atualizar status após 30 segundos (esperando conexão)
+        setTimeout(() => {
+            document.getElementById('status').innerHTML = '⏳ Conectando... Mantenha o WhatsApp aberto';
+            document.getElementById('status').className = 'status connecting';
+        }, 30000);
+        
+        // Verificar conexão a cada 10 segundos
+        let tentativas = 0;
+        const verificarConexao = async () => {
+            if (tentativas >= 10) return;
+            tentativas++;
+            try {
+                const response = await fetch('http://localhost:8080/instance/connectionState/conexao-express', {
+                    headers: { 'apikey': '123456' }
+                });
+                const data = await response.json();
+                if (data.instance?.state === 'open') {
+                    document.getElementById('status').innerHTML = '✅ WhatsApp conectado com sucesso!';
+                    document.getElementById('status').className = 'status ready';
+                }
+            } catch (e) {
+                console.log('Erro ao verificar:', e);
+            }
+        };
+        
+        setInterval(verificarConexao, 10000);
+    </script>
+</body>
+</html>

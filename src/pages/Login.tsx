@@ -33,7 +33,7 @@ const Login = () => {
         <div 
           className="absolute inset-0 bg-cover bg-center bg-no-repeat"
           style={{ 
-            backgroundImage: "url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=1920&q=80')"
+            backgroundImage: "url('/assets/login-bg.png')"
           }}
         />
         <div className="absolute inset-0 bg-gradient-to-r from-black/30 via-black/10 to-transparent" />

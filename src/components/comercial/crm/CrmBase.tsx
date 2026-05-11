@@ -12,8 +12,7 @@ import CrmLeadsTable from "./CrmLeadsTable";
 import CrmComunicacao from "./CrmComunicacao";
 import CrmPropostas from "./CrmPropostas";
 import CrmRelatorios from "./CrmRelatorios";
-// Mantém as abas antigas para retrocompatibilidade
-import CrmAtividades from "./CrmAtividades";
+import AgendaComercial from "./AgendaComercial";
 
 interface LeadMarketing {
   id: string;
@@ -151,7 +150,7 @@ export default function CrmBase() {
           </TabsContent>
 
           <TabsContent value="atividades" className="m-0">
-            <CrmAtividades />
+            <AgendaComercial />
           </TabsContent>
         </div>
       </Tabs>

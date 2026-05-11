@@ -30,6 +30,7 @@ import Recrutamento from "@/pages/Recrutamento";
 import Biblioteca from "@/pages/Biblioteca";
 import Governanca from "@/pages/Governanca";
 import IAAutomacoes from "@/pages/IAAutomacoes";
+import IaAutomacao from "@/pages/IaAutomacao";
 import MonitorIntegracoes from "@/pages/MonitorIntegracoes";
 import CadastroPrestador from "@/pages/CadastroPrestador";
 import Comunicacao from "@/pages/Comunicacao";
@@ -38,6 +39,9 @@ import Combustiveis from "@/pages/Combustiveis";
 import Seguros from "@/pages/Seguros";
 import Roteirizador from "@/components/Roteirizador";
 import DevTesteTMS from "@/pages/DevTesteTMS";
+import IntegracoesTMS from "@/pages/IntegracoesTMS";
+import MensagensWhatsApp from "@/pages/MensagensWhatsApp";
+import TesteInteligencia from "@/pages/TesteInteligencia";
 
 const queryClient = new QueryClient();
 
@@ -81,12 +85,16 @@ const App = () => (
             <Route path="/biblioteca" element={<Biblioteca />} />
             <Route path="/governanca" element={<Governanca />} />
             <Route path="/ia-automacoes" element={<IAAutomacoes />} />
+            <Route path="/ia-central-automacao" element={<IaAutomacao />} />
             <Route path="/monitor-api" element={<MonitorIntegracoes />} />
             <Route path="/app-prestador" element={<AppPrestador />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
             <Route path="/comunicacao" element={<Comunicacao />} />
             <Route path="/seguros" element={<Seguros />} />
             <Route path="/dev-teste" element={<DevTesteTMS />} />
+            <Route path="/inteligencia" element={<TesteInteligencia />} />
+            <Route path="/integracoes" element={<IntegracoesTMS />} />
+            <Route path="/mensagens-whatsapp" element={<MensagensWhatsApp />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

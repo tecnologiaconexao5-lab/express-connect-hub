@@ -28,7 +28,7 @@ const CadastrosClientes = () => {
   }
 
   return (
-    <div className="animate-fade-in max-w-7xl mx-auto space-y-4">
+    <div className="animate-fade-in w-full max-w-none px-6 space-y-4">
       <div className="flex items-center gap-3 mb-6">
         <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
           <Users className="w-5 h-5 text-primary" />
