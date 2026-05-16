@@ -30,3 +30,6 @@ dist-ssr
 .env.local
 .env.*
 !.env.example
+
+# Environment
+.env
