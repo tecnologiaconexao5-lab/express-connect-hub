@@ -1,31 +1,82 @@
-version: '3.8'
-
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: evolution_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - evolution_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: evolution_redis
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - evolution_network
+
   evolution-api:
     image: evoapicloud/evolution-api:v2.3.7
-    container_name: evolution-api
+    container_name: tms_evolution
     restart: always
     ports:
       - "8080:8080"
     environment:
-      - AUTHENTICATION_API_KEY=123456
-      - DATABASE_ENABLED=true
-      - DATABASE_PROVIDER=postgresql
-      - DATABASE_CONNECTION_URI=postgresql://evolution:evolution@postgres:5432/evolution
-      - CACHE_REDIS_ENABLED=true
-      - CACHE_REDIS_URI=redis://redis:6379/6
-      - CACHE_REDIS_PREFIX_KEY=evolution
-      - CACHE_REDIS_TTL=604800
+      # Server
       - SERVER_TYPE=http
       - SERVER_PORT=8080
       - SERVER_URL=http://localhost:8080
+
+      # Autenticação
+      - AUTHENTICATION_API_KEY=123456
+
+      # CORS
       - CORS_ORIGIN=*
-      - LOG_LEVEL=ERROR
+
+      # Banco de Dados (PostgreSQL)
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://postgres:postgres@postgres:5432/evolution_db?schema=public
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      - DATABASE_SAVE_DATA_CONTACTS=true
+      - DATABASE_SAVE_DATA_CHATS=true
+
+      # Cache (Redis)
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379
+
+      # QR Code
       - QRCODE_LIMIT=30
       - QRCODE_COLOR=#198754
-      - CONFIG_SESSION_PHONE_VERSION=2.3000.1030831524
+
+      # Sessão WhatsApp / Baileys
       - CONFIG_SESSION_PHONE_CLIENT=Chrome
       - CONFIG_SESSION_PHONE_NAME=Chrome
+
+      # Logging
+      - LOG_LEVEL=ERROR
+
+      # Gerenciamento
+      - DEL_INSTANCE=true
+
     volumes:
       - evolution_instances:/evolution/instances
     depends_on:
@@ -34,46 +85,14 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - evolution-network
-
-  postgres:
-    image: postgres:15-alpine
-    container_name: postgres
-    restart: always
-    environment:
-      POSTGRES_USER: evolution
-      POSTGRES_PASSWORD: evolution
-      POSTGRES_DB: evolution
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    networks:
-      - evolution-network
-
-  redis:
-    image: redis:alpine
-    container_name: redis
-    restart: always
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    networks:
-      - evolution-network
+      - evolution_network
 
 networks:
-  evolution-network:
+  evolution_network:
     driver: bridge
+    name: evolution_network
 
 volumes:
-  evolution_instances:
   postgres_data:
   redis_data:
+  evolution_instances:

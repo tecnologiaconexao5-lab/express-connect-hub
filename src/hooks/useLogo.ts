@@ -68,6 +68,20 @@ export function useLogo() {
       }
       return config.logoUrl;
     }
+    // Fallback para o logo oficial da Conexão Express
+    try {
+      const response = await fetch('/logo-oficial-conexao.png');
+      if (response.ok) {
+        const blob = await response.blob();
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch (e) {
+      console.warn("Logo oficial não encontrado:", e);
+    }
     return '';
   };
 

@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, FileText, Eye, Edit, Copy, CheckCircle, XCircle, FileDown } from "lucide-react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import {
+  Search, Plus, Filter, Eye, Edit, Copy, CheckCircle, XCircle,
+  FileDown, ArrowRight, ExternalLink, Loader2, FileCheck, Send
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +12,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { mockOrcamentos } from "./mockOrcamentos";
 import { Orcamento, OrcamentoStatus, STATUS_CONFIG } from "./types";
 import OrcamentoForm from "./OrcamentoForm";
 import OrcamentoPreview from "./OrcamentoPreview";
@@ -17,6 +19,11 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { gerarPdfOrcamento } from "./orcamentoPdf";
 import { toOrcamentoInsert } from "@/lib/dbMappers";
+import {
+  aprovarOrcamento,
+  gerarOSDoOrcamento,
+  verificarOSJaGerada,
+} from "@/services/comercial/orcamentoToOSService";
 
 const ITEMS_PER_PAGE = 8;
 
@@ -26,7 +33,6 @@ const OrcamentosLista = () => {
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [filtroResponsavel, setFiltroResponsavel] = useState("todos");
-  const [filtroPeriodo, setFiltroPeriodo] = useState("todos");
   const [pagina, setPagina] = useState(1);
   const [orcamentoSelecionado, setOrcamentoSelecionado] = useState<Orcamento | null>(null);
   const [modoForm, setModoForm] = useState<"ver" | "editar" | "novo" | null>(null);
@@ -34,13 +40,18 @@ const OrcamentosLista = () => {
   const [motivoReprovacao, setMotivoReprovacao] = useState("");
   const [showPreview, setShowPreview] = useState(false);
 
+  // Loading por ação individual (key = orc.id)
+  const [loadingAprovar, setLoadingAprovar] = useState<string | null>(null);
+  const [loadingGerarOS, setLoadingGerarOS] = useState<string | null>(null);
+
+  // Mapa de OS vinculadas (orcamento.id → {osId, osNumero})
+  const [osVinculadas, setOsVinculadas] = useState<Record<string, { osId: string; osNumero: string }>>({});
+
   const responsaveis = [...new Set(orcamentos.map((o) => o.responsavel))];
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
-    console.log("[ORCAMENTO REAL] componente carregado: OrcamentosLista");
     fetchOrcamentos();
-
     if (searchParams.get("action") === "novo") {
       setModoForm("novo");
       searchParams.delete("action");
@@ -51,25 +62,27 @@ const OrcamentosLista = () => {
   const fetchOrcamentos = async () => {
     try {
       setIsLoading(true);
-      console.log("[ORCAMENTO REAL CORRIGIDO] Lista sem join carregada");
-      
       const { data, error } = await supabase
         .from("orcamentos")
         .select("*")
         .order("created_at", { ascending: false });
-      
+
       if (error) {
-        console.error("[OrcamentosLista] Erro ao carregar:", error);
-        if (error.code === "42P01") {
-          setOrcamentos([]);
-          toast.info("Nenhum orçamento encontrado");
-          return;
-        }
+        if (error.code === "42P01") { setOrcamentos([]); return; }
         throw error;
       }
-      setOrcamentos((data as any) || []);
+
+      const lista = (data as any) || [];
+      setOrcamentos(lista);
+
+      // Carregar OS vinculadas para orçamentos convertidos
+      const convertidos = lista.filter(
+        (o: Orcamento) => o.status === "convertido" || o.status === "convertido_em_os"
+      );
+      if (convertidos.length > 0) {
+        await carregarOsVinculadas(convertidos);
+      }
     } catch (e: any) {
-      console.error("[OrcamentosLista] Erro catch:", e);
       if (e.code !== "42P01") toast.error("Erro ao carregar orçamentos.");
       setOrcamentos([]);
     } finally {
@@ -77,53 +90,109 @@ const OrcamentosLista = () => {
     }
   };
 
-  const filtrados = orcamentos.filter((o) => {
-    const matchBusca = !busca || o.numero.toLowerCase().includes(busca.toLowerCase()) || o.cliente.toLowerCase().includes(busca.toLowerCase()) || o.clienteCnpj.includes(busca);
-    const matchStatus = filtroStatus === "todos" || o.status === filtroStatus;
-    const matchResp = filtroResponsavel === "todos" || o.responsavel === filtroResponsavel;
-
-    let matchPeriodo = true;
-    if (filtroPeriodo !== "todos") {
-      const hoje = new Date();
-      const dataOrc = new Date(o.dataEmissao);
-      if (filtroPeriodo === "hoje") {
-        matchPeriodo = dataOrc.toDateString() === hoje.toDateString();
-      } else if (filtroPeriodo === "semana") {
-        const umaSemanaAtras = new Date(hoje);
-        umaSemanaAtras.setDate(hoje.getDate() - 7);
-        matchPeriodo = dataOrc >= umaSemanaAtras && dataOrc <= hoje;
-      } else if (filtroPeriodo === "mes") {
-        const umMesAtras = new Date(hoje);
-        umMesAtras.setMonth(hoje.getMonth() - 1);
-        matchPeriodo = dataOrc >= umMesAtras && dataOrc <= hoje;
+  const carregarOsVinculadas = async (convertidos: Orcamento[]) => {
+    const mapa: Record<string, { osId: string; osNumero: string }> = {};
+    for (const orc of convertidos) {
+      // Já tem no campo local
+      if (orc.osVinculadaId) {
+        mapa[orc.id] = { osId: orc.osVinculadaId, osNumero: orc.osVinculadaNumero || "" };
+        continue;
+      }
+      // Busca no banco
+      const check = await verificarOSJaGerada(orc.id);
+      if (check.jaGerada && check.osId) {
+        mapa[orc.id] = { osId: check.osId, osNumero: check.osNumero || "" };
       }
     }
+    setOsVinculadas(prev => ({ ...prev, ...mapa }));
+  };
 
-    return matchBusca && matchStatus && matchResp && matchPeriodo;
+  const filtrados = orcamentos.filter((o) => {
+    const matchBusca = !busca ||
+      o.numero.toLowerCase().includes(busca.toLowerCase()) ||
+      o.cliente.toLowerCase().includes(busca.toLowerCase()) ||
+      (o.clienteCnpj || "").includes(busca);
+    const matchStatus = filtroStatus === "todos" || o.status === filtroStatus;
+    const matchResp = filtroResponsavel === "todos" || o.responsavel === filtroResponsavel;
+    return matchBusca && matchStatus && matchResp;
   });
 
   const totalPaginas = Math.ceil(filtrados.length / ITEMS_PER_PAGE);
   const paginados = filtrados.slice((pagina - 1) * ITEMS_PER_PAGE, pagina * ITEMS_PER_PAGE);
-
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+  // ─── Aprovar ────────────────────────────────────────────────────────────────
   const handleAprovar = async (orc: Orcamento) => {
+    setLoadingAprovar(orc.id);
+    toast.loading("Aprovando orçamento...", { id: "aprovar" });
     try {
-      const historicoAtualizado = [...orc.historico, { data: new Date().toLocaleString("pt-BR"), acao: "Aprovado", usuario: "Usuário atual" }];
-      const res = await saveToSupabase({ ...orc, status: "aprovado" as OrcamentoStatus, historico: historicoAtualizado }, false);
-      if (res) toast.success("Orçamento Aprovado!");
+      const res = await aprovarOrcamento(orc);
+      if (res.success) {
+        toast.success("Orçamento aprovado com sucesso!", { id: "aprovar" });
+        fetchOrcamentos();
+      } else {
+        toast.error(res.erro || "Erro ao aprovar.", { id: "aprovar" });
+      }
     } catch {
-      toast.error("Erro ao aprovar.");
+      toast.error("Erro ao aprovar.", { id: "aprovar" });
+    } finally {
+      setLoadingAprovar(null);
     }
   };
 
+  // ─── Gerar OS ───────────────────────────────────────────────────────────────
+  const handleGerarOS = async (orc: Orcamento) => {
+    setLoadingGerarOS(orc.id);
+    toast.loading("Gerando ordem de serviço...", { id: "gerar-os" });
+    try {
+      const res = await gerarOSDoOrcamento(orc);
+      if (res.success) {
+        toast.success(`OS ${res.osNumero} criada com sucesso!`, { id: "gerar-os" });
+        if (res.osId && res.osNumero) {
+          setOsVinculadas(prev => ({
+            ...prev,
+            [orc.id]: { osId: res.osId!, osNumero: res.osNumero! },
+          }));
+        }
+        fetchOrcamentos();
+      } else {
+        // Se já existe OS, guarda o vínculo
+        if (res.osId && res.osNumero) {
+          setOsVinculadas(prev => ({
+            ...prev,
+            [orc.id]: { osId: res.osId!, osNumero: res.osNumero! },
+          }));
+        }
+        toast.error(res.erro || "Erro ao gerar OS.", { id: "gerar-os" });
+      }
+    } catch {
+      toast.error("Erro ao gerar OS.", { id: "gerar-os" });
+    } finally {
+      setLoadingGerarOS(null);
+    }
+  };
+
+  const navigate = useNavigate();
+
+  // ─── Abrir OS vinculada ──────────────────────────────────────────────────────
+  const handleAbrirOS = (osId: string) => {
+    navigate(`/operacao?os=${osId}`);
+  };
+
+  // ─── Reprovar ───────────────────────────────────────────────────────────────
   const handleReprovar = async () => {
     if (!dialogReprovar) return;
     try {
-      const historicoAtualizado = [...dialogReprovar.historico, { data: new Date().toLocaleString("pt-BR"), acao: `Reprovado: ${motivoReprovacao}`, usuario: "Usuário atual" }];
-      const res = await saveToSupabase({ ...dialogReprovar, status: "reprovado" as OrcamentoStatus, historico: historicoAtualizado, motivoReprovacao }, false);
+      const hist = [
+        ...(dialogReprovar.historico || []),
+        { data: new Date().toLocaleString("pt-BR"), acao: `Reprovado: ${motivoReprovacao}`, usuario: "Usuário atual" },
+      ];
+      const res = await saveToSupabase(
+        { ...dialogReprovar, status: "reprovado" as OrcamentoStatus, historico: hist, motivoReprovacao },
+        false
+      );
       if (res) {
-        toast.success("Orçamento Reprovado.");
+        toast.success("Orçamento reprovado.");
         setDialogReprovar(null);
         setMotivoReprovacao("");
       }
@@ -132,38 +201,52 @@ const OrcamentosLista = () => {
     }
   };
 
+  // ─── Duplicar ───────────────────────────────────────────────────────────────
   const handleDuplicar = async (orc: Orcamento) => {
-    const novoNumero = `ORC-${String(Math.floor(Math.random() * 9000) + 1000)}`;
-    const novo: Orcamento = { ...JSON.parse(JSON.stringify(orc)), id: String(Date.now()), numero: novoNumero, status: "rascunho", dataEmissao: new Date().toISOString().split("T")[0], historico: [{ data: new Date().toLocaleString("pt-BR"), acao: `Duplicado de ${orc.numero}`, usuario: "Usuário atual" }] };
+    const novoNumero = `ORC-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,"0")}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
+    const novo: Orcamento = {
+      ...JSON.parse(JSON.stringify(orc)),
+      id: String(Date.now()),
+      numero: novoNumero,
+      status: "rascunho",
+      dataEmissao: new Date().toISOString().split("T")[0],
+      osVinculadaId: undefined,
+      osVinculadaNumero: undefined,
+      historico: [{ data: new Date().toLocaleString("pt-BR"), acao: `Duplicado de ${orc.numero}`, usuario: "Usuário atual" }],
+    };
     await saveToSupabase(novo, true);
+  };
+
+  // ─── Enviar (rascunho → enviado) ────────────────────────────────────────────
+  const handleEnviar = async (orc: Orcamento) => {
+    try {
+      const hist = [
+        ...(orc.historico || []),
+        { data: new Date().toLocaleString("pt-BR"), acao: "Orçamento enviado ao cliente", usuario: "Usuário atual" },
+      ];
+      const res = await saveToSupabase({ ...orc, status: "enviado" as OrcamentoStatus, historico: hist }, false);
+      if (res) toast.success("Orçamento marcado como Enviado!");
+    } catch {
+      toast.error("Erro ao atualizar status.");
+    }
   };
 
   const saveToSupabase = async (orc: Orcamento, isNew: boolean) => {
     try {
       const dbPayload = toOrcamentoInsert(orc);
-      let error = null;
+      const result = isNew
+        ? await supabase.from("orcamentos").insert([dbPayload]).select()
+        : await supabase.from("orcamentos").update(dbPayload).eq("id", orc.id).select();
 
-      if (isNew) {
-        const result = await supabase.from("orcamentos").insert([dbPayload]).select();
-        error = result.error;
-      } else {
-        const result = await supabase.from("orcamentos").update(dbPayload).eq("id", orc.id).select();
-        error = result.error;
-      }
-
-      if (error) {
-        console.error("[saveToSupabase] Erro ao salvar:", error.message, error.details);
-        toast.error(`Erro ao salvar: ${error.message}`);
+      if (result.error) {
+        toast.error(`Erro ao salvar: ${result.error.message}`);
         return false;
       }
-
       fetchOrcamentos();
-      toast.success(isNew ? "Orçamento criado com sucesso!" : "Orçamento atualizado!");
+      toast.success(isNew ? "Orçamento criado!" : "Orçamento atualizado!");
       return true;
-
     } catch (e: any) {
-      console.error("[saveToSupabase] Exceção:", e);
-      toast.error("Erro inesperado ao salvar o orçamento.");
+      toast.error("Erro inesperado ao salvar.");
       return false;
     }
   };
@@ -173,7 +256,6 @@ const OrcamentosLista = () => {
     setModoForm(null);
     setOrcamentoSelecionado(null);
   };
-
 
   if (modoForm && (orcamentoSelecionado || modoForm === "novo")) {
     return (
@@ -208,7 +290,7 @@ const OrcamentosLista = () => {
               <Input placeholder="Buscar por número, cliente ou CNPJ..." value={busca} onChange={(e) => { setBusca(e.target.value); setPagina(1); }} className="pl-9" />
             </div>
             <Select value={filtroStatus} onValueChange={(v) => { setFiltroStatus(v); setPagina(1); }}>
-              <SelectTrigger className="w-[160px]"><Filter className="w-3 h-3 mr-1" /><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="w-[180px]"><Filter className="w-3 h-3 mr-1" /><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos os status</SelectItem>
                 {Object.entries(STATUS_CONFIG).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
@@ -228,61 +310,178 @@ const OrcamentosLista = () => {
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Número</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Emissão</TableHead>
-                <TableHead>Validade</TableHead>
-                <TableHead className="text-right">Valor Total</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Responsável</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginados.map((orc) => (
-                <TableRow key={orc.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setOrcamentoSelecionado(orc); setShowPreview(true); }}>
-                  <TableCell className="font-medium text-primary">{orc.numero}</TableCell>
-                  <TableCell>{orc.cliente}</TableCell>
-                  <TableCell>{(() => { try { return orc.dataEmissao ? new Date(orc.dataEmissao).toLocaleDateString("pt-BR") : "—" } catch { return "—" } })()}</TableCell>
-                  <TableCell>{(() => { try { return orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "—" } catch { return "—" } })()}</TableCell>
-                  <TableCell className="text-right font-semibold">{fmt(orc.valores?.valorFinal || 0)}</TableCell>
-                  <TableCell>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_CONFIG[orc.status]?.color || 'bg-gray-100 text-gray-800'}`}>
-                      {STATUS_CONFIG[orc.status]?.label || orc.status}
-                    </span>
-                  </TableCell>
-                  <TableCell>{orc.responsavel || "—"}</TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Visualizar" onClick={() => { setOrcamentoSelecionado(orc); setShowPreview(true); }}><Eye className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar" onClick={() => { setOrcamentoSelecionado(orc); setModoForm("editar"); }}><Edit className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Gerar PDF" onClick={() => gerarPdfOrcamento(orc)}><FileDown className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Duplicar" onClick={() => handleDuplicar(orc)}><Copy className="w-4 h-4" /></Button>
-                      {(orc.status === "enviado" || orc.status === "em_analise") && (
-                        <>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" title="Aprovar" onClick={() => handleAprovar(orc)}><CheckCircle className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" title="Reprovar" onClick={() => setDialogReprovar(orc)}><XCircle className="w-4 h-4" /></Button>
-                        </>
-                      )}
-                    </div>
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Número</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Emissão</TableHead>
+                  <TableHead className="text-right">Valor</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>OS Vinculada</TableHead>
+                  <TableHead>Responsável</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
-              ))}
-              {paginados.length === 0 && (
-                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum orçamento encontrado.</TableCell></TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow><TableCell colSpan={8} className="text-center py-8">Carregando...</TableCell></TableRow>
+                ) : paginados.length === 0 ? (
+                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum orçamento encontrado.</TableCell></TableRow>
+                ) : paginados.map((orc) => {
+                  const osVinc = osVinculadas[orc.id];
+                  const jaConvertido = orc.status === "convertido" || orc.status === "convertido_em_os";
+                  const isAprovandoThis = loadingAprovar === orc.id;
+                  const isGerandoThis = loadingGerarOS === orc.id;
+
+                  return (
+                    <TableRow key={orc.id} className="hover:bg-muted/50 group">
+                      <TableCell className="font-medium text-primary cursor-pointer" onClick={() => { setOrcamentoSelecionado(orc); setShowPreview(true); }}>
+                        {orc.numero}
+                      </TableCell>
+                      <TableCell onClick={() => { setOrcamentoSelecionado(orc); setShowPreview(true); }} className="cursor-pointer">
+                        <div className="font-medium">{orc.cliente}</div>
+                        <div className="text-xs text-muted-foreground">{orc.clienteCnpj}</div>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {orc.dataEmissao ? (() => { try { return new Date(orc.dataEmissao).toLocaleDateString("pt-BR"); } catch { return "—"; } })() : "—"}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {fmt(orc.valores?.valorFinal || 0)}
+                      </TableCell>
+                      <TableCell>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_CONFIG[orc.status]?.color || "bg-gray-100 text-gray-800"}`}>
+                          {STATUS_CONFIG[orc.status]?.label || orc.status}
+                        </span>
+                      </TableCell>
+
+                      {/* Coluna OS Vinculada */}
+                      <TableCell>
+                        {jaConvertido && osVinc ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
+                              <FileCheck className="w-3 h-3" />{osVinc.osNumero}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-[10px] px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                              onClick={() => handleAbrirOS(osVinc.osId)}
+                            >
+                              <ExternalLink className="w-3 h-3 mr-1" /> Abrir OS
+                            </Button>
+                          </div>
+                        ) : jaConvertido ? (
+                          <span className="text-xs text-muted-foreground">Carregando...</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+
+                      <TableCell>{orc.responsavel || "—"}</TableCell>
+
+                      {/* Ações por status */}
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1">
+                          {/* Sempre disponíveis */}
+                          <Button variant="ghost" size="icon" className="h-8 w-8" title="Visualizar" onClick={() => { setOrcamentoSelecionado(orc); setShowPreview(true); }}>
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" title="Gerar PDF" onClick={async () => await gerarPdfOrcamento(orc)}>
+                            <FileDown className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" title="Duplicar" onClick={() => handleDuplicar(orc)}>
+                            <Copy className="w-4 h-4" />
+                          </Button>
+
+                          {/* Rascunho → Editar + Enviar */}
+                          {orc.status === "rascunho" && (
+                            <>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar" onClick={() => { setOrcamentoSelecionado(orc); setModoForm("editar"); }}>
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-blue-600 hover:bg-blue-50"
+                                title="Marcar como Enviado"
+                                onClick={() => handleEnviar(orc)}
+                              >
+                                <Send className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
+
+                          {/* Enviado / Em análise → Aprovar + Reprovar */}
+                          {(orc.status === "enviado" || orc.status === "em_analise") && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-green-600 hover:bg-green-50"
+                                title="Aprovar Orçamento"
+                                disabled={isAprovandoThis}
+                                onClick={() => handleAprovar(orc)}
+                              >
+                                {isAprovandoThis ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-red-500 hover:bg-red-50"
+                                title="Reprovar"
+                                onClick={() => setDialogReprovar(orc)}
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
+
+                          {/* Aprovado → Gerar OS */}
+                          {orc.status === "aprovado" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2 text-xs text-emerald-700 hover:bg-emerald-50 font-semibold"
+                              title="Gerar Ordem de Serviço"
+                              disabled={isGerandoThis}
+                              onClick={() => handleGerarOS(orc)}
+                            >
+                              {isGerandoThis
+                                ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Gerando...</>
+                                : <><ArrowRight className="w-3 h-3 mr-1" /> Gerar OS</>
+                              }
+                            </Button>
+                          )}
+
+                          {/* Convertido → Abrir OS */}
+                          {jaConvertido && osVinc && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-emerald-700 hover:bg-emerald-50"
+                              title={`Abrir OS ${osVinc.osNumero}`}
+                              onClick={() => handleAbrirOS(osVinc.osId)}
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
       {/* Pagination */}
       {totalPaginas > 1 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">{filtrados.length} orçamento(s) encontrado(s)</p>
+          <p className="text-sm text-muted-foreground">{filtrados.length} orçamento(s)</p>
           <div className="flex gap-1">
             {Array.from({ length: totalPaginas }, (_, i) => (
               <Button key={i} variant={pagina === i + 1 ? "default" : "outline"} size="sm" onClick={() => setPagina(i + 1)}>{i + 1}</Button>
@@ -291,13 +490,13 @@ const OrcamentosLista = () => {
         </div>
       )}
 
-      {/* Reprovar Dialog */}
+      {/* Dialog Reprovar */}
       <Dialog open={!!dialogReprovar} onOpenChange={() => setDialogReprovar(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>Reprovar Orçamento {dialogReprovar?.numero}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">Informe o motivo da reprovação:</p>
-            <Textarea value={motivoReprovacao} onChange={(e) => setMotivoReprovacao(e.target.value)} placeholder="Motivo da reprovação..." rows={3} />
+            <Textarea value={motivoReprovacao} onChange={(e) => setMotivoReprovacao(e.target.value)} placeholder="Motivo..." rows={3} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogReprovar(null)}>Cancelar</Button>
@@ -306,7 +505,7 @@ const OrcamentosLista = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Preview Orçamento */}
+      {/* Modal Preview */}
       <Dialog open={showPreview} onOpenChange={(open) => { if (!open) { setShowPreview(false); setOrcamentoSelecionado(null); } }}>
         <DialogContent className="max-w-[90vw] max-h-[90vh] w-full h-full overflow-hidden flex flex-col p-0">
           <DialogHeader className="px-6 py-4 border-b">

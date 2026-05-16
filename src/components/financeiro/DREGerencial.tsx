@@ -9,6 +9,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { carregarLogoBase64Utils } from "@/utils/pdfGenerator";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtPct = (v: number) => v.toFixed(1) + "%";
@@ -375,12 +376,20 @@ export default function DREGerencial() {
     );
   };
 
-  const gerarPDF = () => {
+  const gerarPDF = async () => {
     const doc = new jsPDF();
+    const logo = await carregarLogoBase64Utils();
     
-    doc.setFontSize(18);
-    doc.setTextColor(15, 26, 46);
-    doc.text("DEMONSTRAÇÃO DE RESULTADO DO EXERCÍCIO", 105, 20, { align: "center" });
+    if (logo) {
+      doc.addImage(logo, "PNG", 14, 8, 36, 12);
+      doc.setFontSize(16);
+      doc.setTextColor(15, 26, 46);
+      doc.text("DEMONSTRAÇÃO DE RESULTADO", 105, 15, { align: "center" });
+    } else {
+      doc.setFontSize(18);
+      doc.setTextColor(15, 26, 46);
+      doc.text("DEMONSTRAÇÃO DE RESULTADO DO EXERCÍCIO", 105, 20, { align: "center" });
+    }
     
     doc.setFontSize(12);
     doc.setTextColor(100);
@@ -495,11 +504,11 @@ export default function DREGerencial() {
               <SelectItem value="04/2026">Abril 2026</SelectItem>
               <SelectItem value="03/2026">Março 2026</SelectItem>
               <SelectItem value="02/2026">Fevereiro 2026</SelectItem>
-              <SelectItem value="01/2026">Janeiro 2026</SelectItem>
+            <SelectItem value="01/2026">Janeiro 2026</SelectItem>
               <SelectItem value="2025">Ano 2025</SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={gerarPDF} className="gap-2 bg-orange-500 hover:bg-orange-600">
+          <Button onClick={async () => await gerarPDF()} className="gap-2 bg-orange-500 hover:bg-orange-600">
             <Download className="w-4 h-4" />
             Exportar PDF
           </Button>

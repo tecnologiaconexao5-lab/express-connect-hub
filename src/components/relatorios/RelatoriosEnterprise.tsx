@@ -84,15 +84,39 @@ const mockPagamentosPrestadores: PagamentoPrestador[] = [
   { id: 7, prestador: "João Transporte", os: "OS-427", competencia: "03/2026", valorBruto: 1400, inss: 154, irrf: 0, outrosDescontos: 0, valorLiquido: 1246, formaPagamento: "PIX", status: "Pago", banco: "", pix: "joao@pix.com" },
 ];
 
-const generateExtratoPDF = (data: OS[], filtros: any) => {
+const carregarLogoBase64 = async (): Promise<string | null> => {
+  try {
+    const response = await fetch('/logo-oficial-conexao.png');
+    if (response.ok) {
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    }
+  } catch (e) {
+    console.warn("Logo não encontrado:", e);
+  }
+  return null;
+};
+
+const generateExtratoPDF = async (data: OS[], filtros: any) => {
   const doc = new jsPDF();
+  const logo = await carregarLogoBase64();
   
   doc.setFillColor(15, 26, 46);
   doc.rect(0, 0, 220, 30, "F");
   
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(20);
-  doc.text("CONEXÃO EXPRESS", 14, 18);
+  
+  if (logo) {
+    doc.addImage(logo, "PNG", 14, 8, 36, 12);
+  } else {
+    doc.setFontSize(20);
+    doc.text("CONEXÃO EXPRESS", 14, 18);
+  }
+  
   doc.setFontSize(12);
   doc.text("EXTRATO OPERACIONAL", 14, 26);
   
@@ -177,14 +201,20 @@ const generateExtratoPDF = (data: OS[], filtros: any) => {
   doc.save("extrato_operacional.pdf");
 };
 
-const generateFaturamentoPDF = (cliente: Cliente) => {
+const generateFaturamentoPDF = async (cliente: Cliente) => {
   const doc = new jsPDF();
+  const logo = await carregarLogoBase64();
   
   doc.setFillColor(15, 26, 46);
   doc.rect(0, 0, 220, 20, "F");
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(16);
-  doc.text("CONEXÃO EXPRESS", 14, 14);
+  
+  if (logo) {
+    doc.addImage(logo, "PNG", 14, 4, 36, 12);
+  } else {
+    doc.setFontSize(16);
+    doc.text("CONEXÃO EXPRESS", 14, 14);
+  }
   
   doc.setTextColor(249, 115, 22);
   doc.setFontSize(14);
@@ -461,7 +491,7 @@ export default function RelatoriosEnterprise() {
                 </Card>
               ))}
             </div>
-            <Button onClick={() => generateExtratoPDF(filteredOS, filtros)} className="gap-2 bg-orange-500 hover:bg-orange-600 ml-4">
+            <Button onClick={async () => await generateExtratoPDF(filteredOS, filtros)} className="gap-2 bg-orange-500 hover:bg-orange-600 ml-4">
               <Download className="w-4 h-4" />
               Gerar PDF
             </Button>
@@ -567,7 +597,7 @@ export default function RelatoriosEnterprise() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Detalhes - {clienteSelecionado.nome}</CardTitle>
-                <Button onClick={() => generateFaturamentoPDF(clienteSelecionado)} className="gap-2 bg-orange-500 hover:bg-orange-600">
+                <Button onClick={async () => await generateFaturamentoPDF(clienteSelecionado)} className="gap-2 bg-orange-500 hover:bg-orange-600">
                   <Download className="w-4 h-4" />
                   Gerar PDF
                 </Button>

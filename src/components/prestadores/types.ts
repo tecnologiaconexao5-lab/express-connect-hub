@@ -160,6 +160,8 @@ export interface Prestador {
   conferenciManual: boolean;
   franquiaKm?: number;
   observacoesFinanceiras?: string;
+  rntrc?: string;
+  antt?: string;
   // Qualidade
   scoreInterno: number;
   avaliacaoOperacional?: string;

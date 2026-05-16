@@ -10,9 +10,14 @@ const BRANCO = [255, 255, 255];
 const CNPJ_EMPRESA = "42.796.040/0001-31";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const fmtDate = (d: string) => { try { return new Date(d).toLocaleDateString("pt-BR"); } catch { return d; } };
+const fmtDate = (d: string) => {
+  if (!d) return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString("pt-BR");
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString("pt-BR");
+  return dt.toLocaleDateString("pt-BR");
+};
 
-export const gerarPdfOrcamento = (orc: Orcamento) => {
+export const gerarPdfOrcamento = async (orc: Orcamento) => {
   const doc = new jsPDF("p", "mm", "a4");
   const W = 210;
   const M = 15;
@@ -22,6 +27,22 @@ export const gerarPdfOrcamento = (orc: Orcamento) => {
   const setColor = (rgb: number[]) => { doc.setTextColor(rgb[0], rgb[1], rgb[2]); };
   const setFill = (rgb: number[]) => { doc.setFillColor(rgb[0], rgb[1], rgb[2]); };
 
+  // Fetch logo-oficial-conexao.png
+  let logoStr = null;
+  try {
+    const response = await fetch('/logo-oficial-conexao.png');
+    if (response.ok) {
+      const blob = await response.blob();
+      logoStr = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    }
+  } catch (e) {
+    console.warn("Logo não encontrado:", e);
+  }
+
   // ========= HEADER BAR =========
   setFill(AZUL);
   doc.rect(0, 0, W, 42, "F");
@@ -29,9 +50,19 @@ export const gerarPdfOrcamento = (orc: Orcamento) => {
   doc.rect(0, 42, W, 2.5, "F");
 
   // Logo
-  try {
-    doc.addImage(LOGO_BASE64, "PNG", M, 5, 55, 22);
-  } catch {
+  if (logoStr) {
+    try {
+      doc.addImage(logoStr, "PNG", M, 8, 36, 12);
+    } catch {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(20);
+      setColor(BRANCO);
+      doc.text("CONEXÃO EXPRESS", M, 18);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text("TRANSPORTES & LOGÍSTICA", M, 24);
+    }
+  } else {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(20);
     setColor(BRANCO);
@@ -112,16 +143,11 @@ export const gerarPdfOrcamento = (orc: Orcamento) => {
   y += 9;
 
   const resumoItems = [
-    { label: "Valor Base", value: fmt(orc.valores.valorBase) },
-    { label: "Adicionais", value: fmt(orc.valores.adicionais) },
-    { label: "Pedágio", value: fmt(orc.valores.pedagio) },
-    { label: "Km Excedente", value: fmt(orc.valores.kmExcedente) },
-    { label: "Ajudante", value: fmt(orc.valores.ajudante) },
-    { label: "Descontos", value: `- ${fmt(orc.valores.descontos)}` },
-  ].filter((r) => {
-    const num = parseFloat(r.value.replace(/[^\d,-]/g, "").replace(",", "."));
-    return num !== 0;
-  });
+    { label: "Valor Transporte", value: fmt(orc.valores.valorBase), raw: orc.valores.valorBase },
+    { label: "Pedágio", value: fmt(orc.valores.pedagio), raw: orc.valores.pedagio },
+    { label: "Adicionais", value: fmt(orc.valores.adicionais), raw: orc.valores.adicionais },
+    orc.valores.descontos > 0 ? { label: "Descontos", value: `- ${fmt(orc.valores.descontos)}`, raw: orc.valores.descontos } : null,
+  ].filter((r): r is NonNullable<typeof r> => r !== null && r.raw !== 0);
 
   const boxH = resumoItems.length * 6.5 + 18;
   setFill([245, 248, 252]);
@@ -216,15 +242,11 @@ export const gerarPdfOrcamento = (orc: Orcamento) => {
   y += 9;
 
   const totBody = [
-    ["Valor Base", fmt(orc.valores.valorBase)],
-    ["Adicionais", fmt(orc.valores.adicionais)],
+    ["Valor Transporte", fmt(orc.valores.valorBase)],
     ["Pedágio", fmt(orc.valores.pedagio)],
-    ["Km Excedente", fmt(orc.valores.kmExcedente)],
-    ["Ajudante", fmt(orc.valores.ajudante)],
-    ["Devolução", fmt(orc.valores.devolucao)],
-    ["Reentrega", fmt(orc.valores.reentrega)],
-    ["Descontos", `- ${fmt(orc.valores.descontos)}`],
-  ];
+    ["Adicionais", fmt(orc.valores.adicionais)],
+    orc.valores.descontos > 0 ? ["Descontos", `- ${fmt(orc.valores.descontos)}`] : null,
+  ].filter(Boolean) as string[][];
 
   autoTable(doc, {
     startY: y,

@@ -26,6 +26,12 @@ ALTER TABLE prestadores ADD COLUMN IF NOT EXISTS centro_custo text;
 ALTER TABLE prestadores ADD COLUMN IF NOT EXISTS retencoes text;
 ALTER TABLE prestadores ADD COLUMN IF NOT EXISTS conferencia_manual boolean DEFAULT false;
 ALTER TABLE prestadores ADD COLUMN IF NOT EXISTS observacoes_financeiras text;
+ALTER TABLE prestadores ADD COLUMN IF NOT EXISTS franquia_km numeric DEFAULT 0;
+ALTER TABLE prestadores ADD COLUMN IF NOT EXISTS rntrc text;
+ALTER TABLE prestadores ADD COLUMN IF NOT EXISTS antt text;
+
+-- Add RNTRC to veiculos table
+ALTER TABLE veiculos ADD COLUMN IF NOT EXISTS rntrc text;
 
 -- Ensure contratos_gerados has necessary columns
 ALTER TABLE contratos_gerados ADD COLUMN IF NOT EXISTS valor_contrato numeric;

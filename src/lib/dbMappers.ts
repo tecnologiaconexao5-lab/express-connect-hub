@@ -102,6 +102,8 @@ export interface PrestadorForm {
   conferenciManual?: boolean;
   franquiaKm?: number;
   observacoesFinanceiras?: string;
+  rntrc?: string;
+  antt?: string;
   scoreInterno?: number;
   avaliacaoOperacional?: string;
   qtdOperacoes?: number;
@@ -184,6 +186,8 @@ export interface PrestadorRow {
   conferencia_manual?: boolean;
   franquia_km?: number;
   observacoes_financeiras?: string;
+  rntrc?: string;
+  antt?: string;
   score_interno?: number;
   avaliacao_operacional?: string;
   qtd_operacoes?: number;
@@ -231,6 +235,7 @@ const PRESTADOR_ALLOWLIST: string[] = [
   'conta_contabil', 'centro_custo', 'retencoes',
   // Controle
   'conferencia_manual', 'franquia_km', 'observacoes_financeiras',
+  'rntrc', 'antt',
   // Histórico (JSON)
   'historico_ocorrencias', 'historico_bloqueios', 'historico_alteracoes',
   // Qualidade
@@ -322,6 +327,8 @@ export const toPrestadorInsert = (form: Partial<PrestadorForm>): Record<string, 
   if (form.conferenciManual !== undefined) raw.conferencia_manual = form.conferenciManual;
   if (has(form.franquiaKm)) raw.franquia_km = Number(form.franquiaKm);
   if (has(form.observacoesFinanceiras)) raw.observacoes_financeiras = String(form.observacoesFinanceiras);
+  if (has(form.rntrc)) raw.rntrc = String(form.rntrc);
+  if (has(form.antt)) raw.antt = String(form.antt);
   
   // Foto
   if (has(form.foto)) raw.foto = String(form.foto);
@@ -399,6 +406,8 @@ export const toPrestadorUpdate = (form: Partial<PrestadorForm>): Record<string, 
   if (form.conferenciManual !== undefined) raw.conferencia_manual = form.conferenciManual;
   if (has(form.franquiaKm)) raw.franquia_km = Number(form.franquiaKm);
   if (has(form.observacoesFinanceiras)) raw.observacoes_financeiras = String(form.observacoesFinanceiras);
+  if (has(form.rntrc)) raw.rntrc = String(form.rntrc);
+  if (has(form.antt)) raw.antt = String(form.antt);
   
   // Foto
   if (has(form.foto)) raw.foto = String(form.foto);
@@ -475,6 +484,8 @@ export const fromPrestadorRow = (item: PrestadorRow): PrestadorForm => {
     conferenciManual: item.conferencia_manual ?? false,
     franquiaKm: item.franquia_km,
     observacoesFinanceiras: item.observacoes_financeiras,
+    rntrc: item.rntrc,
+    antt: item.antt,
     scoreInterno: item.score_interno ?? 0,
     avaliacaoOperacional: item.avaliacao_operacional,
     qtdOperacoes: item.qtd_operacoes ?? 0,
@@ -1360,6 +1371,10 @@ export const toOrcamentoInsert = (form: Partial<OrcamentoForm>): Record<string, 
   if ((form as any).distancia_rota) (d as any).distancia_rota = (form as any).distancia_rota;
   if ((form as any).frete_sugerido) (d as any).frete_sugerido = (form as any).frete_sugerido;
   if ((form as any).motivoReprovacao) (d as any).motivo_reprovacao = (form as any).motivoReprovacao;
+  // Vínculo OS gerada
+  if ((form as any).osVinculadaId) (d as any).os_vinculada_id = (form as any).osVinculadaId;
+  if ((form as any).osVinculadaNumero) (d as any).os_vinculada_numero = (form as any).osVinculadaNumero;
+
 
   d.created_at = new Date().toISOString();
   d.updated_at = new Date().toISOString();
@@ -1412,6 +1427,9 @@ export const fromOrcamentoRow = (item: OrcamentoRow): OrcamentoForm => ({
   historico: item.historico || [],
   distancia_rota: (item as any).distancia_rota || undefined,
   frete_sugerido: (item as any).frete_sugerido || undefined,
+  // Vínculo OS gerada
+  osVinculadaId: (item as any).os_vinculada_id || undefined,
+  osVinculadaNumero: (item as any).os_vinculada_numero || undefined,
 });
 
 // ---------------- FINANCEIRO (RECEBER) ----------------

@@ -2,6 +2,7 @@ import { useState } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 import { 
   LayoutDashboard, 
   Upload, 
@@ -22,11 +23,17 @@ import {
   FileText,
 ChevronRight, 
   CheckCircle,
-  XCircle
+  XCircle,
+  Save,
+  Plus
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import MapboxMap from "@/components/MapboxMap";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { 
@@ -373,8 +380,103 @@ const RoteirizadorWeb = () => {
   
   const [distribuicaoGerada, setDistribuicaoGerada] = useState<ReturnType<typeof distribuirPedidosEntreVeiculos>>([]);
   const [isGerando, setIsGerando] = useState(false);
-  const [rotasCalculadas, setRotasCalculadas] = useState<Map<number, { distanciaKm: number; tempoMin: number; origem: string; alertas: string[] }>>(new Map());
+  const [rotasCalculadas, setRotasCalculadas] = useState<Map<number, { distanciaKm: number; tempoMin: number; origem: string; alertas: string[]; routeCoordinates?: [number, number][] }>>(new Map());
   const [isCalculandoRotas, setIsCalculandoRotas] = useState(false);
+  const [salvandoRota, setSalvandoRota] = useState<number | null>(null);
+
+  // Manual Add Form
+  const [novoPedido, setNovoPedido] = useState<Partial<PedidoRoteirizacao>>({
+    numeroPedido: "", cliente: "", destinatario: "", cep: "", enderecoCompleto: "",
+    bairro: "", cidade: "", estado: "", pesoKg: 0, quantidadeVolumes: 1, tipoCarga: "seco"
+  });
+
+  const handleAdicionarManual = () => {
+    if (!novoPedido.cep || !novoPedido.cidade || !novoPedido.estado) {
+      toast.error("Preencha ao menos CEP, Cidade e UF.");
+      return;
+    }
+    const pedidoCompleto: PedidoRoteirizacao = {
+      ...novoPedido,
+      id: "MAN-" + Date.now(),
+      numeroPedido: novoPedido.numeroPedido || "MAN-" + Date.now(),
+      cliente: novoPedido.cliente || "Manual",
+      destinatario: novoPedido.destinatario || "Manual",
+      telefone: novoPedido.telefone || "",
+      cep: novoPedido.cep || "",
+      enderecoCompleto: novoPedido.enderecoCompleto || "",
+      bairro: novoPedido.bairro || "",
+      cidade: novoPedido.cidade || "",
+      estado: novoPedido.estado || "",
+      latitude: 0,
+      longitude: 0,
+      pesoKg: novoPedido.pesoKg || 0,
+      quantidadeVolumes: novoPedido.quantidadeVolumes || 1,
+      cubagemM3: novoPedido.cubagemM3 || 0.01,
+      tipoCarga: novoPedido.tipoCarga || "seco",
+      secoOuRefrigerado: novoPedido.tipoCarga?.includes("refri") ? "refrigerado" : "seco",
+      status: "pendente",
+      prioridade: "normal",
+    } as PedidoRoteirizacao;
+
+    // Simulate geocoding via Mapbox if available, but for now we just push.
+    // Geocoding can be done automatically via a separate mapbox geocode call.
+    setPedidos([pedidoCompleto, ...pedidos]);
+    toast.success("Parada manual adicionada!");
+    setNovoPedido({
+      numeroPedido: "", cliente: "", destinatario: "", cep: "", enderecoCompleto: "",
+      bairro: "", cidade: "", estado: "", pesoKg: 0, quantidadeVolumes: 1, tipoCarga: "seco"
+    });
+  };
+
+  const handleSalvarRotaNoSupabase = async (resultado: any, index: number) => {
+    setSalvandoRota(index);
+    try {
+      const calculo = rotasCalculadas.get(index);
+      
+      const { data: rotaData, error: rotaError } = await supabase.from("rotas").insert([{
+        nome: `Rota ${getNomeTipoVeiculo(resultado.veiculo.tipoVeiculo)} - ${resultado.veiculo.placa || 'Sem Placa'}`,
+        data_rota: new Date().toISOString().split('T')[0],
+        tipo_rota: "entrega",
+        distancia_km: calculo?.distanciaKm || 0,
+        duracao_min: calculo?.tempoMin || 0,
+        peso_total: resultado.pedidos.reduce((acc: number, p: any) => acc + (p.pesoKg || 0), 0),
+        volumes_total: resultado.pedidos.reduce((acc: number, p: any) => acc + (p.quantidadeVolumes || 0), 0),
+        veiculo_sugerido: resultado.veiculo.tipoVeiculo,
+        status: "pendente",
+        metadata: { placa: resultado.veiculo.placa, origemCalculo: calculo?.origem }
+      }]).select().single();
+
+      if (rotaError) throw rotaError;
+
+      const paradasToInsert = resultado.pedidos.map((p: PedidoRoteirizacao, i: number) => ({
+        rota_id: rotaData.id,
+        sequencia: i + 1,
+        cliente_nome: p.cliente,
+        telefone: p.telefone,
+        cep: p.cep,
+        endereco: p.enderecoCompleto,
+        bairro: p.bairro,
+        cidade: p.cidade,
+        uf: p.estado,
+        latitude: p.latitude || null,
+        longitude: p.longitude || null,
+        peso: p.pesoKg,
+        volumes: p.quantidadeVolumes,
+        cubagem: p.cubagemM3,
+        status: "pendente",
+        prioridade: p.prioridade
+      }));
+
+      const { error: paradasError } = await supabase.from("rota_paradas").insert(paradasToInsert);
+      if (paradasError) throw paradasError;
+
+      toast.success("Rota salva no banco com sucesso!");
+    } catch (e: any) {
+      toast.error("Erro ao salvar rota: " + e.message);
+    } finally {
+      setSalvandoRota(null);
+    }
+  };
 
   const handleGerarRoteiros = () => {
     setIsGerando(true);
@@ -409,6 +511,7 @@ const RoteirizadorWeb = () => {
         tempoMin: resultado.tempoTotalMinutos,
         origem: resultado.origemCalculo,
         alertas: resultado.alertas,
+        routeCoordinates: resultado.routeCoordinates
       });
       setRotasCalculadas(novoMapa);
 
@@ -447,6 +550,7 @@ const RoteirizadorWeb = () => {
           tempoMin: calcResultado.tempoTotalMinutos,
           origem: calcResultado.origemCalculo,
           alertas: calcResultado.alertas,
+          routeCoordinates: calcResultado.routeCoordinates
         });
         setRotasCalculadas(novoMapa);
         
@@ -700,7 +804,59 @@ const RoteirizadorWeb = () => {
         <TabsContent value="importar" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Importar Pedidos por Planilha</CardTitle>
+              <CardTitle>Adicionar Parada Manual</CardTitle>
+              <CardDescription>Insira uma parada pontual sem precisar de planilha</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div>
+                  <Label>CEP *</Label>
+                  <Input value={novoPedido.cep} onChange={e => setNovoPedido({...novoPedido, cep: e.target.value})} placeholder="Ex: 01001-000" />
+                </div>
+                <div>
+                  <Label>Cidade *</Label>
+                  <Input value={novoPedido.cidade} onChange={e => setNovoPedido({...novoPedido, cidade: e.target.value})} placeholder="Ex: São Paulo" />
+                </div>
+                <div>
+                  <Label>UF *</Label>
+                  <Input value={novoPedido.estado} onChange={e => setNovoPedido({...novoPedido, estado: e.target.value})} placeholder="Ex: SP" />
+                </div>
+                <div>
+                  <Label>Destinatário</Label>
+                  <Input value={novoPedido.destinatario} onChange={e => setNovoPedido({...novoPedido, destinatario: e.target.value})} placeholder="Nome" />
+                </div>
+                <div>
+                  <Label>Endereço Completo</Label>
+                  <Input value={novoPedido.enderecoCompleto} onChange={e => setNovoPedido({...novoPedido, enderecoCompleto: e.target.value})} placeholder="Rua, Número..." />
+                </div>
+                <div>
+                  <Label>Peso (kg)</Label>
+                  <Input type="number" value={novoPedido.pesoKg || ''} onChange={e => setNovoPedido({...novoPedido, pesoKg: parseFloat(e.target.value)})} placeholder="Ex: 5.5" />
+                </div>
+                <div>
+                  <Label>Tipo Carga</Label>
+                  <Select value={novoPedido.tipoCarga} onValueChange={v => setNovoPedido({...novoPedido, tipoCarga: v})}>
+                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="seco">Seco</SelectItem>
+                      <SelectItem value="refrigerado">Refrigerado</SelectItem>
+                      <SelectItem value="fragil">Frágil</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <Button className="w-full" onClick={handleAdicionarManual}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Adicionar Parada
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Importar Planilha</CardTitle>
               <CardDescription>
                 Faça upload de uma planilha CSV ou Excel com os pedidos a serem roteirizados
               </CardDescription>
@@ -1085,15 +1241,28 @@ const RoteirizadorWeb = () => {
                                 <Badge variant={ocupacaoPeso > 90 || ocupacaoCubagem > 90 ? 'destructive' : ocupacaoPeso > 70 || ocupacaoCubagem > 70 ? 'default' : 'outline'} className="text-sm px-3 py-1">
                                   {Math.max(ocupacaoPeso, ocupacaoCubagem).toFixed(0)}% Ocupação Máx
                                 </Badge>
-                                <Button 
-                                  size="sm" 
-                                  variant="outline"
-                                  onClick={() => calcularDistanciaTempoUmaRota(resultado.pedidos, idx)}
-                                  disabled={isCalculandoRotas}
-                                >
-                                  <MapIcon className="w-3 h-3 mr-1" />
-                                  {rotasCalculadas.get(idx) ? 'Recalcular' : 'Calcular Distância'}
-                                </Button>
+                                <div className="flex gap-2">
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => calcularDistanciaTempoUmaRota(resultado.pedidos, idx)}
+                                    disabled={isCalculandoRotas}
+                                  >
+                                    <MapIcon className="w-3 h-3 mr-1" />
+                                    {rotasCalculadas.get(idx) ? 'Recalcular' : 'Calcular Distância'}
+                                  </Button>
+                                  {rotasCalculadas.get(idx) && (
+                                    <Button 
+                                      size="sm" 
+                                      className="bg-green-600 hover:bg-green-700"
+                                      onClick={() => handleSalvarRotaNoSupabase(resultado, idx)}
+                                      disabled={salvandoRota === idx}
+                                    >
+                                      <Save className="w-3 h-3 mr-1" />
+                                      {salvandoRota === idx ? 'Salvando...' : 'Salvar Rota'}
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
                             </div>
                             
@@ -1202,43 +1371,33 @@ const RoteirizadorWeb = () => {
               {distribuicao.length === 0 ? (
                 <div className="h-[400px] bg-gray-100 rounded-lg flex items-center justify-center">
                   <p className="text-muted-foreground">
-                    Gere os roteiros primeiro para visualizar no mapa
+                    Gere os roteiros e calcule as distâncias primeiro para visualizar no mapa
                   </p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {distribuicao.map((resultado, idx) => (
-                      <div key={idx} className="border rounded-lg p-4 bg-slate-50">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-2xl">{getIconeTipoVeiculo(resultado.veiculo.tipoVeiculo)}</span>
-                          <h4 className="font-bold">{getNomeTipoVeiculo(resultado.veiculo.tipoVeiculo)}</h4>
-                          <Badge variant="outline" className="text-xs">{resultado.pedidos.length} paradas</Badge>
-                        </div>
-                        <div className="text-sm space-y-1">
-                          <p><strong>Motorista:</strong> {resultado.veiculo.motorista || 'Não atribuído'}</p>
-                          <p><strong>Região:</strong> {resultado.veiculo.regiaoBase || 'Diversa'}</p>
-                          {rotasCalculadas.get(idx) && (
-                            <>
-                              <p><strong>Distância:</strong> {rotasCalculadas.get(idx)?.distanciaKm} km</p>
-                              <p><strong>Tempo:</strong> {rotasCalculadas.get(idx)?.tempoMin} min</p>
-                              <Badge variant={rotasCalculadas.get(idx)?.origem === 'mapbox' ? 'default' : 'outline'} className="text-xs">
-                                {rotasCalculadas.get(idx)?.origem === 'mapbox' ? 'Mapbox' : 'Estimado'}
-                              </Badge>
-                            </>
-                          )}
-                        </div>
-                        <div className="mt-2 pt-2 border-t">
-                          <p className="text-xs text-slate-500">CEP_BASE: {resultado.veiculo.cepBasePrestador || '-'}</p>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="h-[600px] w-full rounded-lg overflow-hidden border">
+                    <MapboxMap 
+                      title="Rotas e Paradas"
+                      locations={distribuicao.flatMap((res, rIdx) => 
+                        res.pedidos.map((p, pIdx) => ({
+                          id: p.id,
+                          numero: p.numeroPedido,
+                          latitude: p.latitude || 0,
+                          longitude: p.longitude || 0,
+                          status: "aguardando",
+                          cliente: p.cliente,
+                          sequencia: pIdx + 1
+                        }))
+                      ).filter(l => l.latitude !== 0 && l.longitude !== 0)}
+                      routeCoordinates={Array.from(rotasCalculadas.values()).find(r => r.routeCoordinates && r.routeCoordinates.length > 0)?.routeCoordinates}
+                    />
                   </div>
                   <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg">
                     <p className="text-sm text-amber-700">
                       <AlertTriangle className="w-4 h-4 inline mr-2" />
-                      Mapa interativo com绘制 de rotas será implementado na próxima fase.
-                      Por enquanto, visualize a sequência das paradas na aba Roteiros.
+                      Visualizando o traçado da primeira rota calculada e as paradas de todas as rotas. 
+                      Calcule a distância de cada rota na aba Roteiros para ver a linha da rota no mapa.
                     </p>
                   </div>
                 </div>

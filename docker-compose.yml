@@ -1,14 +1,14 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: tms_postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: n8n_db
+      POSTGRES_DB: postgres
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     ports:
       - "5432:5432"
     restart: always
@@ -17,9 +17,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - tms_network
 
   redis:
     image: redis:7-alpine
+    container_name: tms_redis
     volumes:
       - redis_data:/data
     ports:
@@ -30,48 +33,96 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - tms_network
 
   n8n:
     image: n8nio/n8n:latest
+    container_name: tms_n8n
     ports:
       - "5679:5678"
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=admin
       - N8N_BASIC_AUTH_PASSWORD=123456
-      - N8N_DB_TYPE=postgresdb
-      - N8N_DB_POSTGRESDB_HOST=postgres
-      - N8N_DB_POSTGRESDB_PORT=5432
-      - N8N_DB_POSTGRESDB_USER=postgres
-      - N8N_DB_POSTGRESDB_PASSWORD=postgres
-      - N8N_DB_POSTGRESDB_DATABASE=n8n_db
-      - N8N_REDIS_HOST=redis
-      - N8N_REDIS_PORT=6379
+      - N8N_DB_TYPE=sqlite
+      - N8N_METRICS=false
+      - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=true
     volumes:
       - n8n_data:/home/node/.n8n
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     restart: always
+    networks:
+      - tms_network
 
   evolution-api:
-    image: evolutionapi/evolution-api:latest
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: tms_evolution
     ports:
-      - "8081:8080"
+      - "8080:8080"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/evolution_db?schema=public
-      - REDIS_URL=redis://redis:6379
-      - AUTHENTICATION_API_KEY=change-me-in-production
+      # Server
+      - SERVER_TYPE=http
+      - SERVER_PORT=8080
+      - SERVER_URL=http://localhost:8080
+
+      # Autenticação
+      - AUTHENTICATION_API_KEY=123456
+
+      # Banco de Dados (PostgreSQL)
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://postgres:postgres@postgres:5432/evolution_db?schema=public
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      - DATABASE_SAVE_DATA_CONTACTS=true
+      - DATABASE_SAVE_DATA_CHATS=true
+
+      # Cache (Redis)
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379
+
+      # CORS
+      - CORS_ORIGIN=*
+
+      # QR Code
+      - QRCODE_LIMIT=30
+      - QRCODE_COLOR=#198754
+
+      # Sessão WhatsApp / Baileys
+      - CONFIG_SESSION_PHONE_CLIENT=Chrome
+      - CONFIG_SESSION_PHONE_NAME=Chrome
+
+      # Webhook (n8n)
+      - WEBHOOK_GLOBAL_ENABLED=true
+      - WEBHOOK_GLOBAL_URL=http://tms_n8n:5678/webhook/whatsapp
+
+      # Logging
+      - LOG_LEVEL=ERROR
+
+      # Gerenciamento
+      - DEL_INSTANCE=true
+
+    volumes:
+      - evolution_instances:/evolution/instances
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: always
+    networks:
+      - tms_network
+
+networks:
+  tms_network:
+    driver: bridge
+    name: tms_network
 
 volumes:
   pg_data:
   redis_data:
   n8n_data:
+  evolution_instances:

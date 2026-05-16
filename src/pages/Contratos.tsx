@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FileSignature, Plus, FileText, Download, Settings, Eye, Trash, Save, X, Loader2 } from "lucide-react";
+import { FileSignature, Plus, FileText, Download, Settings, Eye, Trash, Save, X, Loader2, Search, Filter } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { buscarContratos, buscarModelosContratos, criarModeloContrato, atualizarModeloContrato, excluirModeloContrato, type ContratoGerado, type ContratoModelo } from "@/services/contratosService";
+import { buscarContratos, buscarModelosContratos, criarModeloContrato, atualizarModeloContrato, excluirModeloContrato, excluirContrato, type ContratoGerado, type ContratoModelo, type BuscarContratosFiltros } from "@/services/contratosService";
 
 interface ModeloLocal {
   id: string;
@@ -50,6 +50,10 @@ export default function Contratos() {
   const [loadingGerados, setLoadingGerados] = useState(false);
   const [savingModelo, setSavingModelo] = useState(false);
   const [configs, setConfigs] = useState({ obrigatorio: true, layoutAutomatico: true, salvamentoAutomatico: true });
+  const [filtros, setFiltros] = useState<BuscarContratosFiltros>({});
+  const [contratoVisualizar, setContratoVisualizar] = useState<ContratoGerado | null>(null);
+  const [contratoExcluir, setContratoExcluir] = useState<ContratoGerado | null>(null);
+  const [excluindoContrato, setExcluindoContrato] = useState(false);
 
   useEffect(() => {
     const storedConfigs = localStorage.getItem('contratos_configs');
@@ -79,7 +83,7 @@ export default function Contratos() {
   const carregarContratosGerados = async () => {
     setLoadingGerados(true);
     try {
-      const contratos = await buscarContratos();
+      const contratos = await buscarContratos(filtros);
       setContratosGerados(contratos);
     } catch (e) {
       console.error('[Contratos] Erro ao carregar contratos:', e);
@@ -258,6 +262,7 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`;
 
   const mapStatus = (status: string) => {
     switch (status) {
+      case 'gerado': return 'Gerado';
       case 'pendente': return 'Aguardando';
       case 'enviado': return 'Enviado';
       case 'aceito_whatsapp': return 'Aceito WhatsApp';
@@ -280,6 +285,34 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`;
     const newConfigs = { ...configs, [key]: val };
     setConfigs(newConfigs);
     localStorage.setItem('contratos_configs', JSON.stringify(newConfigs));
+  };
+
+  const handleVisualizar = (contrato: ContratoGerado) => {
+    setContratoVisualizar(contrato);
+  };
+
+  const handleExcluirContrato = (contrato: ContratoGerado) => {
+    setContratoExcluir(contrato);
+  };
+
+  const confirmExcluirContrato = async () => {
+    if (!contratoExcluir) return;
+    setExcluindoContrato(true);
+    try {
+      const ok = await excluirContrato(contratoExcluir.id);
+      if (ok) {
+        toast.success(`Contrato ${contratoExcluir.numero_contrato} excluído com sucesso!`);
+        setContratoExcluir(null);
+        await carregarContratosGerados();
+      } else {
+        toast.error("Erro ao excluir contrato.");
+      }
+    } catch (e) {
+      console.error("[Contratos] Erro ao excluir:", e);
+      toast.error("Erro ao excluir contrato.");
+    } finally {
+      setExcluindoContrato(false);
+    }
   };
 
   return (
@@ -444,6 +477,65 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`;
               <CardDescription>Histórico de contratos emitidos salvos no banco de dados.</CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-slate-50 rounded-lg border">
+                <Filter className="w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Prestador..."
+                  className="w-40 h-8 text-xs"
+                  value={filtros.prestadorNome}
+                  onChange={(e) => setFiltros(f => ({ ...f, prestadorNome: e.target.value }))}
+                />
+                <Select value={filtros.tipo || ""} onValueChange={(v) => setFiltros(f => ({ ...f, tipo: v || undefined }))}>
+                  <SelectTrigger className="w-28 h-8 text-xs"><SelectValue placeholder="Tipo" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value=" ">Todos</SelectItem>
+                    <SelectItem value="TAC">TAC</SelectItem>
+                    <SelectItem value="ETC">ETC</SelectItem>
+                    <SelectItem value="Prestador">Prestador</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={filtros.status || ""} onValueChange={(v) => setFiltros(f => ({ ...f, status: v || undefined }))}>
+                  <SelectTrigger className="w-32 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value=" ">Todos</SelectItem>
+                    <SelectItem value="gerado">Gerado</SelectItem>
+                    <SelectItem value="pendente">Pendente</SelectItem>
+                    <SelectItem value="enviado">Enviado</SelectItem>
+                    <SelectItem value="aceito_whatsapp">Aceito WhatsApp</SelectItem>
+                    <SelectItem value="assinado">Assinado</SelectItem>
+                    <SelectItem value="recusado">Recusado</SelectItem>
+                    <SelectItem value="cancelado">Cancelado</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  placeholder="Nº contrato..."
+                  className="w-36 h-8 text-xs"
+                  value={filtros.numeroContrato}
+                  onChange={(e) => setFiltros(f => ({ ...f, numeroContrato: e.target.value }))}
+                />
+                <Input
+                  type="date"
+                  className="w-32 h-8 text-xs"
+                  value={filtros.dataInicio || ""}
+                  onChange={(e) => setFiltros(f => ({ ...f, dataInicio: e.target.value || undefined }))}
+                />
+                <Input
+                  type="date"
+                  className="w-32 h-8 text-xs"
+                  value={filtros.dataFim || ""}
+                  onChange={(e) => setFiltros(f => ({ ...f, dataFim: e.target.value || undefined }))}
+                />
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={carregarContratosGerados}>
+                  <Search className="w-3 h-3 mr-1" /> Filtrar
+                </Button>
+                <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => {
+                  setFiltros({});
+                  setTimeout(carregarContratosGerados, 100);
+                }}>
+                  Limpar
+                </Button>
+              </div>
+
               {loadingGerados ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -479,15 +571,24 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`;
                         <TableCell>
                           <Badge variant="outline" className={
                             g.status === 'assinado' || g.status === 'aceito_whatsapp' ? 'bg-green-50 text-green-700 border-green-200' :
+                            g.status === 'gerado' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                             g.status === 'enviado' || g.status === 'pendente' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
                             g.status === 'cancelado' ? 'bg-slate-100 text-slate-600' :
                             'bg-red-50 text-red-700 border-red-200'
                           }>{mapStatus(g.status)}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleBaixarPDF(g.pdf_url)} title="Baixar PDF">
-                            <Download className="w-4 h-4 text-blue-600" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleVisualizar(g)} title="Visualizar">
+                              <Eye className="w-4 h-4 text-slate-600" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleBaixarPDF(g.pdf_url)} title="Baixar PDF">
+                              <Download className="w-4 h-4 text-blue-600" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleExcluirContrato(g)} title="Excluir">
+                              <Trash className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -577,6 +678,54 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`;
           </div>
           <DialogFooter>
             <Button onClick={() => setShowPreviewModal(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!contratoVisualizar} onOpenChange={(o) => !o && setContratoVisualizar(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Contrato {contratoVisualizar?.numero_contrato}</DialogTitle>
+            <DialogDescription>
+              {contratoVisualizar?.prestador_nome} — {contratoVisualizar?.tipo_contrato}
+            </DialogDescription>
+          </DialogHeader>
+          {contratoVisualizar?.conteudo_html ? (
+            <div className="bg-white p-8 rounded border shadow-sm font-serif text-sm whitespace-pre-wrap leading-relaxed">
+              {contratoVisualizar.conteudo_html}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              <p>Conteúdo do contrato não disponível.</p>
+            </div>
+          )}
+          <DialogFooter>
+            {contratoVisualizar?.pdf_url && (
+              <Button variant="outline" onClick={() => window.open(contratoVisualizar.pdf_url, '_blank')}>
+                <Download className="w-4 h-4 mr-2" /> Baixar PDF
+              </Button>
+            )}
+            <Button onClick={() => setContratoVisualizar(null)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!contratoExcluir} onOpenChange={(o) => !o && setContratoExcluir(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir Contrato</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir o contrato <strong>{contratoExcluir?.numero_contrato}</strong> de <strong>{contratoExcluir?.prestador_nome}</strong>?
+              <br /><br />
+              Esta ação não pode ser desfeita. O PDF será removido do Storage e o registro será excluído permanentemente.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setContratoExcluir(null)} disabled={excluindoContrato}>Cancelar</Button>
+            <Button variant="destructive" onClick={confirmExcluirContrato} disabled={excluindoContrato}>
+              {excluindoContrato ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash className="w-4 h-4 mr-2" />}
+              Sim, Excluir
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

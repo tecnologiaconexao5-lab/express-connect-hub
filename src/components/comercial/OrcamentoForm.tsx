@@ -82,25 +82,26 @@ const buscarTabelaValores = async (cliente: string, tipoVeiculo: string, km: num
   }
 };
 
-const calcularValorAutomatico = (tabela: TabelaValorRow | null, distanciaKm: number, pedagio: number = 0): { valor: number; valorPrestador: number; tabelaNome: string; pendente: boolean; descricao: string; kmExcedente: number; valorKmExcedente: number; percentualPrestador: number } => {
+const calcularValorAutomatico = (tabela: TabelaValorRow | null, distanciaKm: number, pedagio: number = 0): { valor: number; valorPrestador: number; tabelaNome: string; pendente: boolean; descricao: string; kmExcedente: number; valorKmExcedente: number; percentualPrestador: number; kmExcedenteCost: number; valorBasePuro: number } => {
   if (!tabela) {
-    return { valor: 0, valorPrestador: 0, tabelaNome: "", pendente: true, descricao: "", kmExcedente: 0, valorKmExcedente: 0, percentualPrestador: 80 };
+    return { valor: 0, valorPrestador: 0, tabelaNome: "", pendente: true, descricao: "", kmExcedente: 0, valorKmExcedente: 0, percentualPrestador: 80, kmExcedenteCost: 0, valorBasePuro: 0 };
   }
 
-  const valorBase = Number(tabela.valor_base) || 0;
+  const valorBasePuro = Number(tabela.valor_base) || 0;
   const franquiaKm = Number(tabela.franquia_km) || 0;
   const valorKmExcedente = Number(tabela.valor_km_excedente) || Number(tabela.valor_km) || 0;
   const valorMinimo = Number(tabela.valor_minimo) || 0;
   const percentualPrestador = Number(tabela.percentual_prestador) || 80;
 
   const kmExcedente = Math.max(0, distanciaKm - franquiaKm);
-  let valorCalculado = valorBase + (kmExcedente * valorKmExcedente);
-  valorCalculado = Math.max(valorCalculado, valorMinimo || valorBase);
+  const kmExcedenteCost = kmExcedente * valorKmExcedente;
+  let valorCalculado = valorBasePuro + kmExcedenteCost;
+  valorCalculado = Math.max(valorCalculado, valorMinimo || valorBasePuro);
   const valorComPedagio = valorCalculado + pedagio;
   
   const valorPrestador = valorComPedagio * (percentualPrestador / 100);
   
-  const descricao = `Base R$${valorBase.toFixed(2)} (até ${franquiaKm}km) + ${kmExcedente.toFixed(1)}km exced x R$${valorKmExcedente.toFixed(2)} + pedagio R$${pedagio.toFixed(2)} = R$${valorComPedagio.toFixed(2)} | Prest: ${percentualPrestador}% = R$${valorPrestador.toFixed(2)}`;
+  const descricao = `Base R$${valorBasePuro.toFixed(2)} (até ${franquiaKm}km) + ${kmExcedente.toFixed(1)}km exced x R$${valorKmExcedente.toFixed(2)} + pedagio R$${pedagio.toFixed(2)} = R$${valorComPedagio.toFixed(2)} | Prest: ${percentualPrestador}% = R$${valorPrestador.toFixed(2)}`;
 
   return {
     valor: Math.round(valorComPedagio * 100) / 100,
@@ -110,7 +111,9 @@ const calcularValorAutomatico = (tabela: TabelaValorRow | null, distanciaKm: num
     descricao,
     kmExcedente,
     valorKmExcedente,
-    percentualPrestador
+    percentualPrestador,
+    kmExcedenteCost: Math.round(kmExcedenteCost * 100) / 100,
+    valorBasePuro
   };
 };
 
@@ -251,13 +254,14 @@ const OrcamentoForm = ({ orcamento, modo, onVoltar, onSalvar }: Props) => {
       console.log("[OrcamentoForm] TABELA ENCONTRADA:", tabela);
 
       if (tabela) {
-        const { valor, valorPrestador, tabelaNome, descricao } = calcularValorAutomatico(tabela, km, data.valores.pedagio || 0);
+        const { valorPrestador, tabelaNome, kmExcedenteCost, valorBasePuro } = calcularValorAutomatico(tabela, km, data.valores.pedagio || 0);
         setData((prev) => {
           const v = { ...prev.valores };
           v.tabelaVinculada = tabelaNome;
-          v.valorBase = valor;
+          v.valorBase = valorBasePuro;
+          v.kmExcedente = kmExcedenteCost;
           v.custoEstimado = valorPrestador;
-          v.valorFinal = valor + v.adicionais + v.kmExcedente + v.ajudante + v.devolucao + v.reentrega - v.descontos;
+          v.valorFinal = valorBasePuro + kmExcedenteCost + v.adicionais + v.pedagio + v.ajudante + v.devolucao + v.reentrega - v.descontos;
           v.lucroEstimado = v.valorFinal - v.custoEstimado;
           v.margemEstimada = v.valorFinal > 0 ? Math.round((v.lucroEstimado / v.valorFinal) * 1000) / 10 : 0;
           return { ...prev, valores: v };
@@ -437,12 +441,10 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
       }
       
       for (const end of data.enderecos) {
-        const { logradouro, numero } = (() => {
-          const match = end.logradouro?.match(/^(.+?),\s*(\d+)\s*[-–]?\s*$/);
-          return match ? { logradouro: match[1].trim(), numero: match[2].trim() } : { logradouro: end.logradouro, numero: end.numero };
-        })();
+        const logradouro = end.logradouro || "";
+        const numero = end.numero || "";
         
-        const enderecoFormatado = `${logradouro || ''}${numero ? ', ' + numero : ''} - ${end.bairro || ''}, ${end.cidade || ''}/${end.estado || ''}`.replace(/^ - |\/$/g, "");
+        const enderecoFormatado = `${logradouro}${numero ? ', ' + numero : ''}${end.bairro ? ' - ' + end.bairro : ''}, ${end.cidade || ''}/${(end.uf || '').toUpperCase()}`;
         
         await supabase.from("os_enderecos").insert([{
           os_id: osResult.id,
@@ -453,7 +455,7 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
           numero: numero,
           bairro: end.bairro,
           cidade: end.cidade,
-          estado: end.estado,
+          estado: (end.uf || '').toUpperCase(),
           endereco: enderecoFormatado
         }]);
       }
@@ -506,7 +508,7 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
           </div>
         </div>
 <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => gerarPdfOrcamento(data)}><FileDown className="w-4 h-4 mr-1" /> Gerar PDF</Button>
+          <Button variant="outline" size="sm" onClick={async () => await gerarPdfOrcamento(data)}><FileDown className="w-4 h-4 mr-1" /> Gerar PDF</Button>
           <Button variant="outline" size="sm" disabled>Gerar Contrato</Button>
           {data.status === "aprovado" && <Button variant="default" size="sm" onClick={() => gerarOS()}>Converter em OS</Button>}
           {!readOnly && <Button size="sm" className="bg-primary text-primary-foreground" onClick={handleSalvar}><Save className="w-4 h-4 mr-1" /> Salvar</Button>}
@@ -654,31 +656,34 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
                   </div>
 
                   {readOnly ? (
-                     <Field label="Endereço Cadastrado"><Input value={`${end.endereco}, ${end.cidade}/${end.uf} - ${end.cep}`} readOnly /></Field>
+                     <Field label="Endereço Cadastrado"><Input value={`${end.endereco}${end.cidade ? ', ' + end.cidade : ''}${end.uf ? '/' + end.uf : ''}${end.cep ? ' - ' + end.cep : ''}`} readOnly /></Field>
                   ) : (
 <EnderecoCompleto
                          label="Dados do Endereço (ViaCEP)"
                          value={{ cep: end.cep || "", logradouro: end.logradouro || "", numero: end.numero || "", complemento: end.complemento || "", bairro: end.bairro || "", cidade: end.cidade || "", estado: end.uf || "", referencia: end.instrucoes || "" } as any}
-                         onChange={(obj) => {
-                            const { logradouro: log, numero: num } = (() => {
-                              const match = obj.logradouro?.match(/^(.+?),\s*(\d+)\s*[-–]?\s*$/);
-                              return match ? { logradouro: match[1].trim(), numero: match[2].trim() } : { logradouro: obj.logradouro, numero: obj.numero };
-                            })();
-                            const es = [...data.enderecos];
-                            es[idx] = { 
-                              ...es[idx], 
-                              cep: obj.cep, 
-                              logradouro: obj.logradouro || log,
-                              numero: obj.numero || num,
-                              complemento: obj.complemento,
-                              bairro: obj.bairro || end.bairro || "",
-                              cidade: obj.cidade || end.cidade || "",
-                              uf: obj.estado || end.uf || "",
-                              instrucoes: obj.referencia || "",
-                              endereco: `${obj.logradouro || log}${obj.numero || num ? ', ' + (obj.numero || num) : ''} - ${obj.bairro || ''}, ${obj.cidade || ''}/${obj.estado || ''}`.replace(/^ - |\/$/g, "")
-                            };
-                            setData((p) => ({ ...p, enderecos: es }));
-                         }}
+                          onChange={(obj) => {
+                             const { logradouro: log, numero: num } = (() => {
+                               const match = obj.logradouro?.match(/^(.+?),\s*(\d+)\s*[-–]?\s*$/);
+                               return match ? { logradouro: match[1].trim(), numero: match[2].trim() } : { logradouro: obj.logradouro, numero: obj.numero };
+                             })();
+                             const es = [...data.enderecos];
+                             const uf = (obj.estado || end.uf || "").length > 2
+                               ? (obj.estado || end.uf || "").substring(0, 2).toUpperCase()
+                               : (obj.estado || end.uf || "");
+                             es[idx] = {
+                               ...es[idx],
+                               cep: obj.cep,
+                               logradouro: log,
+                               numero: num,
+                               complemento: obj.complemento,
+                               bairro: obj.bairro || end.bairro || "",
+                               cidade: obj.cidade || end.cidade || "",
+                               uf: uf,
+                               instrucoes: obj.referencia || "",
+                               endereco: `${log}${num ? ', ' + num : ''}${obj.bairro || end.bairro ? ' - ' + (obj.bairro || end.bairro) : ''}, ${obj.cidade || end.cidade || ''}/${uf}`.replace(/^, |^ - /g, "").replace(/, \/$/, "")
+                             };
+                             setData((p) => ({ ...p, enderecos: es }));
+                          }}
                       />
                   )}
                   
@@ -888,7 +893,7 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
                       </div>
               
               <div className="flex gap-4 p-4 bg-orange-50/50 rounded-lg border border-orange-100 flex-wrap">
-                 <Button onClick={() => gerarPdfOrcamento(data)} className="bg-orange-500 hover:bg-orange-600 text-white gap-2"><FileDown className="w-4 h-4"/> Gerar PDF (Proposta Comercial)</Button>
+                 <Button onClick={async () => await gerarPdfOrcamento(data)} className="bg-orange-500 hover:bg-orange-600 text-white gap-2"><FileDown className="w-4 h-4"/> Gerar PDF (Proposta Comercial)</Button>
                  <Button variant="outline" onClick={() => window.print()}>Imprimir</Button>
                  <Button variant="outline" className="text-primary hover:text-primary/80" onClick={handleSalvar}>Duplicar</Button>
                  

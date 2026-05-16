@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import Map, { Marker, Popup, NavigationControl, FullscreenControl, ScaleControl } from "react-map-gl";
+import Map, { Marker, Popup, NavigationControl, FullscreenControl, ScaleControl, Source, Layer } from "react-map-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { Truck, AlertTriangle, MapPin, X, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ interface MapLocation {
   cliente?: string;
   prestador?: string;
   previsao?: string;
+  sequencia?: number;
 }
 
 interface MapboxMapProps {
@@ -24,6 +25,7 @@ interface MapboxMapProps {
   height?: string;
   showClustering?: boolean;
   title?: string;
+  routeCoordinates?: [number, number][]; // array de [longitude, latitude]
 }
 
 const defaultLocations: MapLocation[] = [
@@ -61,23 +63,34 @@ export default function MapboxMap({
   style = "dark",
   height = "100%",
   showClustering = true,
-  title
+  title,
+  routeCoordinates
 }: MapboxMapProps) {
   const [viewState, setViewState] = useState({
-    longitude: -46.6333,
-    latitude: -23.5505,
-    zoom: 6
+    longitude: locations.length > 0 ? locations[0].longitude : -46.6333,
+    latitude: locations.length > 0 ? locations[0].latitude : -23.5505,
+    zoom: locations.length > 0 ? 10 : 6
   });
   const [selectedLocation, setSelectedLocation] = useState<MapLocation | null>(null);
   const [mapToken, setMapToken] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = localStorage.getItem("mapbox_token");
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || localStorage.getItem("mapbox_token");
     if (token) {
       setMapToken(token);
     }
   }, []);
+
+  useEffect(() => {
+    if (locations.length > 0) {
+      setViewState(prev => ({
+        ...prev,
+        longitude: locations[0].longitude,
+        latitude: locations[0].latitude
+      }));
+    }
+  }, [locations]);
 
   const handleMarkerClick = (location: MapLocation) => {
     setSelectedLocation(location);
@@ -98,7 +111,7 @@ export default function MapboxMap({
           <MapPin className="w-16 h-16 text-slate-600 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-white mb-2">Mapa não disponível</h3>
           <p className="text-slate-400 mb-4 max-w-md">
-            Configure a integração de mapas em Configurações → Integrações para visualizar o rastreamento em tempo real.
+            Configure a integração de mapas para visualizar o rastreamento em tempo real.
           </p>
           <Button onClick={openSettings} className="bg-orange-500 hover:bg-orange-600 gap-2">
             <Settings className="w-4 h-4" />
@@ -109,11 +122,20 @@ export default function MapboxMap({
     );
   }
 
+  const routeGeojson: any = routeCoordinates ? {
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      type: 'LineString',
+      coordinates: routeCoordinates
+    }
+  } : null;
+
   return (
     <div className="w-full rounded-lg overflow-hidden relative" style={{ height }}>
       {title && (
         <div className="absolute top-4 left-4 z-10">
-          <div className="bg-slate-900/80 backdrop-blur text-white px-3 py-1.5 rounded-lg text-sm font-medium">
+          <div className="bg-slate-900/80 backdrop-blur text-white px-3 py-1.5 rounded-lg text-sm font-medium border border-slate-700">
             {title}
           </div>
         </div>
@@ -134,6 +156,17 @@ export default function MapboxMap({
           </>
         )}
 
+        {routeGeojson && (
+          <Source id="route" type="geojson" data={routeGeojson}>
+            <Layer 
+              id="route-line" 
+              type="line" 
+              layout={{ "line-join": "round", "line-cap": "round" }}
+              paint={{ "line-color": "#6366f1", "line-width": 4, "line-opacity": 0.8 }}
+            />
+          </Source>
+        )}
+
         {locations.map((location) => (
           <Marker
             key={location.id}
@@ -146,11 +179,14 @@ export default function MapboxMap({
             }}
           >
             <div 
-              className="cursor-pointer transform hover:scale-110 transition-transform"
-              style={{ 
-                filter: `drop-shadow(0 2px 4px rgba(0,0,0,0.3))`
-              }}
+              className="cursor-pointer transform hover:scale-110 transition-transform relative"
+              style={{ filter: `drop-shadow(0 2px 4px rgba(0,0,0,0.3))` }}
             >
+              {location.sequencia !== undefined && (
+                <div className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold border border-white z-10">
+                  {location.sequencia}
+                </div>
+              )}
               <div 
                 className="w-8 h-8 rounded-full flex items-center justify-center border-2 border-white shadow-lg"
                 style={{ backgroundColor: getStatusColor(location.status) }}
@@ -171,7 +207,7 @@ export default function MapboxMap({
             closeOnClick={false}
             className="z-50"
           >
-            <div className="p-2 min-w-[200px]">
+            <div className="p-2 min-w-[200px] text-slate-800">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-bold text-sm">{selectedLocation.numero}</span>
                 <span 
@@ -190,21 +226,13 @@ export default function MapboxMap({
               {selectedLocation.previsao && (
                 <p className="text-xs text-gray-500">Previsão: {selectedLocation.previsao}</p>
               )}
-              <div className="mt-2 pt-2 border-t flex gap-2">
-                <Button size="sm" variant="outline" className="text-xs flex-1">
-                  Ver Detalhes
-                </Button>
-                <Button size="sm" className="text-xs flex-1 bg-green-500 hover:bg-green-600">
-                  Contactar
-                </Button>
-              </div>
             </div>
           </Popup>
         )}
       </Map>
 
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-slate-900/90 backdrop-blur rounded-lg p-3 z-10">
+      <div className="absolute bottom-4 left-4 bg-slate-900/90 backdrop-blur rounded-lg p-3 z-10 border border-slate-700">
         <p className="text-[10px] text-slate-400 uppercase font-semibold mb-2">Legenda</p>
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -216,12 +244,8 @@ export default function MapboxMap({
             <span className="text-xs text-slate-300">Aguardando</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500" />
-            <span className="text-xs text-slate-300">Ocorrência</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-800" />
-            <span className="text-xs text-slate-300">Atrasado</span>
+            <div className="w-3 h-3 rounded-full bg-indigo-600" />
+            <span className="text-xs text-slate-300">Linha da Rota</span>
           </div>
         </div>
       </div>

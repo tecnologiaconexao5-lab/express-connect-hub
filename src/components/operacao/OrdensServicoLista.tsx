@@ -59,7 +59,31 @@ const OrdensServicoLista = () => {
     if (searchParams.get("status")) {
       setFiltroStatus(searchParams.get("status") || "todos");
     }
+    // Deep-link: abrir OS específica pelo ID (?os=<id>)
+    const osId = searchParams.get("os");
+    if (osId) {
+      searchParams.delete("os");
+      setSearchParams(searchParams, { replace: true });
+      // Após carregar, abre a OS no preview
+      setTimeout(async () => {
+        const { data } = await supabase
+          .from("ordens_servico")
+          .select("*, clientes(nome_fantasia, razao_social)")
+          .eq("id", osId)
+          .single();
+        if (data) {
+          const os = fromOSRow(data as any);
+          const osCompleta = {
+            ...os,
+            cliente: (data as any).clientes?.nome_fantasia || (data as any).clientes?.razao_social || os.cliente || "",
+          };
+          setOsPreview(osCompleta as any);
+          setShowPreview(true);
+        }
+      }, 800);
+    }
   }, [searchParams]);
+
 
   const fetchOrdens = async () => {
     try {

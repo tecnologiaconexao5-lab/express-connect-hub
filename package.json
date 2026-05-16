@@ -13,7 +13,11 @@
     "test:watch": "vitest",
     "auditoria:financeiro-final": "tsx scripts/auditoria-financeiro-final.ts",
     "auditoria:financeiro-ux": "tsx scripts/auditoria-financeiro-ux.ts",
-    "auditoria:fluxo-operacional-final": "tsx scripts/auditoria-fluxo-operacional-final.ts"
+    "auditoria:fluxo-operacional-final": "tsx scripts/auditoria-fluxo-operacional-final.ts",
+    "test:whatsapp-os": "node scripts/test-whatsapp-os.mjs",
+    "test:whatsapp-os-completo": "node scripts/test-whatsapp-os-completo.mjs",
+    "test:whatsapp-entrada": "node scripts/test-whatsapp-entrada.mjs",
+    "webhook:entrada": "node scripts/configurar-webhook-entrada.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -53,6 +57,7 @@
     "date-fns": "^3.6.0",
     "dotenv": "^17.4.2",
     "embla-carousel-react": "^8.6.0",
+    "framer-motion": "^11.18.0",
     "input-otp": "^1.4.2",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
@@ -71,9 +76,11 @@
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
+    "tesseract.js": "^7.0.0",
     "vaul": "^0.9.9",
     "xlsx": "^0.18.5",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "zustand": "^4.5.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

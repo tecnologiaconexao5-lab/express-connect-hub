@@ -1,0 +1,177 @@
+{
+  "id": "fc079a45-38ec-4058-8de1-a0fbe6cc7d71",
+  "name": "TMS WhatsApp Entrada IA",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-entrada",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-entrada-001",
+      "name": "Webhook Entrada WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "telefone",
+              "value": "={{ $json.body.data.key.remoteJid.replace('@s.whatsapp.net', '') }}"
+            },
+            {
+              "name": "nome",
+              "value": "={{ $json.body.data.pushName || '' }}"
+            },
+            {
+              "name": "mensagem",
+              "value": "={{ $json.body.data.message.conversation || $json.body.data.message.extendedTextMessage?.text || '[Mídia]' }}"
+            },
+            {
+              "name": "tipoMensagem",
+              "value": "={{ Object.keys($json.body.data.message)[0] === 'conversation' ? 'text' : Object.keys($json.body.data.message)[0] }}"
+            },
+            {
+              "name": "horario",
+              "value": "={{ $json.body.data.messageTimestamp }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-entrada-001",
+      "name": "Normalizar Dados",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "setor",
+              "value": "="
+            },
+            {
+              "name": "intencao",
+              "value": "="
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-ia-001",
+      "name": "Estrutura IA",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ ($json.body.event === \"messages.upsert\" || $json.body.event === \"messages.update\") && $json.body.data?.key?.fromMe === false && $json.body.data?.key?.remoteJid && $json.body.data.key.remoteJid.endsWith('@s.whatsapp.net') }}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        },
+        "combineOperation": "AND",
+        "options": {}
+      },
+      "id": "if-filtro-001",
+      "name": "Filtrar Evento Válido",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [740, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8080/message/sendText/tms",
+        "authentication": "none",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.telefone }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.mensagem }}"
+            }
+          ]
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "123456"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-evolution-001",
+      "name": "Enviar Resposta Evolution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"recebido\": { \"telefone\": $json.telefone, \"nome\": $json.nome, \"mensagem\": $json.mensagem, \"tipoMensagem\": $json.tipoMensagem, \"horario\": $json.horario }, \"ts\": \"{{ new Date().toISOString() }}\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "resp-entrada-001",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1100, 200]
+    }
+  ],
+  "connections": {
+    "Webhook Entrada WhatsApp": {
+      "main": [[{ "node": "Normalizar Dados", "type": "main", "index": 0 }]]
+    },
+    "Normalizar Dados": {
+      "main": [[{ "node": "Estrutura IA", "type": "main", "index": 0 }]]
+    },
+    "Estrutura IA": {
+      "main": [[{ "node": "Filtrar Evento Válido", "type": "main", "index": 0 }]]
+    },
+    "Filtrar Evento Válido": {
+      "main": [
+        [{ "node": "Enviar Resposta Evolution", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Enviar Resposta Evolution": {
+      "main": [[{ "node": "Responder Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "description": "Workflow n8n para receber mensagens do WhatsApp via Evolution API e preparar para IA. Fluxo: Webhook → Normalizar → Estrutura IA → Responder.",
+    "instrucoes": [
+      "1. Importe este arquivo no n8n: Menu superior > Import from file",
+      "2. Ative o workflow clicando em 'Active' no canto superior direito",
+      "3. Configure o webhook URL no Evolution API: http://host.docker.internal:5679/webhook/whatsapp-entrada",
+      "4. O webhook espera receber payload padrão do Evolution API (MESSAGES_UPSERT)",
+      "5. Saída normalizada: telefone, nome, mensagem, tipoMensagem, horario, setor, intencao"
+    ]
+  }
+}

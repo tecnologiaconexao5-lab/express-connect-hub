@@ -57,18 +57,37 @@ export interface VariaveisContrato {
   prestador_nome?: string;
   prestador_cpf?: string;
   prestador_cnpj?: string;
+  prestador_documento?: string;
   prestador_rntrc?: string;
   prestador_telefone?: string;
   prestador_whatsapp?: string;
+  prestador_email?: string;
+  prestador_endereco?: string;
+  prestador_endereco_completo?: string;
   prestador_placa?: string;
   prestador_modelo?: string;
+  prestador_marca?: string;
   prestador_tipo_veiculo?: string;
   prestador_tipo_carga?: string;
+  prestador_capacidade_kg?: string;
+  prestador_capacidade_m3?: string;
   prestador_valor_saida?: string;
-  prestador_endereco?: string;
+  prestador_valor_diaria?: string;
   empresa_nome?: string;
   empresa_cnpj?: string;
   empresa_endereco?: string;
+  valor_saida?: string;
+  valor_diaria?: string;
+  valor_km_excedente?: string;
+  franquia_km?: string;
+  forma_pagamento?: string;
+  periodicidade_pagamento?: string;
+  prazo_pagamento?: string;
+  banco?: string;
+  agencia?: string;
+  conta?: string;
+  chave_pix?: string;
+  favorecido?: string;
   data_atual: string;
 }
 
@@ -132,6 +151,12 @@ export function parseVariables(
     forma_pagamento?: string;
     periodicidade_pagamento?: string;
     pagamento_prazo?: string;
+    prazo_pagamento?: string;
+    banco?: string;
+    agencia?: string;
+    conta?: string;
+    chave_pix?: string;
+    favorecido?: string;
   }
 ): string {
   const ano = new Date().getFullYear();
@@ -143,23 +168,36 @@ export function parseVariables(
     '{{prestador_cpf}}': variaveis.prestador_cpf || 'Não informado',
     '{{prestador_cnpj}}': variaveis.prestador_cnpj || 'Não informado',
     '{{prestador_cpf_cnpj}}': variaveis.prestador_cpf || variaveis.prestador_cnpj || 'Não informado',
+    '{{prestador_documento}}': variaveis.prestador_documento || variaveis.prestador_cpf || variaveis.prestador_cnpj || 'Não informado',
     '{{prestador_rg}}': 'Não informado',
     '{{prestador_rntrc}}': variaveis.prestador_rntrc || 'Não informado',
     '{{prestador_telefone}}': variaveis.prestador_telefone || 'Não informado',
     '{{prestador_whatsapp}}': variaveis.prestador_whatsapp || variaveis.prestador_telefone || 'Não informado',
-    '{{prestador_email}}': 'Não informado',
+    '{{prestador_email}}': variaveis.prestador_email || 'Não informado',
     '{{prestador_endereco}}': variaveis.prestador_endereco || 'Não informado',
+    '{{prestador_endereco_completo}}': variaveis.prestador_endereco_completo || variaveis.prestador_endereco || 'Não informado',
     '{{prestador_placa}}': variaveis.prestador_placa || 'Não informado',
     '{{prestador_modelo}}': variaveis.prestador_modelo || 'Não informado',
+    '{{prestador_marca}}': variaveis.prestador_marca || 'Não informado',
     '{{prestador_tipo_veiculo}}': variaveis.prestador_tipo_veiculo || 'Não informado',
     '{{prestador_tipo_carga}}': variaveis.prestador_tipo_carga || 'Não informado',
+    '{{prestador_capacidade_kg}}': variaveis.prestador_capacidade_kg || 'Não informado',
+    '{{prestador_capacidade_m3}}': variaveis.prestador_capacidade_m3 || 'Não informado',
     '{{prestador_valor_saida}}': variaveis.prestador_valor_saida || 'A DEFINIR',
-    '{{valor_saida}}': variaveis.prestador_valor_saida || 'A DEFINIR',
+    '{{prestador_valor_diaria}}': variaveis.prestador_valor_diaria || 'A DEFINIR',
+    '{{valor_saida}}': variaveis.valor_saida || variaveis.prestador_valor_saida || 'A DEFINIR',
+    '{{valor_diaria}}': variaveis.valor_diaria || variaveis.prestador_valor_diaria || 'A DEFINIR',
+    '{{valor_km_excedente}}': variaveis.valor_km_excedente || 'A DEFINIR',
     '{{franquia_km}}': variaveis.franquia_km || '0 km',
-    '{{valor_km_excedente}}': 'A DEFINIR',
     '{{forma_pagamento}}': variaveis.forma_pagamento || 'Pix',
     '{{periodicidade_pagamento}}': variaveis.periodicidade_pagamento || 'Quinzenal',
-    '{{pagamento_prazo}}': variaveis.pagamento_prazo || '30 dias',
+    '{{pagamento_prazo}}': variaveis.pagamento_prazo || variaveis.prazo_pagamento || '30 dias',
+    '{{prazo_pagamento}}': variaveis.prazo_pagamento || variaveis.pagamento_prazo || '30 dias',
+    '{{banco}}': variaveis.banco || 'Não informado',
+    '{{agencia}}': variaveis.agencia || 'Não informado',
+    '{{conta}}': variaveis.conta || 'Não informado',
+    '{{chave_pix}}': variaveis.chave_pix || 'Não informado',
+    '{{favorecido}}': variaveis.favorecido || 'Não informado',
     '{{empresa_nome}}': variaveis.empresa_nome || 'Conexão Express Transportes LTDA',
     '{{empresa_cnpj}}': variaveis.empresa_cnpj || '31.227.975/0001-80',
     '{{empresa_endereco}}': variaveis.empresa_endereco || 'Avenida Goitacazes, 45, São Caetano do Sul/SP',
@@ -172,7 +210,6 @@ export function parseVariables(
 
   let conteudo = template;
   for (const [key, value] of Object.entries(replacements)) {
-    // Previne "R$ R$ 0,00"
     if (value.startsWith("R$ ") && (conteudo.includes(`R$ ${key}`) || conteudo.includes(`R$${key}`))) {
       conteudo = conteudo.split(`R$ ${key}`).join(value);
       conteudo = conteudo.split(`R$${key}`).join(value);
@@ -181,7 +218,6 @@ export function parseVariables(
     }
   }
 
-  // Limpeza final de variáveis não preenchidas
   conteudo = conteudo.replace(/\{\{[^}]+\}\}/g, "Não informado");
 
   return conteudo;
@@ -334,7 +370,7 @@ export async function criarContrato(
       prestador_telefone: prestador.telefone,
       conteudo_html: conteudoHtml,
       hash_documento: hash,
-      status: 'pendente',
+      status: 'gerado',
       valor_contrato: typeof valorRaw === 'number' ? valorRaw : (valorRaw ? parseFloat(String(valorRaw)) : null),
       metadata: {
         ...variaveis,
@@ -555,23 +591,48 @@ export async function excluirModeloContrato(id: string): Promise<boolean> {
 // =====================================================
 // BUSCAR CONTRATOS
 // =====================================================
+export interface BuscarContratosFiltros {
+  prestadorId?: string;
+  prestadorNome?: string;
+  clienteNome?: string;
+  tipo?: string;
+  status?: string;
+  numeroContrato?: string;
+  dataInicio?: string;
+  dataFim?: string;
+  limit?: number;
+}
+
 export async function buscarContratos(
-  prestadorId?: string,
-  status?: string,
-  limit: number = 50
+  filtros?: BuscarContratosFiltros
 ): Promise<ContratoGerado[]> {
   try {
     let query = supabase
       .from('contratos_gerados')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .limit(filtros?.limit || 50);
 
-    if (prestadorId) {
-      query = query.eq('prestador_id', prestadorId);
+    if (filtros?.prestadorId) {
+      query = query.eq('prestador_id', filtros.prestadorId);
     }
-    if (status) {
-      query = query.eq('status', status);
+    if (filtros?.prestadorNome) {
+      query = query.ilike('prestador_nome', `%${filtros.prestadorNome}%`);
+    }
+    if (filtros?.tipo) {
+      query = query.eq('tipo_contrato', filtros.tipo);
+    }
+    if (filtros?.status) {
+      query = query.eq('status', filtros.status);
+    }
+    if (filtros?.numeroContrato) {
+      query = query.ilike('numero_contrato', `%${filtros.numeroContrato}%`);
+    }
+    if (filtros?.dataInicio) {
+      query = query.gte('created_at', filtros.dataInicio);
+    }
+    if (filtros?.dataFim) {
+      query = query.lte('created_at', filtros.dataFim);
     }
 
     const { data, error } = await query;
@@ -581,6 +642,14 @@ export async function buscarContratos(
     console.error('[ContratosService] Erro ao buscar contratos:', error);
     return [];
   }
+}
+
+export async function buscarContratosPorPrestador(
+  prestadorId?: string,
+  status?: string,
+  limit: number = 50
+): Promise<ContratoGerado[]> {
+  return buscarContratos({ prestadorId, status, limit });
 }
 
 // =====================================================
@@ -728,6 +797,58 @@ export async function registrarAssinatura(
     return sucesso;
   } catch (error) {
     console.error('[ContratosService] Erro ao registrar assinatura:', error);
+    return false;
+  }
+}
+
+// =====================================================
+// EXCLUIR CONTRATO
+// =====================================================
+export async function excluirContrato(
+  id: string
+): Promise<boolean> {
+  try {
+    const contrato = await buscarContratoPorId(id);
+    if (!contrato) throw new Error('Contrato não encontrado');
+
+    // Tentar remover do Storage se existir pdf_url
+    if (contrato.pdf_url) {
+      try {
+        const urlObj = new URL(contrato.pdf_url);
+        const pathParts = urlObj.pathname.split('/');
+        const bucketIndex = pathParts.indexOf('contratos');
+        if (bucketIndex >= 0) {
+          const filePath = pathParts.slice(bucketIndex + 1).join('/');
+          if (filePath) {
+            await supabase.storage.from('contratos').remove([filePath]);
+          }
+        }
+      } catch (storageErr) {
+        console.warn('[ContratosService] Erro ao remover arquivo do Storage:', storageErr);
+      }
+    }
+
+    const { error } = await supabase
+      .from('contratos_gerados')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    try {
+      await supabase.rpc('registrar_contrato_historico', {
+        p_contrato_id: id,
+        p_acao: 'excluido',
+        p_descricao: 'Contrato excluído',
+        p_detalhes: JSON.stringify({ numero: contrato.numero_contrato }),
+      });
+    } catch (histErr) {
+      console.warn('[ContratosService] Erro ao registrar histórico de exclusão:', histErr);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('[ContratosService] Erro ao excluir contrato:', error);
     return false;
   }
 }

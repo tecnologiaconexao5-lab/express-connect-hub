@@ -60,10 +60,10 @@ export default function RelatorioPagamentoPrestador() {
     ticketMedio: dados.length > 0 ? dados.reduce((a, b) => a + (b.custo_prestador || 0), 0) / dados.length : 0
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (dados.length === 0) return toast.error("Sem dados para exportar");
     
-    gerarPDFProfissional({
+    await gerarPDFProfissional({
       titulo: "Relatório de Pagamentos - Prestadores",
       subtitulo: `Período: ${fmtData(filtros.dataInicial)} a ${fmtData(filtros.dataFinal)}`,
       colunas: ["OS", "Data Finalização", "Prestador", "Veículo", "Valor (R$)"],

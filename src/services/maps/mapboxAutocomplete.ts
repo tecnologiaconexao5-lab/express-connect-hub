@@ -183,12 +183,15 @@ export function extrairDadosDaSuggestion(
 
   const cep = findContext("postcode");
   const cidade = findContext("place") || findContext("locality") || "";
-  const estado = findContext("region") || "";
-  const bairro = findContext("neighborhood") || suggestion.text;
   
-  const logradouro = suggestion.address 
-    ? `${suggestion.text}, ${suggestion.address}`
-    : suggestion.text;
+  const regCtx = context.find(c => c.id.startsWith("region"));
+  const estado = (regCtx && (regCtx as any).short_code)
+    ? (regCtx as any).short_code.replace("BR-", "")
+    : (regCtx?.text?.substring(0, 2) || "");
+
+  const bairro = findContext("neighborhood") || findContext("suburb") || findContext("district") || "";
+  
+  const logradouro = suggestion.text || "";
 
   let numero = "";
   if (suggestion.place_type.includes("address") && suggestion.address) {

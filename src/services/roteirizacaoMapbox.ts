@@ -20,7 +20,7 @@ async function buscarRotaMapbox(
   const { lat: latOrigem, lng: lngOrigem } = origemCoords;
   const { lat: latDestino, lng: lngDestino } = destinoCoords;
 
-  const url = `${MAPBOX_DIRECTIONS_URL}/${lngOrigem},${latOrigem};${lngDestino},${latDestino}.json?access_token=${token}&overview=simplified`;
+  const url = `${MAPBOX_DIRECTIONS_URL}/${lngOrigem},${latOrigem};${lngDestino},${latDestino}.json?access_token=${token}&overview=simplified&geometries=geojson`;
 
   try {
     const response = await fetch(url);
@@ -40,6 +40,7 @@ async function buscarRotaMapbox(
     const route = data.routes[0];
     const distance = route.distance;
     const duration = route.duration;
+    const coordinates = route.geometry?.coordinates || [];
 
     const distanciaKm = distance / 1000;
     const duracaoMin = Math.round(duration / 60);
@@ -65,6 +66,7 @@ async function buscarRotaMapbox(
       distanciaTexto,
       duracaoTexto,
       provider: "mapbox",
+      coordinates
     };
   } catch (error) {
     console.error(`[Roteirizacao Mapbox] Erro ao buscar rota:`, error);
@@ -87,6 +89,7 @@ export const calcularDistanciaTempoRota = async (
   tempoTotalMinutos: number;
   origemCalculo: 'mapbox' | 'estimativa_local';
   alertas: string[];
+  routeCoordinates?: [number, number][];
 }> => {
   const token = getMapboxToken();
   const alertas: string[] = [];
@@ -114,6 +117,7 @@ export const calcularDistanciaTempoRota = async (
 
   let distanciaTotal = 0;
   let tempoTotal = 0;
+  const routeCoordinates: [number, number][] = [];
   const blocos: CalculoRotaInput[][] = [];
 
   for (let i = 0; i < paradasComCoords.length; i += MAX_PONTOS_POR_BLOCO) {
@@ -141,6 +145,7 @@ export const calcularDistanciaTempoRota = async (
       if (resultado) {
         distanciaTotal += resultado.distanciaKm;
         tempoTotal += resultado.duracaoMin;
+        if (resultado.coordinates) routeCoordinates.push(...resultado.coordinates);
       }
     } else if (origemCoords) {
       const primeiraParada = bloco[0];
@@ -155,6 +160,7 @@ export const calcularDistanciaTempoRota = async (
       if (resultado) {
         distanciaTotal += resultado.distanciaKm;
         tempoTotal += resultado.duracaoMin;
+        if (resultado.coordinates) routeCoordinates.push(...resultado.coordinates);
       }
     }
 
@@ -173,6 +179,7 @@ export const calcularDistanciaTempoRota = async (
       if (resultado) {
         distanciaTotal += resultado.distanciaKm;
         tempoTotal += resultado.duracaoMin;
+        if (resultado.coordinates) routeCoordinates.push(...resultado.coordinates);
       }
     }
 
@@ -202,6 +209,7 @@ export const calcularDistanciaTempoRota = async (
     tempoTotalMinutos: Math.round(tempoTotal),
     origemCalculo: 'mapbox',
     alertas,
+    routeCoordinates,
   };
 };
 

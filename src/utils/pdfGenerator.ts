@@ -11,7 +11,25 @@ interface PDFOptions {
   orientacao?: "portrait" | "landscape";
 }
 
+export const carregarLogoBase64Utils = async (): Promise<string | null> => {
+  try {
+    const response = await fetch('/logo-oficial-conexao.png');
+    if (response.ok) {
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    }
+  } catch (e) {
+    console.warn("Logo não encontrado:", e);
+  }
+  return null;
+};
+
 export const gerarPDFProfissional = async ({ titulo, subtitulo, colunas, linhas, totais, orientacao = "portrait" }: PDFOptions) => {
+  const logo = await carregarLogoBase64Utils();
   const doc = new jsPDF(orientacao, "pt", "a4");
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -24,16 +42,21 @@ export const gerarPDFProfissional = async ({ titulo, subtitulo, colunas, linhas,
     doc.rect(0, 0, pageWidth, 100, "F");
 
     // Logo (placeholder ou tenta carregar)
-    try {
-      // In a real browser env with actual image, we would load the image and add it.
-      // Since it's sync, we just add text if image fails or is async.
-      // For enterprise level, we'll draw a text placeholder for logo if we can't load image synchronously.
+    if (logo) {
+      try {
+        // dimensions for 3:1 aspect ratio on pt unit (72 vs 24)
+        doc.addImage(logo, "PNG", margin, 25, 108, 36);
+      } catch (e) {
+        doc.setFontSize(20);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(15, 23, 42);
+        doc.text("CONEXÃO EXPRESS", margin, 45);
+      }
+    } else {
       doc.setFontSize(20);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(15, 23, 42); // slate-900
       doc.text("CONEXÃO EXPRESS", margin, 45);
-    } catch (e) {
-      // Fallback
     }
 
     doc.setFontSize(10);

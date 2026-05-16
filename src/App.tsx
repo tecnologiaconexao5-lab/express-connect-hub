@@ -33,6 +33,9 @@ import IAAutomacoes from "@/pages/IAAutomacoes";
 import IaAutomacao from "@/pages/IaAutomacao";
 import MonitorIntegracoes from "@/pages/MonitorIntegracoes";
 import CadastroPrestador from "@/pages/CadastroPrestador";
+import PortalPrestador from "@/pages/PortalPrestador";
+import WhatsAppCRM from "@/pages/WhatsAppCRM";
+import BancoTalentos from "@/pages/BancoTalentos";
 import Comunicacao from "@/pages/Comunicacao";
 import Tracking from "@/pages/Tracking";
 import Combustiveis from "@/pages/Combustiveis";
@@ -59,6 +62,7 @@ const App = () => (
           <Route path="/t/:codigo" element={<Tracking />} />
           <Route path="/rastrear" element={<Tracking />} />
           <Route path="/portal-cliente" element={<PortalCliente />} />
+          <Route path="/portal-prestador" element={<PortalPrestador />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
@@ -79,6 +83,8 @@ const App = () => (
             <Route path="/frota" element={<Frota />} />
             <Route path="/combustiveis" element={<Combustiveis />} />
             <Route path="/recrutamento" element={<Recrutamento />} />
+          <Route path="/recrutamento/whatsapp-crm" element={<WhatsAppCRM />} />
+          <Route path="/recrutamento/banco-talentos" element={<BancoTalentos />} />
             <Route path="/contratos" element={<Contratos />} />
             <Route path="/sla" element={<SLA />} />
             <Route path="/relatorios" element={<Relatorios />} />

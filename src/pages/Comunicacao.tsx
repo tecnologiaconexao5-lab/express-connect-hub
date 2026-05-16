@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Megaphone, Gift, History, FileText } from "lucide-react";
+import { Megaphone, Gift, History, FileText, MessageSquare } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CentralComunicacao } from "@/components/comunicacao/CentralComunicacao";
 import { Aniversariantes } from "@/components/comunicacao/Aniversariantes";
+import { ConversasHub } from "@/components/comunicacao/ConversasHub";
 
 const Comunicacao = () => {
   return (
@@ -12,26 +13,26 @@ const Comunicacao = () => {
           <Megaphone className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold">Central de Comunicação</h1>
+          <h1 className="text-2xl font-bold">Hub de Comunicação</h1>
           <p className="text-sm text-muted-foreground">
-            Comunicação em lote, campanhas e engajamento com prestadores
+            Gestão unificada de WhatsApp, E-mail e disparos em lote
           </p>
         </div>
       </div>
 
-      <Tabs defaultValue="comunicacao" className="w-full">
-        <TabsList>
+      <Tabs defaultValue="conversas" className="w-full">
+        <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="conversas" className="gap-2">
+            <MessageSquare className="w-4 h-4" />
+            Conversas (Chat)
+          </TabsTrigger>
           <TabsTrigger value="comunicacao" className="gap-2">
             <Megaphone className="w-4 h-4" />
-            Nova Comunicação
+            Disparo em Lote
           </TabsTrigger>
           <TabsTrigger value="aniversariantes" className="gap-2">
             <Gift className="w-4 h-4" />
             Aniversariantes
-          </TabsTrigger>
-          <TabsTrigger value="historico" className="gap-2">
-            <History className="w-4 h-4" />
-            Histórico
           </TabsTrigger>
           <TabsTrigger value="templates" className="gap-2">
             <FileText className="w-4 h-4" />
@@ -39,18 +40,16 @@ const Comunicacao = () => {
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="conversas" className="mt-6 m-0">
+          <ConversasHub />
+        </TabsContent>
+
         <TabsContent value="comunicacao" className="mt-6">
           <CentralComunicacao />
         </TabsContent>
 
         <TabsContent value="aniversariantes" className="mt-6">
           <Aniversariantes />
-        </TabsContent>
-
-        <TabsContent value="historico" className="mt-6">
-          <div className="p-8 text-center text-muted-foreground">
-            Histórico de comunicações em desenvolvimento
-          </div>
         </TabsContent>
 
         <TabsContent value="templates" className="mt-6">

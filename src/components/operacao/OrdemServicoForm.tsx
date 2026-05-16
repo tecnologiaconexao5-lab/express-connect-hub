@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ArrowLeft, Save, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Upload, X, Download, File, FilePlus, Check, Route, AlertTriangle, Calculator, Clock, ChevronDown, CheckCircle2, MessageCircle, Copy as CopyIcon, Send, Eye } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,14 @@ import { copiarWhatsApp } from "@/lib/pdfGenerator";
 import { enviarMensagem as WhatsAppEnviar } from "@/services/integracoes/whatsappService";
 import { disparaEventoAutomacao } from "@/services/integracoes/automacaoCentralService";
 import { enviarWebhookWhatsAppOSCriada } from "@/services/integracoes/whatsAppOSService";
+import { enviarWhatsAppAutomatico } from "@/services/whatsappAutomation";
+import {
+  gerarMensagemOSCriada,
+  gerarMensagemOSAtualizada,
+  gerarMensagemPrestadorAcionado,
+  gerarMensagemOSFinalizada,
+  gerarMensagemOcorrenciaOS,
+} from "@/services/osWhatsAppTemplates";
 
 const separarNumeroLogradouro = (endereco: string): { logradouro: string; numero: string } => {
   const match = endereco?.match(/^(.+?),\s*(\d+)\s*[-–]?\s*$/);
@@ -162,6 +170,7 @@ const Field = ({ label, children, className = "" }: { label: React.ReactNode; ch
 
 const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [data, setData] = useState<OrdemServico>(os ? JSON.parse(JSON.stringify(os)) : emptyOS());
+  const osInicialRef = useRef<OrdemServico>(data);
   const [isSaving, setIsSaving] = useState(false);
   const [sugestaoVeiculo, setSugestaoVeiculo] = useState<SugestaoVeiculo | null>(null);
   const [sugestoesVeiculo, setSugestoesVeiculo] = useState<SugestaoVeiculo[]>([]);
@@ -252,7 +261,9 @@ const calculaRotaEValor = async () => {
     return () => clearTimeout(timer);
   }, [data.enderecos, data.veiculoTipo, data.cliente]);
 
-
+  useEffect(() => {
+    osInicialRef.current = data;
+  }, [os]);
 
   const copiarWhatsApp = () => {
     const msg = gerarMensagemWhatsAppOS(data);
@@ -510,6 +521,48 @@ const calculaRotaEValor = async () => {
             numeroOS: data.numero
           }
         );
+      }
+
+      const msgContext = {
+        numero: data.numero,
+        cliente: data.cliente,
+        origem: coleta?.endereco || "",
+        destino: entrega?.endereco || "",
+        prestador: data.prestador,
+        status: data.status,
+        placa: data.veiculoPlaca,
+      };
+
+      const osInicial = osInicialRef.current;
+      const prestadorMudou = !!data.prestador && data.prestador !== osInicial.prestador;
+      const statusFinalizada = data.status === "finalizada" && osInicial.status !== "finalizada";
+      const statusOcorrencia = data.status === "ocorrencia" && osInicial.status !== "ocorrencia";
+      const telefoneDestino = telefoneCliente || "5511912133010";
+
+      enviarWhatsAppAutomatico({
+        telefone: telefoneDestino,
+        mensagem: isNovaOS ? gerarMensagemOSCriada(msgContext) : gerarMensagemOSAtualizada(msgContext),
+      });
+
+      if (prestadorMudou) {
+        enviarWhatsAppAutomatico({
+          telefone: telefoneDestino,
+          mensagem: gerarMensagemPrestadorAcionado(msgContext),
+        });
+      }
+
+      if (statusFinalizada) {
+        enviarWhatsAppAutomatico({
+          telefone: telefoneDestino,
+          mensagem: gerarMensagemOSFinalizada(msgContext),
+        });
+      }
+
+      if (statusOcorrencia) {
+        enviarWhatsAppAutomatico({
+          telefone: telefoneDestino,
+          mensagem: gerarMensagemOcorrenciaOS(msgContext),
+        });
       }
 
       onSalvar();

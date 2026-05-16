@@ -6,7 +6,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { FileSignature, Download, Loader2, Edit3, Save } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import jsPDF from "jspdf";
 import { useLogo } from "@/hooks/useLogo";
 import { buscarModelosContratos, criarContrato, gerarHashDocumento } from "@/services/contratosService";
 import { generateContractPDF, generateContractPDFBase64 } from "@/services/contratosPdfService";
@@ -15,6 +14,31 @@ import { ContratoModelo } from "@/services/contratosService";
 const EMPRESA_NOME = "Conexão Express Transportes LTDA";
 const EMPRESA_CNPJ_CORRETO = "31.227.975/0001-80";
 const EMPRESA_ENDERECO = "Avenida Goitacazes, nº 45, Sala 22, São Caetano do Sul/SP";
+
+function getPrestadorDocumento(p: any): string {
+  return p?.cpf_cnpj || p?.cpfCnpj || p?.cpf || p?.cnpj || p?.documento || p?.rg || "";
+}
+
+function getPrestadorTelefone(p: any): string {
+  return p?.telefone || p?.telefone_principal || p?.telefonePrincipal || p?.whatsapp || p?.celular || "";
+}
+
+function formatarCPFCNPJ(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length === 11) return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  if (digits.length === 14) return digits.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+  return value;
+}
+
+function formatCurrency(v: any): string {
+  if (v === undefined || v === null || v === '' || v === 0) return "A DEFINIR";
+  return `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+}
+
+function formatNumber(v: any, suffix = ""): string {
+  if (v === undefined || v === null || v === '') return "Não informado";
+  return `${v}${suffix}`;
+}
 
 export default function ContratoPrestadorModal({
   open,
@@ -33,12 +57,14 @@ export default function ContratoPrestadorModal({
   const [editMode, setEditMode] = useState(false);
   const [numeroContrato, setNumeroContrato] = useState("");
   const [hashDocumento, setHashDocumento] = useState("");
-  const { config, getLogo, getNomeFantasia, shouldShowLogo } = useLogo();
+  const [veiculoData, setVeiculoData] = useState<any>(null);
+  const { config, getLogo, getNomeFantasia } = useLogo();
 
   useEffect(() => {
     if (open && prestador?.id) {
       carregarModelos();
       gerarNumero();
+      carregarVeiculo();
     }
   }, [open, prestador?.id]);
 
@@ -49,6 +75,24 @@ export default function ContratoPrestadorModal({
       setHashDocumento("");
     }
   }, [open]);
+
+  const carregarVeiculo = async () => {
+    if (!prestador?.id) return;
+    try {
+      const { data } = await supabase
+        .from('veiculos')
+        .select('*')
+        .eq('prestador_vinculado', prestador.id)
+        .limit(1)
+        .single();
+      if (data) {
+        setVeiculoData(data);
+      }
+    } catch {
+      // fallback: usar veiculos do objeto prestador
+      console.log("[ContratoModal] Veículo não encontrado no banco, usando fallback local");
+    }
+  };
 
   const carregarModelos = async () => {
     setLoadingModelos(true);
@@ -82,17 +126,34 @@ ENDEREÇO: {{empresa_endereco}}
 
 CONTRATADO: {{prestador_nome}}
 {{prestador_documento}}
-RNTRC: {{prestador_rntrc}}
-ENDEREÇO: {{prestador_endereco}}
+RNTRC/ANTT: {{prestador_rntrc}}
+ENDEREÇO: {{prestador_endereco_completo}}
 TELEFONE: {{prestador_telefone}}
 WHATSAPP: {{prestador_whatsapp}}
 E-MAIL: {{prestador_email}}
 
-VEÍCULO: {{veiculo_tipo}} - PLACA: {{veiculo_placa}} - MODELO: {{veiculo_modelo}}
+VEÍCULO: {{veiculo_placa}} - {{veiculo_marca}} {{veiculo_modelo}}
+Tipo: {{veiculo_tipo}}
+Carga: {{veiculo_tipo_carga}}
+Capacidade: {{veiculo_capacidade_kg}} / {{veiculo_capacidade_m3}}
 
 CONDIÇÕES COMERCIAIS:
-Valor por Viagem/Saída: {{valor_saida}}
-Tipo de Carga: {{veiculo_tipo_carga}}
+Valor Saída: {{valor_saida}}
+Valor Diária: {{valor_diaria}}
+Franquia KM: {{franquia_km}}
+Valor KM Excedente: {{valor_km_excedente}}
+
+DADOS BANCÁRIOS:
+Banco: {{banco}}
+Agência: {{agencia}}
+Conta: {{conta}}
+Chave PIX: {{chave_pix}}
+Favorecido: {{favorecido}}
+
+PAGAMENTO:
+Forma: {{forma_pagamento}}
+Periodicidade: {{periodicidade_pagamento}}
+Prazo: {{prazo_pagamento}}
 
 DATA: {{data_atual}}
 NÚMERO: {{numero_contrato}}
@@ -101,55 +162,35 @@ CLÁUSULA 1ª - DO OBJETO
 O presente contrato tem como objeto a prestação de serviços de transporte de cargas pelo Contratado, utilizando veículo próprio ou agregado, em regime de execução autônoma, nos termos da Lei 11.442/2007 (ANTT) e regulamentações da ETC/EFF.
 
 CLÁUSULA 2ª - DAS OBRIGAÇÕES DO CONTRATADO
-2.1 - Realizar o transporte com diligence e segurança, zelando pela integridade da carga.
+2.1 - Realizar o transporte com diligência e segurança, zelando pela integridade da carga.
 2.2 - Manter o veículo em perfeito estado de conservação e com documentação regular (CRLV, seguro, RNTRC).
 2.3 - Cumprir rigorosamente os prazos e rotas acordadas.
-2.4 - Respeitar as normas internas da Contratante e os procedimentos operacionais estabelecidos.
-2.5 - Responsabilizar-se civil e criminalmente pela carga transportada.
+2.4 - Responsabilizar-se civil e criminalmente pela carga transportada.
 
-CLÁUSULA 3ª - DAS OBRIGAÇÕES DO CONTRATANTE
-3.1 - Fornecer as informações necessárias para a execução dos serviços.
-3.2 - Efetuar o pagamento dos valores acordados nos prazos estipulados.
-3.3 - Disponibilizar suporte operacional para dúvidas e orientações.
+CLÁUSULA 3ª - DO VALOR E PAGAMENTO
+3.1 - O Contratante pagará ao Contratado o valor de {{valor_saida}} por viagem/saída realizada.
+3.2 - Pagamento: {{forma_pagamento}} | Periodicidade: {{periodicidade_pagamento}} | Prazo: {{prazo_pagamento}}
+3.3 - Dados bancários: Banco {{banco}}, Agência {{agencia}}, Conta {{conta}}, Pix {{chave_pix}}
 
-CLÁUSULA 4ª - DO VALOR E PAGAMENTO
-4.1 - O Contratante pagará ao Contratado o valor de {{valor_saida}} por viagem/saída realizada.
-4.2 - O pagamento será efetuado em até {{pagamento_prazo}} dias após a conclusão do serviço.
-4.3 - Dados para pagamento: Chave PIX {{prestador_pix}} / Banco {{prestador_banco}}
+CLÁUSULA 4ª - DO VÍNCULO
+4.1 - O presente contrato não gera vínculo empregatício entre as partes.
 
-CLÁUSULA 5ª - DO VÍNCULO
-5.1 - O presente contrato não gera vínculo empregatício entre as partes, sendo a relação de natureza exclusivamente civil e comercial.
-5.2 - O Contratado atua como prestador de serviços autônomo, assumindo todos os encargos trabalhistas, tributários e previdenciários.
+CLÁUSULA 5ª - DO ACEITE ELETRÔNICO
+5.1 - O aceite deste contrato via WhatsApp ou assinatura eletrônica tem valor jurídico.
 
-CLÁUSULA 6ª - DA VIGÊNCIA
-6.1 - O presente contrato vigorará a partir da data de sua assinatura pelo prazo de 12 (doze) meses, podendo ser renovado automaticamente por igual período, caso nenhuma das partes manifeste intenção contrária com antecedência mínima de 30 (trinta) dias.
+CLÁUSULA 6ª - DO FORO
+6.1 - Fica eleito o foro da Comarca de São Caetano do Sul/SP.
 
-CLÁUSULA 7ª - DA RESCISÃO
-7.1 - O contrato poderá ser rescindido por qualquer das partes, mediante aviso prévio de 30 (trinta) dias.
-7.2 - A rescisão imediata poderá ocorrer em caso de descumprimento das obrigações contratuais.
-
-CLÁUSULA 8ª - DO ACEITE ELETRÔNICO
-8.1 - O aceite deste contrato via WhatsApp ou assinatura eletrônica tem valor jurídico equivalente à assinatura física, conforme Medida Provisória nº 2.200-2/2001 e Lei nº 11.419/2006.
-
-CLÁUSULA 9ª - DO FORO
-9.1 - Fica eleito o foro da Comarca de São Caetano do Sul/SP para dirimir quaisquer controvérsias.
-
-DECLARAMOS QUE LI E ACEITO todas as cláusulas e condições deste contrato, reconhecendo-o como título executivo extrajudicial.
-
-_______________________________________          _______________________________________
-{{empresa_nome}}
-CNPJ: {{empresa_cnpj}}                              {{prestador_nome}}
-                                                 {{prestador_documento_linha}}
-
-HASH DE VALIDAÇÃO: {{hash_documento}}
-Documento gerado em {{data_atual}}`,
+HASH DE VALIDAÇÃO: {{hash_documento}}`,
         variaveis: [
           "{{empresa_nome}}", "{{empresa_cnpj}}", "{{empresa_endereco}}",
-          "{{prestador_nome}}", "{{prestador_documento}}", "{{prestador_documento_linha}}",
-          "{{prestador_rntrc}}", "{{prestador_endereco}}", "{{prestador_telefone}}",
-          "{{prestador_whatsapp}}", "{{prestador_email}}", "{{prestador_pix}}", "{{prestador_banco}}",
-          "{{veiculo_placa}}", "{{veiculo_modelo}}", "{{veiculo_tipo}}", "{{veiculo_tipo_carga}}",
-          "{{valor_saida}}", "{{pagamento_prazo}}",
+          "{{prestador_nome}}", "{{prestador_documento}}", "{{prestador_rntrc}}",
+          "{{prestador_endereco_completo}}", "{{prestador_telefone}}", "{{prestador_whatsapp}}", "{{prestador_email}}",
+          "{{veiculo_placa}}", "{{veiculo_marca}}", "{{veiculo_modelo}}", "{{veiculo_tipo}}",
+          "{{veiculo_tipo_carga}}", "{{veiculo_capacidade_kg}}", "{{veiculo_capacidade_m3}}",
+          "{{valor_saida}}", "{{valor_diaria}}", "{{franquia_km}}", "{{valor_km_excedente}}",
+          "{{banco}}", "{{agencia}}", "{{conta}}", "{{chave_pix}}", "{{favorecido}}",
+          "{{forma_pagamento}}", "{{periodicidade_pagamento}}", "{{prazo_pagamento}}",
           "{{data_atual}}", "{{numero_contrato}}", "{{hash_documento}}"
         ],
         ativa: true,
@@ -157,8 +198,6 @@ Documento gerado em {{data_atual}}`,
 
       if (error) {
         console.error('[ContratoModal] Erro ao inserir modelo TAC:', error);
-      } else {
-        console.log('[ContratoModal] Modelo TAC inserido:', data);
       }
     } catch (e) {
       console.error("[ContratoModal] Erro ao inserir modelo TAC:", e);
@@ -166,15 +205,13 @@ Documento gerado em {{data_atual}}`,
   };
 
   const gerarNumero = async () => {
-    // O número será gerado pelo serviço ao criar o contrato
-    // mas se quisermos mostrar no preview:
     try {
       const { data } = await supabase
         .from('contratos_gerados')
         .select('numero_contrato')
         .order('numero_contrato', { ascending: false })
         .limit(1);
-      
+
       const BASE = 869;
       let next = BASE;
       if (data && data.length > 0) {
@@ -183,7 +220,7 @@ Documento gerado em {{data_atual}}`,
       }
       const ano = new Date().getFullYear();
       setNumeroContrato(`CTR-${ano}-${String(next).padStart(6, '0')}`);
-    } catch (e) {
+    } catch {
       setNumeroContrato(`CTR-${new Date().getFullYear()}-000869`);
     }
   };
@@ -196,93 +233,105 @@ Documento gerado em {{data_atual}}`,
     }
   }, [modelos, selectedModeloId]);
 
-  const getPrimeiroVeiculo = () => {
-    if (prestador?.veiculos && prestador.veiculos.length > 0) {
-      return prestador.veiculos[0];
+  const getVeiculo = () => {
+    if (veiculoData) {
+      return {
+        placa: veiculoData.placa || "",
+        modelo: veiculoData.modelo || "",
+        marca: veiculoData.marca || "",
+        tipoVeiculo: veiculoData.tipo_veiculo || "",
+        tipoCarga: veiculoData.tipo_carga || "",
+        capacidadeKg: veiculoData.capacidade_kg || "",
+        capacidadeM3: veiculoData.capacidade_m3 || "",
+        antt: veiculoData.antt || "",
+        rntrc: veiculoData.rntrc || "",
+      };
     }
-    return { placa: "NÃO INFORMADO", modelo: "NÃO INFORMADO", tipoVeiculo: "NÃO INFORMADO", tipoCarga: "NÃO INFORMADO" };
+    if (prestador?.veiculos && prestador.veiculos.length > 0) {
+      const v = prestador.veiculos[0];
+      return {
+        placa: v.placa || "",
+        modelo: v.modelo || "",
+        marca: v.marca || "",
+        tipoVeiculo: v.tipoVeiculo || "",
+        tipoCarga: v.tipoCarga || "",
+        capacidadeKg: v.capacidadeKg || "",
+        capacidadeM3: v.capacidadeM3 || "",
+        antt: v.antt || "",
+        rntrc: v.rntrc || "",
+      };
+    }
+    return { placa: "", modelo: "", marca: "", tipoVeiculo: "", tipoCarga: "", capacidadeKg: "", capacidadeM3: "", antt: "", rntrc: "" };
   };
 
-  const getPrestadorDocumento = (p: any) => {
-    return p?.cpf_cnpj
-      || p?.cpfCnpj
-      || p?.cpf
-      || p?.cnpj
-      || p?.documento
-      || p?.rg
-      || "";
-  };
-
-  const getPrestadorTelefone = (p: any) => {
-    return p?.telefone
-      || p?.telefone_principal
-      || p?.telefonePrincipal
-      || p?.whatsapp
-      || p?.celular
-      || "";
+  const getRntrc = (): string => {
+    const v = getVeiculo();
+    return prestador?.rntrc || prestador?.antt || prestador?.rntrcAntt || v.rntrc || v.antt || "";
   };
 
   const getValorSaida = (): string => {
     const financeiro = prestador?.dadosFinanceiros || prestador?.financeiro;
-    
-    const v =
-      prestador?.valor_saida ||
-      prestador?.valor_diaria ||
-      financeiro?.valor_saida ||
-      financeiro?.valor_diaria ||
-      prestador?.diaria ||
-      prestador?.valorSaida ||
-      prestador?.valorDiaria ||
-      financeiro?.valorSaida ||
-      financeiro?.valorDiaria;
+    const v = prestador?.valor_saida || prestador?.valorSaida || prestador?.valor_diaria || prestador?.valorDiaria ||
+      financeiro?.valor_saida || financeiro?.valor_diaria || prestador?.diaria || financeiro?.valorSaida || financeiro?.valorDiaria;
+    return formatCurrency(v);
+  };
 
-    if (v !== undefined && v !== null && v !== '' && v !== 0) {
-      return `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+  const getValorDiaria = (): string => {
+    const v = prestador?.valor_diaria || prestador?.valorDiaria || prestador?.diaria;
+    return formatCurrency(v);
+  };
+
+  const getValorKm = (): string => {
+    const v = prestador?.valor_km || prestador?.valorKm;
+    return formatCurrency(v);
+  };
+
+  const getFranquiaKm = (): string => {
+    const v = prestador?.franquia_km || prestador?.franquiaKm;
+    if (v !== undefined && v !== null && v !== '') {
+      return `${v} km`;
     }
-    return "A DEFINIR";
+    return "0 km";
   };
 
   const getDocumento = (): { linha: string, documento: string } => {
     const doc = getPrestadorDocumento(prestador);
     const docFormatado = formatarCPFCNPJ(doc);
     const digits = doc.replace(/\D/g, '');
-    
     if (digits.length <= 11) {
       return { linha: `CPF: ${docFormatado}`, documento: `CPF: ${docFormatado}` };
-    } else {
-      return { linha: `CNPJ: ${docFormatado}`, documento: `CNPJ: ${docFormatado}` };
     }
+    return { linha: `CNPJ: ${docFormatado}`, documento: `CNPJ: ${docFormatado}` };
   };
 
-  const formatarCPFCNPJ = (value: string): string => {
-    const digits = value.replace(/\D/g, '');
-    if (digits.length === 11) {
-      return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
-    }
-    if (digits.length === 14) {
-      return digits.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
-    }
-    return value;
-  };
-
-  const formatCurrency = (v: any) => {
-    if (v === undefined || v === null || v === '' || v === 0) return "A DEFINIR";
-    return `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+  const getEnderecoCompleto = (): string => {
+    const e = prestador?.endereco || {};
+    const parts = [
+      e?.rua,
+      e?.numero ? `nº ${e.numero}` : "",
+      e?.complemento,
+      e?.bairro,
+      e?.cidade,
+      e?.estado,
+      e?.cep ? `CEP: ${e.cep}` : ""
+    ].filter(Boolean);
+    return parts.join(", ") || "Não informado";
   };
 
   const substituirVariaveisContrato = (template: string): string => {
-    const veiculo = getPrimeiroVeiculo();
+    const veiculo = getVeiculo();
     const endereco = prestador?.endereco || {};
     const empresaFinal = getNomeFantasia() || EMPRESA_NOME;
     const documento = getDocumento();
-    
+    const rntrcValue = getRntrc();
+
     const ano = new Date().getFullYear();
     const numContratoBase = numeroContrato || `CTR-${ano}-000869`;
     const numAnexo = numContratoBase.replace('CTR', 'ANX') + '-01';
-    
-    const franquia = Number(prestador?.franquiaKm || 0);
-    const idaVoltaText = franquia > 0 
-      ? `\nA franquia considera o trajeto completo de ida e volta. Exemplo: ${franquia} km de franquia equivalem a aproximadamente ${franquia / 2} km de ida + ${franquia / 2} km de volta.`
+
+    const franquia = Number(prestador?.franquiaKm || prestador?.franquia_km || 0);
+    const idaVoltaText = franquia > 0
+      ? `A franquia considera o trajeto completo de ida e volta.`
       : "";
 
     const replacements: Record<string, string> = {
@@ -298,29 +347,41 @@ Documento gerado em {{data_atual}}`,
       '{{prestador_cpf}}': formatarCPFCNPJ(getPrestadorDocumento(prestador)) || "Não informado",
       '{{prestador_cnpj}}': formatarCPFCNPJ(prestador?.cnpj || '') || "Não informado",
       '{{prestador_cpf_cnpj}}': formatarCPFCNPJ(getPrestadorDocumento(prestador)) || "Não informado",
-      '{{prestador_rntrc}}': prestador?.rntrcAntt || prestador?.rntrc || "Não informado",
+      '{{prestador_rntrc}}': rntrcValue || "Não informado",
       '{{prestador_rg}}': prestador?.rgIe || prestador?.rg || "Não informado",
       '{{prestador_telefone}}': getPrestadorTelefone(prestador) || "Não informado",
       '{{prestador_whatsapp}}': getPrestadorTelefone(prestador) || "Não informado",
       '{{prestador_email}}': prestador?.email || "Não informado",
       '{{prestador_endereco}}': `${endereco?.rua || ''}, ${endereco?.numero || 'S/N'} - ${endereco?.bairro || ''}, ${endereco?.cidade || ''}/${endereco?.estado || ''} - CEP: ${endereco?.cep || ''}`.trim(),
-      '{{prestador_pix}}': prestador?.chavePix || "Não informado",
-      '{{prestador_banco}}': prestador?.dadosBancarios?.banco || prestador?.banco || "Não informado",
+      '{{prestador_endereco_completo}}': getEnderecoCompleto(),
+      '{{prestador_pix}}': prestador?.chavePix || prestador?.chave_pix || "Não informado",
+      '{{prestador_banco}}': prestador?.banco || "Não informado",
 
       '{{veiculo_placa}}': veiculo.placa || "Não informado",
       '{{veiculo_modelo}}': veiculo.modelo || "Não informado",
+      '{{veiculo_marca}}': veiculo.marca || "Não informado",
       '{{veiculo_tipo}}': veiculo.tipoVeiculo || "Não informado",
       '{{veiculo_tipo_carga}}': veiculo.tipoCarga || "Diversos",
+      '{{veiculo_capacidade_kg}}': formatNumber(veiculo.capacidadeKg, " kg"),
+      '{{veiculo_capacidade_m3}}': formatNumber(veiculo.capacidadeM3, " m³"),
 
       '{{valor_saida}}': getValorSaida(),
       '{{prestador_valor_saida}}': getValorSaida(),
-      '{{valor_diaria}}': formatCurrency(prestador?.valorDiaria || prestador?.diaria),
-      '{{franquia_km}}': `${franquia} km rodados${idaVoltaText}`,
-      '{{valor_km_excedente}}': formatCurrency(prestador?.valorKm),
-      '{{forma_pagamento}}': prestador?.formaPreferencialPagamento || prestador?.forma_pagamento || "Pix",
+      '{{valor_diaria}}': getValorDiaria(),
+      '{{franquia_km}}': `${franquia} km${idaVoltaText ? ` (${idaVoltaText})` : ""}`,
+      '{{valor_km_excedente}}': getValorKm(),
+
+      '{{banco}}': prestador?.banco || "Não informado",
+      '{{agencia}}': prestador?.agencia || "Não informado",
+      '{{conta}}': prestador?.conta || "Não informado",
+      '{{chave_pix}}': prestador?.chavePix || prestador?.chave_pix || "Não informado",
+      '{{favorecido}}': prestador?.favorecido || "Não informado",
+
+      '{{forma_pagamento}}': prestador?.formaPreferencialPagamento || prestador?.forma_preferencial_pagamento || "Pix",
       '{{periodicidade_pagamento}}': prestador?.periodicidadePagamento || "Quinzenal",
       '{{pagamento_prazo}}': prestador?.prazoPagamento || "30 dias",
-      
+      '{{prazo_pagamento}}': prestador?.prazoPagamento || "30 dias",
+
       '{{data_atual}}': new Date().toLocaleDateString("pt-BR", { day: '2-digit', month: 'long', year: 'numeric' }),
       '{{numero_contrato}}': numContratoBase,
       '{{numero_anexo}}': numAnexo,
@@ -329,7 +390,6 @@ Documento gerado em {{data_atual}}`,
 
     let parsed = template;
     for (const [key, value] of Object.entries(replacements)) {
-      // Previne "R$ R$ 0,00" caso o template já tenha o prefixo R$
       if (value.startsWith("R$ ") && (parsed.includes(`R$ ${key}`) || parsed.includes(`R$${key}`))) {
         parsed = parsed.split(`R$ ${key}`).join(value);
         parsed = parsed.split(`R$${key}`).join(value);
@@ -338,7 +398,6 @@ Documento gerado em {{data_atual}}`,
       }
     }
 
-    // Limpeza final de variáveis não preenchidas
     parsed = parsed.replace(/\{\{[^}]+\}\}/g, "Não informado");
 
     return parsed;
@@ -359,7 +418,7 @@ Documento gerado em {{data_atual}}`,
         setContent(substituirVariaveisContrato(mod.conteudo_base));
       }
     }
-  }, [selectedModeloId, modelos, hashDocumento, numeroContrato]);
+  }, [selectedModeloId, modelos, hashDocumento, numeroContrato, veiculoData]);
 
   useEffect(() => {
     const verificarVariaveisPendentes = () => {
@@ -381,21 +440,9 @@ Documento gerado em {{data_atual}}`,
       const hash = await gerarHashDocumento(conteudoFinal);
       setHashDocumento(hash);
 
-      console.log("[CONTRATO DEBUG PRESTADOR]", {
-        cpf_cnpj: prestador.cpf_cnpj,
-        cpfCnpj: prestador.cpfCnpj,
-        telefone: prestador.telefone,
-        telefone_principal: prestador.telefone_principal,
-        whatsapp: prestador.whatsapp,
-        documento_extraido: getPrestadorDocumento(prestador),
-        telefone_extraido: getPrestadorTelefone(prestador)
-      });
-
-      // 1. Criar contrato no banco
-      const veiculo = getPrimeiroVeiculo();
+      const veiculo = getVeiculo();
       const financeiro = prestador?.dadosFinanceiros || prestador?.financeiro;
       const valorOriginal = prestador?.valor_saida || prestador?.valor_diaria || financeiro?.valor_saida || financeiro?.valor_diaria || prestador?.diaria;
-
       const documentoFormatado = getDocumento().documento;
       const telefoneFormatado = getPrestadorTelefone(prestador);
 
@@ -404,13 +451,14 @@ Documento gerado em {{data_atual}}`,
         nome: prestador.nomeCompleto || prestador.nomeFantasia || prestador.nome,
         cpf: documentoFormatado,
         cnpj: prestador.cnpj,
-        rntrc: prestador.rntrcAntt || prestador.rntrc,
+        rntrc: getRntrc(),
         telefone: telefoneFormatado,
         placa: veiculo.placa,
         modelo: veiculo.modelo,
         tipo_veiculo: veiculo.tipoVeiculo,
         tipo_carga: veiculo.tipoCarga,
-        valor_saida: valorOriginal
+        valor_saida: valorOriginal,
+        valor_diaria: prestador?.valor_diaria || prestador?.valorDiaria || prestador?.diaria,
       }, modeloSelecionado?.tipo || 'TAC');
 
       if (!novoContrato) {
@@ -418,13 +466,11 @@ Documento gerado em {{data_atual}}`,
         return;
       }
 
-      // Atualizar o conteúdo com o número final e hash
       const contratoFinal = {
         ...novoContrato,
         conteudo_html: conteudoFinal
       };
 
-      // 2. Gerar PDF real (Binary Blob para evitar corrupção)
       const logoBase64 = await getLogo();
       const pdfBytes = await generateContractPDF(contratoFinal, {
         logoBase64,
@@ -435,7 +481,6 @@ Documento gerado em {{data_atual}}`,
 
       const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
 
-      // 3. Salvar PDF no Storage com Caminho Seguro
       const safeNumero = (novoContrato.numero_contrato || "CTR").replace(/[^a-zA-Z0-9-_]/g, "_");
       const filePath = `${prestador.id}/${safeNumero}.pdf`;
 
@@ -457,14 +502,19 @@ Documento gerado em {{data_atual}}`,
           storageSuccess = true;
         } else {
           console.error('[ContratoModal] Erro upload storage:', uploadError);
-          toast.warning("PDF gerado, mas não foi possível enviar ao servidor (Storage 400/Falha).");
+          await supabase.from('contratos_gerados').update({
+            status: 'pendente'
+          }).eq('id', novoContrato.id);
+          toast.warning("PDF gerado, mas não foi possível enviar ao servidor (Storage).");
         }
       } catch (storageErr) {
         console.error('[ContratoModal] Erro storage:', storageErr);
+        await supabase.from('contratos_gerados').update({
+          status: 'pendente'
+        }).eq('id', novoContrato.id);
         toast.warning("PDF gerado, mas houve falha na comunicação com o Storage.");
       }
 
-      // 4. Download / Abertura Local (Garante que o usuário receba o arquivo mesmo com erro de storage)
       const url = URL.createObjectURL(pdfBlob);
       const link = document.createElement("a");
       link.href = url;

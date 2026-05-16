@@ -52,13 +52,14 @@ export function addHeader(
 
   if (options.logoUrl) {
     try {
-      doc.addImage(options.logoUrl, 'PNG', margin, 5, 25, 12);
+      // Ajuste de proporção para logo-oficial-conexao.png (3:1)
+      doc.addImage(options.logoUrl, 'PNG', margin, 5, 36, 12);
     } catch (e) {
       console.error('Erro ao adicionar logo no header:', e);
     }
   }
 
-  const textX = options.logoUrl ? margin + 30 : margin + 5;
+  const textX = options.logoUrl ? margin + 42 : margin + 5;
 
   doc.setFontSize(14);
   doc.setFont("helvetica", "bold");

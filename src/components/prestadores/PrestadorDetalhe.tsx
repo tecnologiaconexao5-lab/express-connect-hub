@@ -624,6 +624,8 @@ const PrestadorDetalhe = ({ prestador: initial, onBack }: Props) => {
                 <div><Label className="text-xs">Telefone principal</Label><Input value={p.telefone || ""} onChange={(e) => handleChange('telefone', e.target.value)} /></div>
                 <div><Label className="text-xs">WhatsApp</Label><Input value={p.whatsapp || ""} onChange={(e) => handleChange('whatsapp', e.target.value)} /></div>
                 <div><Label className="text-xs">E-mail</Label><Input value={p.email || ""} onChange={(e) => handleChange('email', e.target.value)} /></div>
+                <div><Label className="text-xs">RNTRC</Label><Input value={p.rntrc || ""} onChange={(e) => handleChange('rntrc', e.target.value)} placeholder="Nº RNTRC" /></div>
+                <div><Label className="text-xs">ANTT</Label><Input value={p.antt || ""} onChange={(e) => handleChange('antt', e.target.value)} placeholder="Nº ANTT" /></div>
               </CardContent>
             </Card>
 

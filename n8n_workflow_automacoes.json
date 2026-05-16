@@ -1,0 +1,268 @@
+{
+  "name": "TMS - Worker Automacoes",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "* * * * *"
+            }
+          ]
+        }
+      },
+      "id": "e4f3a466-4c7b-481d-8ba5-3cc2c5fc698b",
+      "name": "Cron (1 min)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [ 180, 240 ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.VITE_SUPABASE_URL }}/rest/v1/rpc/pull_automacoes_pendentes",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.VITE_SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.VITE_SUPABASE_ANON_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c3938af6-d872-4d2d-a1ad-46793f773df4",
+      "name": "Supabase Pull Queue (RPC Lock)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 380, 240 ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "supabase_key",
+          "name": "Supabase Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      },
+      "id": "514f7d45-ff44-482a-bcfa-192569e29a28",
+      "name": "Item Lists (Iterar)",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 3,
+      "position": [ 580, 240 ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.canal }}",
+              "value2": "whatsapp"
+            }
+          ]
+        }
+      },
+      "id": "78de3d03-9bb5-4ed3-a00e-6f81b1d4285b",
+      "name": "Verifica Canal",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [ 780, 240 ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.VITE_EVOLUTION_SERVER_URL }}/message/sendText/{{ $env.VITE_EVOLUTION_INSTANCE }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.VITE_EVOLUTION_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.destino }}"
+            },
+            {
+              "name": "options",
+              "value": "{\"delay\": 1200, \"presence\": \"composing\"}"
+            },
+            {
+              "name": "textMessage",
+              "value": "={{ $json.mensagem }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "84310d54-a3cd-41e9-a3b0-0b616421d0ea",
+      "name": "Evolution API Send Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 1000, 160 ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.VITE_SUPABASE_URL }}/rest/v1/automacoes_fila?id=eq.{{ $json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.VITE_SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.VITE_SUPABASE_ANON_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "concluido"
+            },
+            {
+              "name": "processado_em",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2bcbd7e0-9e4a-4e89-bd60-49658f84cc57",
+      "name": "Supabase Update Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 1220, 160 ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.VITE_SUPABASE_URL }}/rest/v1/automacoes_fila?id=eq.{{ $json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.VITE_SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.VITE_SUPABASE_ANON_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "erro"
+            },
+            {
+              "name": "tentativas",
+              "value": "={{ $json.tentativas + 1 }}"
+            },
+            {
+              "name": "ultimo_erro",
+              "value": "={{ $json.error.message || 'Erro desconhecido' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e4f5a3d7-2f34-45aa-b88a-d5f99fa77fba",
+      "name": "Supabase Update Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 1220, 340 ]
+    }
+  ],
+  "connections": {
+    "Cron (1 min)": {
+      "main": [
+        [
+          {
+            "node": "Supabase Pull Queue (RPC Lock)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Pull Queue (RPC Lock)": {
+      "main": [
+        [
+          {
+            "node": "Item Lists (Iterar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Item Lists (Iterar)": {
+      "main": [
+        [
+          {
+            "node": "Verifica Canal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verifica Canal": {
+      "main": [
+        [
+          {
+            "node": "Evolution API Send Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Evolution API Send Text": {
+      "main": [
+        [
+          {
+            "node": "Supabase Update Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f7d3bb63-2227-4a0b-ac45-1262d9fb22a7"
+}

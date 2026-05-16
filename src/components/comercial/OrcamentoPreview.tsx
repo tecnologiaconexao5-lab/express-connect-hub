@@ -25,14 +25,14 @@ const STATUS_LABELS: Record<string, string> = {
 export default function OrcamentoPreview({ orcamento, onVoltar }: Props) {
   const copiarTexto = () => {
     const texto = `
-ORÇAMENTO: ${orcamento.numero}
+      ORÇAMENTO: ${orcamento.numero}
 CLIENTE: ${orcamento.cliente}
 CNPJ: ${orcamento.clienteCnpj || "—"}
 DATA: ${orcamento.dataEmissao ? new Date(orcamento.dataEmissao).toLocaleDateString("pt-BR") : "—"}
-VALOR: R$ ${orcamento.valorCliente?.toFixed(2) || "0,00"}
+VALOR: R$ ${orcamento.valores.valorFinal?.toFixed(2) || "0,00"}
 
-ORIGEM: ${orcamento.origem || "—"}
-DESTINO: ${orcamento.destino || "—"}
+ORIGEM: ${orcamento.enderecos.find(e => e.tipo === "coleta")?.endereco || "—"}
+DESTINO: ${[...orcamento.enderecos].reverse().find(e => e.tipo === "entrega")?.endereco || "—"}
 
 VECTOR: ${orcamento.veiculo?.tipo?.toUpperCase() || "—"}
 STATUS: ${STATUS_LABELS[orcamento.status] || orcamento.status}
@@ -64,7 +64,7 @@ STATUS: ${STATUS_LABELS[orcamento.status] || orcamento.status}
           <Button variant="outline" onClick={copiarTexto}>
             <CopyIcon className="w-4 h-4 mr-2" /> Copiar Dados
           </Button>
-          <Button variant="outline" onClick={() => gerarPdfOrcamento(orcamento)}>
+          <Button variant="outline" onClick={async () => await gerarPdfOrcamento(orcamento)}>
             <FileText className="w-4 h-4 mr-2" /> Baixar PDF
           </Button>
           {orcamento.status === "aprovado" && (
@@ -126,17 +126,17 @@ STATUS: ${STATUS_LABELS[orcamento.status] || orcamento.status}
             <CardContent className="p-6">
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <p className="text-xs text-muted-foreground">Valor Cliente</p>
-                  <p className="text-2xl font-bold text-blue-600">{formatarValor(orcamento.valorCliente)}</p>
+                  <p className="text-xs text-muted-foreground">Valor Final</p>
+                  <p className="text-2xl font-bold text-blue-600">{formatarValor(orcamento.valores?.valorFinal)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Custo Prestador</p>
-                  <p className="text-2xl font-bold text-orange-600">{formatarValor(orcamento.custoPrestador)}</p>
+                  <p className="text-2xl font-bold text-orange-600">{formatarValor(orcamento.valores?.custoEstimado)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Margem</p>
                   <p className="text-2xl font-bold text-green-600">
-                    {(((orcamento.valorCliente || 0) - (orcamento.custoPrestador || 0)) / (orcamento.valorCliente || 1) * 100).toFixed(1)}%
+                    {(((orcamento.valores?.valorFinal || 0) - (orcamento.valores?.custoEstimado || 0)) / (orcamento.valores?.valorFinal || 1) * 100).toFixed(1)}%
                   </p>
                 </div>
               </div>

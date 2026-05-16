@@ -29,8 +29,8 @@ const getLogoBase64 = async (isDark: boolean = false): Promise<string | null> =>
       if (config.logoUrl && config.logoUsos?.relatoriosPdf !== false) return config.logoUrl;
     }
     
-    // 2. Fallback local /logo-branco.png ou /logo.png
-    const fallbackPath = isDark ? '/logo-branco.png' : '/logo.png';
+    // 2. Fallback local /logo-oficial-conexao.png
+    const fallbackPath = '/logo-oficial-conexao.png';
     const response = await fetch(fallbackPath);
 
     if (response.ok) {
@@ -40,19 +40,6 @@ const getLogoBase64 = async (isDark: boolean = false): Promise<string | null> =>
         reader.onloadend = () => resolve(reader.result as string);
         reader.readAsDataURL(blob);
       });
-    }
-    
-    // Se falhar o dark local, tenta o normal
-    if (isDark) {
-      const resp2 = await fetch('/logo.png');
-      if (resp2.ok) {
-        const blob = await resp2.blob();
-        return new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        });
-      }
     }
   } catch (e) {
     console.warn("Logo não encontrado ou erro ao carregar:", e);
@@ -78,8 +65,9 @@ const renderHeader = (doc: jsPDF, data: any, via: "Cliente" | "Prestador", logo:
   // --- LADO ESQUERDO: LOGO E DADOS EMPRESA ---
   if (logo) {
     try {
-      // Logo proporcional e profissional (50 a 70 de largura)
-      doc.addImage(logo, "PNG", 15, 8, 65, 18);
+      // Logo proporcional e profissional (usar aspectRatio correto para não distorcer)
+      // Ajuste premium corporativo
+      doc.addImage(logo, "PNG", 15, 8, 48, 16);
     } catch (e) {
       renderLogoTexto(doc, 15, 18);
     }

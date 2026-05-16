@@ -1,9 +1,12 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Plus, Building, Clock, DollarSign, Phone, Mail, MessageSquare,
   Calendar, FileText, User, Edit, Send, Trash2, ChevronRight,
-  X, Check, Brain, Zap, Star, MapPin, AlertTriangle, Copy
+  X, Check, Brain, Zap, Star, MapPin, AlertTriangle, Copy,
+  ArrowRight, Loader2
 } from "lucide-react";
+import { enviarFollowUp, registrarHistoricoCRM, FOLLOWUP_TEMPLATES } from "@/services/zohoEmailService";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +29,8 @@ import {
 interface CrmPipelineProps {
   leads: Lead[];
   onLeadsChange: (leads: Lead[]) => void;
+  onSalvarNovoLead?: (lead: Lead) => Promise<Lead>;
+  usandoBanco?: boolean;
 }
 
 const ORDEM_ESTAGIOS: LeadEstagio[] = [
@@ -43,12 +48,16 @@ const TIPOS_INTERACAO = [
   { value: "obs", label: "Observação" },
 ];
 
-export default function CrmPipeline({ leads, onLeadsChange }: CrmPipelineProps) {
+export default function CrmPipeline({ leads, onLeadsChange, onSalvarNovoLead, usandoBanco }: CrmPipelineProps) {
+  const navigate = useNavigate();
   const [dragging, setDragging] = useState<string | null>(null);
   const [drawerNovo, setDrawerNovo] = useState(false);
   const [detalheOpen, setDetalheOpen] = useState(false);
   const [leadSelecionado, setLeadSelecionado] = useState<Lead | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [followupOpen, setFollowupOpen] = useState(false);
+  const [followupLoading, setFollowupLoading] = useState(false);
+  const [followupForm, setFollowupForm] = useState({ templateKey: "primeiro_contato", assunto: "", mensagem: "" });
   const [novaInteracao, setNovaInteracao] = useState({ tipo: "obs", descricao: "" });
   const [novoLembrete, setNovoLembrete] = useState<{ tipo: string; descricao: string; data: string }>({
     tipo: "ligacao", descricao: "", data: ""
@@ -56,6 +65,7 @@ export default function CrmPipeline({ leads, onLeadsChange }: CrmPipelineProps) 
   const [form, setForm] = useState<Partial<Lead>>({
     estagio: "lead_novo", urgencia: "media", temperatura: "morno", origem: "inbound"
   });
+  const [salvandoLead, setSalvandoLead] = useState(false);
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const fmtInitials = (name: string) => name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
@@ -129,8 +139,9 @@ export default function CrmPipeline({ leads, onLeadsChange }: CrmPipelineProps) 
     setDragging(null);
   };
 
-  const salvarLead = () => {
+  const salvarLead = async () => {
     if (!form.empresa) return toast.error("Informe o nome da empresa.");
+    setSalvandoLead(true);
     const novo: Lead = {
       id: String(Date.now()),
       empresa: form.empresa || "",
@@ -161,10 +172,101 @@ export default function CrmPipeline({ leads, onLeadsChange }: CrmPipelineProps) 
       atualizadoEm: new Date(),
     };
     novo.probabilidadeFechamento = calcularProbabilidade(novo);
-    onLeadsChange([...leads, novo]);
-    setDrawerNovo(false);
-    setForm({ estagio: "lead_novo", urgencia: "media", temperatura: "morno", origem: "inbound" });
-    toast.success("Lead cadastrado com sucesso!");
+    try {
+      if (onSalvarNovoLead) {
+        await onSalvarNovoLead(novo);
+      } else {
+        onLeadsChange([...leads, novo]);
+        toast.success("Lead cadastrado!");
+      }
+    } finally {
+      setSalvandoLead(false);
+      setDrawerNovo(false);
+      setForm({ estagio: "lead_novo", urgencia: "media", temperatura: "morno", origem: "inbound" });
+    }
+  };
+
+  // ─── Gerar Orçamento a partir do lead ──────────────────────
+  const handleGerarOrcamento = async () => {
+    if (!leadSelecionado) return;
+    // Registrar histórico
+    if (usandoBanco) {
+      await registrarHistoricoCRM(
+        leadSelecionado.id,
+        "orcamento_gerado",
+        "Orçamento iniciado a partir do CRM",
+        `Lead: ${leadSelecionado.empresa}`,
+        { empresa: leadSelecionado.empresa, email: leadSelecionado.email }
+      );
+    }
+    // Navegar para orçamentos com dados pré-preenchidos via query params
+    const params = new URLSearchParams({
+      action: "novo",
+      cliente: leadSelecionado.empresa,
+      contato: leadSelecionado.nomeContato,
+      telefone: leadSelecionado.telefone,
+      email: leadSelecionado.email,
+      nicho: leadSelecionado.segmento,
+      obs: `Lead CRM: ${leadSelecionado.empresa} — ${leadSelecionado.tipoServico}`,
+      crm_lead_id: leadSelecionado.id,
+    });
+    navigate(`/comercial?tab=orcamentos&${params.toString()}`);
+    toast.success("Redirecionando para novo orçamento com dados pré-preenchidos!");
+  };
+
+  // ─── Enviar Follow-up ────────────────────────────────────────
+  const abrirFollowup = () => {
+    if (!leadSelecionado) return;
+    const tpl = FOLLOWUP_TEMPLATES["primeiro_contato"];
+    const assunto = tpl.assunto.replace("{{empresa}}", leadSelecionado.empresa);
+    const mensagem = tpl.mensagem
+      .replace(/{{nome}}/g, leadSelecionado.nomeContato || leadSelecionado.empresa)
+      .replace(/{{empresa}}/g, leadSelecionado.empresa)
+      .replace(/{{segmento}}/g, leadSelecionado.segmento || "");
+    setFollowupForm({ templateKey: "primeiro_contato", assunto, mensagem });
+    setFollowupOpen(true);
+  };
+
+  const handleTemplateChange = (key: string) => {
+    if (!leadSelecionado) return;
+    const tpl = FOLLOWUP_TEMPLATES[key];
+    if (!tpl) return;
+    const assunto = tpl.assunto.replace("{{empresa}}", leadSelecionado.empresa);
+    const mensagem = tpl.mensagem
+      .replace(/{{nome}}/g, leadSelecionado.nomeContato || leadSelecionado.empresa)
+      .replace(/{{empresa}}/g, leadSelecionado.empresa)
+      .replace(/{{segmento}}/g, leadSelecionado.segmento || "");
+    setFollowupForm({ templateKey: key, assunto, mensagem });
+  };
+
+  const enviarFollowUpClick = async () => {
+    if (!leadSelecionado?.email) {
+      toast.error("Lead sem e-mail cadastrado.");
+      return;
+    }
+    setFollowupLoading(true);
+    try {
+      const tpl = FOLLOWUP_TEMPLATES[followupForm.templateKey];
+      const res = await enviarFollowUp({
+        leadId: leadSelecionado.id,
+        leadEmpresa: leadSelecionado.empresa,
+        to: leadSelecionado.email,
+        subject: followupForm.assunto,
+        message: followupForm.mensagem,
+        tipo: tpl?.tipo || "primeiro_contato",
+        canal: "email",
+      });
+      if (res.success) {
+        toast.success("Follow-up enviado com sucesso!");
+      } else if (res.pendente) {
+        toast.warning(`Follow-up salvo como pendente. ${res.erro}`);
+      } else {
+        toast.error(`Erro: ${res.erro}`);
+      }
+      setFollowupOpen(false);
+    } finally {
+      setFollowupLoading(false);
+    }
   };
 
   const abrirDetalhe = (lead: Lead) => {
@@ -473,8 +575,8 @@ export default function CrmPipeline({ leads, onLeadsChange }: CrmPipelineProps) 
               <Label className="text-xs">Responsável Interno</Label>
               <Input value={form.responsavel || ""} onChange={e => setForm(p => ({ ...p, responsavel: e.target.value }))} placeholder="Seu nome" />
             </div>
-            <Button className="w-full mt-2" onClick={salvarLead}>
-              <Plus className="w-4 h-4 mr-2" /> Cadastrar Lead
+            <Button className="w-full mt-2" onClick={salvarLead} disabled={salvandoLead}>
+              {salvandoLead ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando...</> : <><Plus className="w-4 h-4 mr-2" /> Cadastrar Lead</>}
             </Button>
           </div>
         </SheetContent>
@@ -545,6 +647,16 @@ export default function CrmPipeline({ leads, onLeadsChange }: CrmPipelineProps) 
                       <Phone className="w-3.5 h-3.5" /> Ligar
                     </Button>
                   </div>
+
+                  {/* Botão Follow-up */}
+                  <Button variant="outline" size="sm" className="w-full text-xs gap-1 text-orange-700 border-orange-300 bg-orange-50 hover:bg-orange-100" onClick={abrirFollowup}>
+                    <Send className="w-3.5 h-3.5" /> Enviar Follow-up por E-mail
+                  </Button>
+
+                  {/* Botão Gerar Orçamento */}
+                  <Button size="sm" className="w-full text-xs gap-1 bg-primary hover:bg-primary/90" onClick={handleGerarOrcamento}>
+                    <ArrowRight className="w-3.5 h-3.5" /> Gerar Orçamento a partir do Lead
+                  </Button>
 
                   <Button variant="outline" size="sm" className="w-full text-xs gap-1 text-violet-700 border-violet-300 bg-violet-50 hover:bg-violet-100" onClick={() => setTemplateOpen(true)}>
                     <Brain className="w-3.5 h-3.5" /> Ver Templates de Mensagem IA
@@ -687,6 +799,64 @@ export default function CrmPipeline({ leads, onLeadsChange }: CrmPipelineProps) 
                 </Card>
               );
             })}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ====== MODAL FOLLOW-UP ====== */}
+      <Dialog open={followupOpen} onOpenChange={setFollowupOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="w-5 h-5 text-orange-500" /> Enviar Follow-up — {leadSelecionado?.empresa}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-700">Template</label>
+              <Select value={followupForm.templateKey} onValueChange={handleTemplateChange}>
+                <SelectTrigger className="text-xs h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(FOLLOWUP_TEMPLATES).map(([k, v]) => (
+                    <SelectItem key={k} value={k} className="text-xs">{v.titulo}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-700">Destinatário</label>
+              <p className="text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded border">
+                {leadSelecionado?.email || <span className="text-red-500">⚠️ Sem e-mail cadastrado</span>}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-700">Assunto</label>
+              <Input
+                value={followupForm.assunto}
+                onChange={e => setFollowupForm(p => ({ ...p, assunto: e.target.value }))}
+                className="text-xs h-8"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-700">Mensagem</label>
+              <Textarea
+                value={followupForm.mensagem}
+                onChange={e => setFollowupForm(p => ({ ...p, mensagem: e.target.value }))}
+                className="text-xs resize-none"
+                rows={5}
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              {import.meta.env.VITE_N8N_WEBHOOK_ZOHO_EMAIL
+                ? "✅ Webhook configurado — e-mail será enviado via n8n"
+                : "⚠️ Webhook não configurado — follow-up será salvo como pendente"}
+            </p>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={() => setFollowupOpen(false)}>Cancelar</Button>
+            <Button size="sm" className="flex-1 text-xs gap-1" onClick={enviarFollowUpClick} disabled={followupLoading || !leadSelecionado?.email}>
+              {followupLoading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando...</> : <><Send className="w-3.5 h-3.5" /> Enviar</>}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
