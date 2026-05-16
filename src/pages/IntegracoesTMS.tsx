@@ -1066,8 +1066,11 @@ export default function IntegracoesTMS() {
             Webhooks Inbound
           </TabsTrigger>
           <TabsTrigger value="torre_operacional" className="data-[state=active]:border-b-2 data-[state=active]:border-rose-600 rounded-none border-b-2 border-transparent px-4 py-2 text-rose-600 font-semibold">
-            Torre Operacional
-          </TabsTrigger>
+            Torre Operacional</TabsTrigger>
+            <TabsTrigger value="painel_operacional" className="data-[state=active]:border-b-2 data-[state=active]:border-green-600 rounded-none border-b-2 border-transparent px-4 py-2 text-green-600 font-semibold">
+              Painel Operacional
+            </TabsTrigger>
+
           <div className="w-px h-6 bg-slate-200 mx-2 self-center" />
           <TabsTrigger value="whatsapp" className="data-[state=active]:border-b-2 data-[state=active]:border-green-600 rounded-none border-b-2 border-transparent px-4 py-2 text-slate-500">
             Evolution API
@@ -1107,6 +1110,11 @@ export default function IntegracoesTMS() {
           <TabsContent value="torre_operacional">
             <AbaTorreControle />
           </TabsContent>
+          <TabsContent value="painel_operacional">
+            <PainelOperacionalMapa />
+          </TabsContent>
+
+          
 
           {/* Configurações legadas */}
           <TabsContent value="whatsapp">
