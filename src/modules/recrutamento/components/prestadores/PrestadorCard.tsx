@@ -26,9 +26,9 @@ export function PrestadorCard({ prestador, onClick }: PrestadorCardProps) {
             <div className="flex items-center gap-2 mb-1">
               <PremiumCardTitle>{prestador.nome}</PremiumCardTitle>
               <PremiumBadge variant={
-                prestador.status === 'ativo' ? 'success' :
-                prestador.status === 'qualificado' ? 'info' :
-                prestador.status === 'suspenso' ? 'danger' : 'default'
+                prestador.status === 'agregado' ? 'success' :
+                prestador.status === 'aprovado' ? 'info' :
+                prestador.status === 'bloqueado' ? 'danger' : 'default'
               } dot size="sm">
                 {statusLabel[prestador.status]}
               </PremiumBadge>

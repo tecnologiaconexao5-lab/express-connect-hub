@@ -23,6 +23,10 @@ export const documentosService = {
     return getDocs().filter(d => d.prestadorId === prestadorId)
   },
 
+  async listarTodos(): Promise<DocumentoPrestador[]> {
+    return getDocs()
+  },
+
   async listarPendentes(): Promise<DocumentoPrestador[]> {
     return getDocs().filter(d => d.status === 'pendente' || d.status === 'vencido')
   },

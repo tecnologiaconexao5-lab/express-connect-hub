@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Filter, Plus, Briefcase, MapPin, Truck, Target, Calendar, DollarSign, TrendingUp, Users, MoreHorizontal, PlayCircle, PauseCircle, Archive, Copy, Edit, Trash2, CheckCircle, XCircle, Route, Clock, Bot, MessageSquare } from 'lucide-react'
+import { Search, Filter, Plus, Briefcase, MapPin, Truck, Target, Calendar, DollarSign, TrendingUp, Users, MoreHorizontal, PlayCircle, PauseCircle, Archive, Copy, Edit, Trash2, CheckCircle, XCircle, Route, Clock, Bot, MessageSquare, Eye } from 'lucide-react'
 import { PageHeader } from '../components/design-system/PageHeader'
 import { PremiumCard, PremiumCardHeader, PremiumCardTitle, PremiumCardDescription, PremiumCardContent, PremiumCardFooter } from '../components/design-system/PremiumCard'
 import { PremiumBadge } from '../components/design-system/PremiumBadge'
@@ -9,8 +9,10 @@ import { EmptyState } from '../components/design-system/EmptyState'
 import { SkeletonCard } from '../components/design-system/SkeletonCard'
 import { ViewToggle } from '../components/design-system/ViewToggle'
 import { StatusDot } from '../components/design-system/StatusDot'
+import { DetalhesOperacaoSheet } from '../components/DetalhesOperacaoSheet'
 import { useOperacoes } from '../hooks/useOperacoes'
 import { useRecrutamentoStore } from '../store/recrutamentoStore'
+import { useRecrutamentoUI } from '../hooks/useRecrutamentoUI'
 import { formatCurrency, formatDate, statusOperacaoColor, statusLabel, prioridadeColor, cn } from '../utils/cn'
 import type { StatusOperacao, Operacao } from '../types/recrutamento'
 import { Button } from '@/components/ui/button'
@@ -22,7 +24,8 @@ export function PaginaOperacoes() {
     operacoes, loading, filtros, setFiltros,
     atualizarStatus, remover, duplicar, metricas,
   } = useOperacoes()
-  const { currentView, setCurrentView } = useRecrutamentoStore()
+  const { currentView, setCurrentView, selectedOperacaoId, setSelectedOperacaoId } = useRecrutamentoStore()
+  const { navegar } = useRecrutamentoUI()
   const [busca, setBusca] = useState('')
   const [statusFiltro, setStatusFiltro] = useState<StatusOperacao | 'todas'>('todas')
 
@@ -58,7 +61,7 @@ export function PaginaOperacoes() {
         actions={
           <div className="flex items-center gap-3">
             <ViewToggle value={currentView} onChange={setCurrentView} />
-            <Button size="sm" className="h-9 gap-1.5">
+            <Button size="sm" className="h-9 gap-1.5" onClick={() => navegar('nova-operacao')}>
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Nova Operação</span>
             </Button>
@@ -84,7 +87,7 @@ export function PaginaOperacoes() {
           />
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {['todas', 'aberta', 'em_andamento', 'pausada', 'encerrada'].map((s) => (
+          {['todas', 'aberta', 'em_captacao', 'preenchida', 'pausada', 'encerrada'].map((s) => (
             <button
               key={s}
               onClick={() => setStatusFiltro(s as any)}
@@ -110,7 +113,7 @@ export function PaginaOperacoes() {
           title="Nenhuma operação encontrada"
           description="Crie sua primeira operação para começar o recrutamento inteligente."
           action={
-            <Button size="sm"><Plus className="w-4 h-4 mr-1.5" /> Nova Operação</Button>
+            <Button size="sm" onClick={() => navegar('nova-operacao')}><Plus className="w-4 h-4 mr-1.5" /> Nova Operação</Button>
           }
         />
       ) : currentView === 'grid' ? (
@@ -122,6 +125,7 @@ export function PaginaOperacoes() {
               onStatusChange={handleStatus}
               onDuplicar={handleDuplicar}
               onRemover={handleRemover}
+              onDetalhes={() => setSelectedOperacaoId(op.id)}
             />
           ))}
         </div>
@@ -135,14 +139,14 @@ export function PaginaOperacoes() {
                 <th className="text-left p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider hidden lg:table-cell">Região</th>
                 <th className="text-left p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider hidden xl:table-cell">Veículo</th>
                 <th className="text-center p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Status</th>
-                <th className="text-right p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Valor</th>
+                <th className="text-right p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Valor Prest.</th>
                 <th className="text-right p-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Vagas</th>
                 <th className="text-right p-3 w-20">Ações</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((op) => (
-                <tr key={op.id} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
+                <tr key={op.id} className="border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer" onClick={() => setSelectedOperacaoId(op.id)}>
                   <td className="p-3 font-medium text-foreground">{op.nome}</td>
                   <td className="p-3 text-muted-foreground hidden md:table-cell">{op.cliente}</td>
                   <td className="p-3 text-muted-foreground hidden lg:table-cell">{op.regiao}</td>
@@ -153,7 +157,7 @@ export function PaginaOperacoes() {
                       {statusLabel[op.status]}
                     </span>
                   </td>
-                  <td className="p-3 text-right font-medium">{formatCurrency(op.financeiro.valorCliente)}</td>
+                  <td className="p-3 text-right font-medium">{formatCurrency(op.financeiro.valorPrestador)}</td>
                   <td className="p-3 text-right">
                     <span className="font-medium">{op.meta.vagasPreenchidas}/{op.meta.vagasTotais}</span>
                   </td>
@@ -179,15 +183,21 @@ export function PaginaOperacoes() {
           </table>
         </div>
       )}
+      <DetalhesOperacaoSheet
+        operacaoId={selectedOperacaoId}
+        open={!!selectedOperacaoId}
+        onOpenChange={(open) => { if (!open) setSelectedOperacaoId(null) }}
+      />
     </div>
   )
 }
 
-function OperacaoCard({ operacao: op, onStatusChange, onDuplicar, onRemover }: {
+function OperacaoCard({ operacao: op, onStatusChange, onDuplicar, onRemover, onDetalhes }: {
   operacao: Operacao
   onStatusChange: (id: string, status: StatusOperacao) => Promise<void>
   onDuplicar: (id: string) => Promise<void>
   onRemover: (id: string) => Promise<void>
+  onDetalhes: () => void
 }) {
   return (
     <motion.div
@@ -197,7 +207,7 @@ function OperacaoCard({ operacao: op, onStatusChange, onDuplicar, onRemover }: {
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.2 }}
     >
-      <PremiumCard hover>
+      <PremiumCard hover onClick={onDetalhes}>
         <PremiumCardHeader>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1">
@@ -209,7 +219,7 @@ function OperacaoCard({ operacao: op, onStatusChange, onDuplicar, onRemover }: {
             <PremiumCardDescription>{op.cliente}</PremiumCardDescription>
           </div>
           <span className={cn('flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border shrink-0', statusOperacaoColor[op.status])}>
-            <StatusDot status={op.status} pulse={op.status === 'em_andamento'} />
+            <StatusDot status={op.status} pulse={op.status === 'em_captacao'} />
             {statusLabel[op.status]}
           </span>
         </PremiumCardHeader>
@@ -224,8 +234,8 @@ function OperacaoCard({ operacao: op, onStatusChange, onDuplicar, onRemover }: {
           </div>
 
           <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/30">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">Valor</span>
-            <span className="text-sm font-bold text-foreground">{formatCurrency(op.financeiro.valorCliente)}</span>
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">Valor Prestador</span>
+            <span className="text-sm font-bold text-foreground">{formatCurrency(op.financeiro.valorPrestador)}</span>
           </div>
 
           <div className="flex items-center gap-3 text-xs text-muted-foreground/60">

@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Library, Folder, Upload, Download, Search, FileText, Image, Video, ShieldAlert, Trash, Filter, Plus, Copy, MessageSquare, Users, Truck, Package, DollarSign, Send, Check, ChevronRight, ArrowRight, Save, Pencil, X } from "lucide-react";
+import { 
+  Library, Folder, Upload, Download, Search, FileText, Image, Video, 
+  ShieldAlert, Trash, Filter, Plus, Copy, MessageSquare, Users, Truck, 
+  Package, DollarSign, Send, Check, ChevronRight, ArrowRight, Save, 
+  Pencil, X, Share2, ExternalLink, AlertCircle, Loader2 
+} from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -29,6 +34,15 @@ interface Cliente {
   razao_social?: string;
   nome_fantasia?: string;
   cnpj_cpf?: string;
+  cnpj?: string;
+  telefone?: string;
+}
+
+interface Prestador {
+  id: string;
+  nome_completo?: string;
+  cpf_cnpj?: string;
+  telefone?: string;
 }
 
 interface FluxoEtapa {
@@ -55,11 +69,11 @@ const FLUXO_DEFAULT: FluxoEtapa[] = [
 ];
 
 const CATEGORIA_CORES: Record<string, string> = {
-  "Captação de prestadores": "bg-blue-100 text-blue-700 border-blue-300",
-  "Operacional": "bg-orange-100 text-orange-700 border-orange-300",
-  "Ocorrências": "bg-red-100 text-red-700 border-red-300",
-  "Financeiro": "bg-green-100 text-green-700 border-green-300",
-  "Clientes": "bg-purple-100 text-purple-700 border-purple-300",
+  "Captação de prestadores": "bg-blue-50 text-blue-700 border-blue-200",
+  "Operacional": "bg-orange-50 text-orange-700 border-orange-200",
+  "Ocorrências": "bg-red-50 text-red-700 border-red-200",
+  "Financeiro": "bg-green-50 text-green-700 border-green-200",
+  "Clientes": "bg-purple-50 text-purple-700 border-purple-200",
 };
 
 const CATEGORIA_BORDA: Record<string, string> = {
@@ -70,219 +84,203 @@ const CATEGORIA_BORDA: Record<string, string> = {
   "Clientes": "border-l-purple-500",
 };
 
+const getDocIcon = (tipo: string) => {
+  if (tipo.includes("pdf")) return <FileText className="w-5 h-5 text-red-500" />;
+  if (tipo.includes("image")) return <Image className="w-5 h-5 text-blue-500" />;
+  if (tipo.includes("video")) return <Video className="w-5 h-5 text-purple-500" />;
+  return <FileText className="w-5 h-5 text-slate-400" />;
+};
+
+const getCategoriaIcon = (categoria: string) => {
+  if (categoria.includes("Captação")) return <Users className="w-4 h-4" />;
+  if (categoria.includes("Operacional")) return <Truck className="w-4 h-4" />;
+  if (categoria.includes("Financeiro")) return <DollarSign className="w-4 h-4" />;
+  if (categoria.includes("Ocorrência")) return <ShieldAlert className="w-4 h-4" />;
+  return <Package className="w-4 h-4" />;
+};
+
 export default function Biblioteca() {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = searchParams.get("tab") || "operacional";
   const handleTabChange = (val: string) => setSearchParams({ tab: val });
 
+  // Tabelas do banco de dados
   const [mensagens, setMensagens] = useState<MensagemRapida[]>([]);
   const [fluxoEtapas, setFluxoEtapas] = useState<FluxoEtapa[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [prestadores, setPrestadores] = useState<Prestador[]>([]);
+  
+  // Controle de estados
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [missingTables, setMissingTables] = useState<string[]>([]);
+  const [bucketExists, setBucketExists] = useState(true);
+  
+  // Modais de Edição
   const [showNovaMensagem, setShowNovaMensagem] = useState(false);
   const [mensagemEditando, setMensagemEditando] = useState<MensagemRapida | null>(null);
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  
+  // WhatsApp Export Dialog
+  const [showWhatsAppDialog, setShowWhatsAppDialog] = useState(false);
+  const [whatsappDoc, setWhatsappDoc] = useState<any | null>(null);
+  const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [whatsappMessage, setWhatsappMessage] = useState("");
+
+  // Filtros e Categorias
   const [filtroCategoria, setFiltroCategoria] = useState("todas");
   const [filtroCliente, setFiltroCliente] = useState("todos");
-  const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [editandoId, setEditandoId] = useState<string | null>(null);
+  
+  // Filtros e Associações de Documentos por aba
+  const [clienteFiltroId, setClienteFiltroId] = useState<string>("todos");
+  const [prestadorFiltroId, setPrestadorFiltroId] = useState<string>("todos");
+  const [selectedUploadCategory, setSelectedUploadCategory] = useState<string>("");
+  const [selectedUploadClient, setSelectedUploadClient] = useState<string>("geral");
+  const [selectedUploadProvider, setSelectedUploadProvider] = useState<string>("geral");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Dicionário de arquivos reais
   const [documentos, setDocumentos] = useState<Record<string, any[]>>({
     operacional: [],
     prestador: [],
     cliente: [],
     modelos: [],
   });
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadingProgress, setUploadingProgress] = useState<Record<string, number>>({});
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [bucketExists, setBucketExists] = useState(true);
+  const BUCKET_NAME = "biblioteca-global";
+
+  // Categorias de Documento por Pasta
+  const CATEGORIES_BY_TAB: Record<string, string[]> = {
+    operacional: ["POP Operacional", "Plano de Risco (PGR)", "Manual de Treinamento", "Normas Internas", "Instrução de Segurança", "Outros"],
+    prestador: ["CNH", "CRLV", "ANTT", "Comprovante de Residência", "Contrato de Adesão", "Outros"],
+    cliente: ["Contrato Comercial", "Ficha Cadastral", "Tabela de Fretes", "Canhoto de Entrega", "Relatório de SLA", "Outros"],
+    modelos: ["Template PDF", "Template Planilha (XLSX)", "Template Word (DOCX)", "Formulário", "Outros"],
+  };
+
+  useEffect(() => {
+    // Definir categoria inicial com base na aba
+    const cats = CATEGORIES_BY_TAB[currentTab];
+    if (cats && cats.length > 0) {
+      setSelectedUploadCategory(cats[0]);
+    }
+  }, [currentTab]);
 
   useEffect(() => {
     carregarDados();
   }, []);
 
+  useEffect(() => {
+    if (["operacional", "prestador", "cliente", "modelos"].includes(currentTab)) {
+      loadDocuments(currentTab);
+    }
+  }, [currentTab, bucketExists]);
+
+  const isTabelaInexistente = (error: any) => {
+    if (!error) return false;
+    const msg = error.message || String(error);
+    const code = error.code || '';
+    return code === '42P01' || code === '404' || msg.includes('not found') || msg.includes('does not exist') || msg.includes('relation') || msg.toLowerCase().includes('tabela');
+  };
+
   const carregarDados = async () => {
     setIsLoading(true);
-    let usouSupabaseMsgs = false;
-    let usouSupabaseFluxo = false;
+    const missing: string[] = [];
 
-    // Helper para verificar se é erro de tabela inexistente
-    const isTabelaInexistente = (error: any) => {
-      if (!error) return false;
-      const msg = error.message || String(error);
-      const code = error.code || '';
-      return code === '42P01' || code === '404' || msg.includes('not found') || msg.includes('does not exist') || msg.includes('relation') || msg.toLowerCase().includes('tabela');
-    };
-
+    // 1. Diagnóstico de Tabelas no Supabase
     try {
-      // Carregar mensagens do Supabase
+      const { error: msgErr } = await supabase.from('modelos_mensagens').select('id').limit(1);
+      if (msgErr && isTabelaInexistente(msgErr)) missing.push('modelos_mensagens');
+      
+      const { error: fluxoErr } = await supabase.from('fluxo_recrutamento').select('id').limit(1);
+      if (fluxoErr && isTabelaInexistente(fluxoErr)) missing.push('fluxo_recrutamento');
+
+      const { error: docsErr } = await supabase.from('biblioteca_documentos').select('id').limit(1);
+      if (docsErr && isTabelaInexistente(docsErr)) missing.push('biblioteca_documentos');
+
+      setMissingTables(missing);
+    } catch (err) {
+      console.warn("Erro ao fazer diagnóstico de tabelas:", err);
+    }
+
+    // 2. Carregar Mensagens Rápidas
+    try {
       const { data: msgsData, error: msgsError } = await supabase
         .from('modelos_mensagens')
         .select('*')
         .order('created_at', { ascending: true });
 
-      if (!msgsError && msgsData && msgsData.length > 0) {
-        const loaded = msgsData.map((m: any) => ({
-          id: m.id,
-          titulo: m.titulo,
-          categoria: m.categoria,
-          texto: m.texto,
-          cliente_id: m.cliente_id || null,
-          cliente_nome: m.cliente_nome || null,
-          cliente_documento: m.cliente_documento || null
-        }));
-        setMensagens(loaded);
-        localStorage.setItem('conexao_mensagens_rapidas', JSON.stringify(loaded));
-        usouSupabaseMsgs = true;
-        console.log('[MENSAGENS RAPIDAS] Fonte usada: Supabase');
+      if (!msgsError && msgsData) {
+        setMensagens(msgsData);
+        localStorage.setItem('conexao_mensagens_rapidas', JSON.stringify(msgsData));
       } else {
-        if (isTabelaInexistente(msgsError)) {
-          console.warn('[MENSAGENS RAPIDAS] Tabela modelos_mensagens não encontrada no Supabase. Usando localStorage.');
-        } else {
-          console.warn('[MENSAGENS RAPIDAS] Erro ao carregar do Supabase:', msgsError?.message);
-        }
-        throw new Error(msgsError?.message || 'Tabela vazia ou inexistente');
+        throw new Error(msgsError?.message || 'Tabela vazia');
       }
-    } catch (error: any) {
-      if (!isTabelaInexistente(error)) {
-        console.warn('[MENSAGENS RAPIDAS] Supabase falhou, tentando localStorage:', error);
-      }
+    } catch (error) {
       const local = localStorage.getItem('conexao_mensagens_rapidas');
       if (local) {
-        try {
-          setMensagens(JSON.parse(local));
-          console.log('[MENSAGENS RAPIDAS] Fonte usada: localStorage');
-        } catch {
-          setMensagens(MENSAGENS_DEFAULT);
-          localStorage.setItem('conexao_mensagens_rapidas', JSON.stringify(MENSAGENS_DEFAULT));
-          console.log('[MENSAGENS RAPIDAS] Fonte usada: defaults');
-        }
+        setMensagens(JSON.parse(local));
       } else {
         setMensagens(MENSAGENS_DEFAULT);
-        localStorage.setItem('conexao_mensagens_rapidas', JSON.stringify(MENSAGENS_DEFAULT));
-        console.log('[MENSAGENS RAPIDAS] Fonte usada: defaults (primeiro acesso)');
       }
     }
 
+    // 3. Carregar Etapas do Fluxo
     try {
-      // Carregar fluxo de recrutamento do Supabase
       const { data: fluxoData, error: fluxoError } = await supabase
         .from('fluxo_recrutamento')
         .select('*')
         .order('ordem', { ascending: true });
 
       if (!fluxoError && fluxoData && fluxoData.length > 0) {
-        const loaded = fluxoData.map((f: any) => ({
-          id: f.id,
-          titulo: f.titulo,
-          texto: f.texto,
-          ordem: f.ordem
-        }));
-        setFluxoEtapas(loaded);
-        localStorage.setItem('conexao_fluxo_recrutamento', JSON.stringify(loaded));
-        usouSupabaseFluxo = true;
+        setFluxoEtapas(fluxoData);
+        localStorage.setItem('conexao_fluxo_recrutamento', JSON.stringify(fluxoData));
       } else {
         throw new Error(fluxoError?.message || 'Tabela vazia');
       }
     } catch {
       const local = localStorage.getItem('conexao_fluxo_recrutamento');
       if (local) {
-        try { setFluxoEtapas(JSON.parse(local)); } catch { setFluxoEtapas(FLUXO_DEFAULT); }
+        setFluxoEtapas(JSON.parse(local));
       } else {
         setFluxoEtapas(FLUXO_DEFAULT);
-        localStorage.setItem('conexao_fluxo_recrutamento', JSON.stringify(FLUXO_DEFAULT));
       }
     }
 
-    console.log(`[BIBLIOTECA] Dados carregados — Msgs: ${usouSupabaseMsgs ? 'Supabase' : 'localStorage'} | Fluxo: ${usouSupabaseFluxo ? 'Supabase' : 'localStorage'}`);
-
+    // 4. Carregar Clientes
     try {
       const { data: clientesData } = await supabase
         .from('clientes')
-        .select('id, razao_social, nome_fantasia, cnpj_cpf')
+        .select('id, razao_social, nome_fantasia, cnpj')
         .order('nome_fantasia', { ascending: true });
       if (clientesData) {
         setClientes(clientesData);
       }
     } catch (e) {
-      console.warn('[BIBLIOTECA] Erro ao carregar clientes:', e);
+      console.warn('Erro ao carregar clientes:', e);
+    }
+
+    // 5. Carregar Prestadores
+    try {
+      const { data: prestadoresData } = await supabase
+        .from('prestadores')
+        .select('id, nome_completo, cpf_cnpj, telefone')
+        .order('nome_completo', { ascending: true });
+      if (prestadoresData) {
+        setPrestadores(prestadoresData.map(p => ({
+          id: p.id,
+          nome_completo: p.nome_completo,
+          cpf_cnpj: p.cpf_cnpj,
+          telefone: p.telefone
+        })));
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar prestadores:', e);
     }
 
     setIsLoading(false);
   };
-
-  const saveMensagens = async (novas: MensagemRapida[]) => {
-    setMensagens(novas);
-    // Sempre salvar no localStorage (garante persistência imediata)
-    localStorage.setItem('conexao_mensagens_rapidas', JSON.stringify(novas));
-    console.log('[MENSAGENS RAPIDAS] Salvo em localStorage');
-    // Tentar Supabase em background (best-effort)
-    try {
-      const results = await Promise.all(
-        novas.map(msg =>
-          supabase
-            .from('modelos_mensagens')
-            .upsert([{
-              id: msg.id,
-              titulo: msg.titulo,
-              categoria: msg.categoria,
-              texto: msg.texto,
-              cliente_id: msg.cliente_id || null,
-              cliente_nome: msg.cliente_nome || null,
-              cliente_documento: msg.cliente_documento || null,
-              updated_at: new Date().toISOString()
-            }], { onConflict: 'id' })
-        )
-      );
-
-      const hasError = results.some(r => r.error);
-      if (hasError) {
-        const errorCodes = results.filter(r => r.error).map(r => r.error?.code || r.error?.message).join(', ');
-        if (errorCodes.includes('42P01') || errorCodes.includes('404') || errorCodes.toLowerCase().includes('not found') || errorCodes.toLowerCase().includes('does not exist')) {
-          toast.warning('Tabela de mensagens não encontrada. Salvando localmente neste navegador.');
-          console.warn('[MENSAGENS RAPIDAS] Tabela não existe no Supabase, usando localStorage');
-        } else {
-          console.warn('[MENSAGENS RAPIDAS] Supabase sync falhou (localStorage já salvo):', errorCodes);
-        }
-      } else {
-        console.log('[MENSAGENS RAPIDAS] Sincronizado com Supabase');
-      }
-    } catch (e: any) {
-      const msgErro = e?.message || String(e);
-      if (msgErro.includes('42P01') || msgErro.includes('404') || msgErro.toLowerCase().includes('not found') || msgErro.toLowerCase().includes('does not exist')) {
-        toast.warning('Tabela de mensagens não encontrada. Salvando localmente neste navegador.');
-        console.warn('[MENSAGENS RAPIDAS] Tabela não existe no Supabase, usando localStorage');
-      } else {
-        console.warn('[MENSAGENS RAPIDAS] Supabase sync falhou (localStorage já salvo):', e);
-      }
-    }
-  };
-
-  const saveFluxo = async (novoFluxo: FluxoEtapa[]) => {
-    setFluxoEtapas(novoFluxo);
-    localStorage.setItem('conexao_fluxo_recrutamento', JSON.stringify(novoFluxo));
-    try {
-      for (const etapa of novoFluxo) {
-        await supabase
-          .from('fluxo_recrutamento')
-          .upsert([{
-            id: etapa.id,
-            titulo: etapa.titulo,
-            texto: etapa.texto,
-            ordem: etapa.ordem,
-            updated_at: new Date().toISOString()
-          }], { onConflict: 'id' });
-      }
-      console.log('[BIBLIOTECA] Fluxo sincronizado com Supabase');
-    } catch (e) {
-      console.warn('[BIBLIOTECA] Fluxo Supabase sync falhou (localStorage já salvo):', e);
-    }
-  };
-
-  const copyToClipboard = (texto: string) => {
-    navigator.clipboard.writeText(texto);
-    toast.success("Mensagem copiada!");
-  };
-
-  const BUCKET_NAME = "biblioteca-global";
 
   const getStoragePath = (tab: string) => {
     const paths: Record<string, string> = {
@@ -292,52 +290,6 @@ export default function Biblioteca() {
       modelos: "modelos-templates",
     };
     return paths[tab] || "outros";
-  };
-
-  const loadDocuments = async (tab: string) => {
-    if (!bucketExists) return;
-    try {
-      const path = getStoragePath(tab);
-      const { data, error } = await supabase.storage
-        .from(BUCKET_NAME)
-        .list(path, { limit: 100 });
-
-      if (error) {
-        if (error.message.includes("bucket")) {
-          console.warn("[BIBLIOTECA] Bucket não encontrado:", error.message);
-          setBucketExists(false);
-          toast.warning("Bucket biblioteca-global não encontrado. Configure o Supabase Storage.");
-          return;
-        }
-        console.error("[BIBLIOTECA] Erro ao listar:", error);
-        return;
-      }
-
-      if (data && data.length > 0) {
-        const docsWithDetails = await Promise.all(
-          data.map(async (file) => {
-            const { data: urlData } = supabase.storage
-              .from(BUCKET_NAME)
-              .getPublicUrl(`${path}/${file.name}`);
-            return {
-              id: file.id,
-              nome: file.name,
-              caminho: `${path}/${file.name}`,
-              url: urlData.publicUrl,
-              tamanho: file.metadata?.size ? formatFileSize(file.metadata.size) : "-",
-              data: file.updated_at ? new Date(file.updated_at).toLocaleDateString("pt-BR") : "-",
-              tipo: getFileType(file.name),
-            };
-          })
-        );
-        setDocumentos(prev => ({ ...prev, [tab]: docsWithDetails }));
-      } else {
-        setDocumentos(prev => ({ ...prev, [tab]: [] }));
-      }
-      console.log(`[BIBLIOTECA] Carregados ${data?.length || 0} arquivos de ${path}`);
-    } catch (err) {
-      console.error("[BIBLIOTECA] Erro ao carregar documentos:", err);
-    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -353,417 +305,783 @@ export default function Biblioteca() {
     if (["pdf"].includes(ext)) return "pdf";
     if (["doc", "docx"].includes(ext)) return "doc";
     if (["xls", "xlsx"].includes(ext)) return "xls";
-    if (["png", "jpg", "jpeg", "gif"].includes(ext)) return "image";
+    if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) return "image";
     if (["mp4", "webm", "avi"].includes(ext)) return "video";
     return "file";
   };
 
-  const handleUploadFile = async (event: React.ChangeEvent<HTMLInputElement>, tab: string) => {
+  // Carregar documentos
+  const loadDocuments = async (tab: string) => {
+    try {
+      // 1. Tentar carregar metadados da tabela biblioteca_documentos no Supabase
+      const { data: dbData, error: dbError } = await supabase
+        .from('biblioteca_documentos')
+        .select('*')
+        .eq('pasta', tab)
+        .order('created_at', { ascending: false });
+
+      if (!dbError && dbData) {
+        const docs = dbData.map(d => ({
+          id: d.id,
+          nome: d.nome,
+          caminho: d.caminho,
+          url: d.url,
+          tamanho: d.tamanho,
+          categoria: d.categoria,
+          pasta: d.pasta,
+          cliente_id: d.cliente_id,
+          prestador_id: d.prestador_id,
+          usuario_nome: d.usuario_nome || "Sistema",
+          data: new Date(d.created_at).toLocaleDateString("pt-BR"),
+          tipo: getFileType(d.nome),
+        }));
+        setDocumentos(prev => ({ ...prev, [tab]: docs }));
+        return;
+      }
+
+      // 2. Se a tabela não existir, tentamos listar diretamente do storage (fallback)
+      console.warn("[BIBLIOTECA] Erro na tabela, usando fallback direto do storage:", dbError?.message);
+      if (!bucketExists) return;
+
+      const path = getStoragePath(tab);
+      const { data: storageData, error: storageError } = await supabase.storage
+        .from(BUCKET_NAME)
+        .list(path, { limit: 100 });
+
+      if (storageError) {
+        if (storageError.message.includes("bucket") || storageError.message.includes("not found")) {
+          setBucketExists(false);
+        }
+        return;
+      }
+
+      if (storageData) {
+        const docs = storageData.map(file => {
+          const { data: urlData } = supabase.storage
+            .from(BUCKET_NAME)
+            .getPublicUrl(`${path}/${file.name}`);
+          return {
+            id: file.id,
+            nome: file.name,
+            caminho: `${path}/${file.name}`,
+            url: urlData.publicUrl,
+            tamanho: file.metadata?.size ? formatFileSize(file.metadata.size) : "-",
+            data: file.updated_at ? new Date(file.updated_at).toLocaleDateString("pt-BR") : "-",
+            tipo: getFileType(file.name),
+            categoria: "Geral",
+            usuario_nome: "Storage Fallback",
+          };
+        });
+        setDocumentos(prev => ({ ...prev, [tab]: docs }));
+      }
+    } catch (err) {
+      console.error("[BIBLIOTECA] Erro ao carregar documentos:", err);
+    }
+  };
+
+  // Upload de arquivo
+  const handleUploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const allowedTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "image/png",
-      "image/jpeg",
-      "image/jpg",
-      "text/plain",
-      "text/xml",
-      "application/xml",
-    ];
-
-    // Também aceitar por extensão (xml pode ter mime variado)
+    const allowedExts = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'txt', 'xml', 'webp', 'mp4', 'avi'];
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
-    const allowedExts = ['pdf','doc','docx','xls','xlsx','png','jpg','jpeg','txt','xml'];
-    if (!allowedTypes.includes(file.type) && !allowedExts.includes(ext)) {
-      toast.error("Tipo de arquivo não permitido. Use PDF, DOC, DOCX, XLS, XLSX, PNG, JPG, JPEG, XML ou TXT.");
+    if (!allowedExts.includes(ext)) {
+      toast.error("Extensão de arquivo não permitida.");
       return;
     }
 
     setIsUploading(true);
-    const fileId = Date.now().toString();
-    setUploadingProgress(prev => ({ ...prev, [fileId]: 0 }));
+    setUploadProgress(10);
 
     try {
-      const path = getStoragePath(tab);
+      const path = getStoragePath(currentTab);
       const timestamp = Date.now();
       const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
       const fileName = `${timestamp}_${safeName}`;
       const fullPath = `${path}/${fileName}`;
 
-      const { data, error } = await supabase.storage
+      setUploadProgress(30);
+
+      // 1. Upload para o storage
+      const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
         .upload(fullPath, file, {
           cacheControl: "3600",
           upsert: false,
         });
 
-      if (error) {
-        if (error.message.includes("bucket") || error.message.includes("not found")) {
-          console.warn("[BIBLIOTECA] Bucket não encontrado:", error.message);
-          setBucketExists(false);
-          toast.error("Bucket 'biblioteca-global' não encontrado. Crie o bucket no Supabase Storage.");
-          return;
-        }
-        console.error("[BIBLIOTECA] Erro ao fazer upload:", error);
-        toast.error("Erro ao enviar arquivo: " + error.message);
-        return;
+      if (uploadError) {
+        throw new Error(uploadError.message);
       }
 
-      setUploadingProgress(prev => ({ ...prev, [fileId]: 100 }));
-      toast.success("Arquivo enviado com sucesso!");
-      
-      await loadDocuments(tab);
-      console.log(`[BIBLIOTECA] Upload concluído: ${fileName}`);
+      setUploadProgress(70);
+
+      // 2. Gerar URL pública
+      const { data: urlData } = supabase.storage
+        .from(BUCKET_NAME)
+        .getPublicUrl(fullPath);
+      const publicUrl = urlData?.publicUrl || "";
+
+      // 3. Salvar metadados na tabela
+      const { error: dbError } = await supabase
+        .from('biblioteca_documentos')
+        .insert([{
+          nome: file.name,
+          caminho: fullPath,
+          url: publicUrl,
+          tamanho: formatFileSize(file.size),
+          categoria: selectedUploadCategory || "Geral",
+          pasta: currentTab,
+          cliente_id: currentTab === 'cliente' && selectedUploadClient !== 'geral' ? selectedUploadClient : null,
+          prestador_id: currentTab === 'prestador' && selectedUploadProvider !== 'geral' ? selectedUploadProvider : null,
+          usuario_nome: "Administrador",
+        }]);
+
+      if (dbError) {
+        console.warn("[BIBLIOTECA] Metadados não inseridos na tabela (provavelmente sem tabela):", dbError.message);
+        toast.warning("Arquivo enviado para o storage, mas metadados não puderam ser salvos no banco.");
+      } else {
+        toast.success("Arquivo enviado e cadastrado com sucesso!");
+      }
+
+      setUploadProgress(100);
+      await loadDocuments(currentTab);
     } catch (err: any) {
       console.error("[BIBLIOTECA] Erro no upload:", err);
       toast.error("Erro ao enviar arquivo: " + err.message);
     } finally {
       setIsUploading(false);
-      setTimeout(() => {
-        setUploadingProgress(prev => {
-          const newProgress = { ...prev };
-          delete newProgress[fileId];
-          return newProgress;
-        });
-      }, 1000);
+      setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  const handleDownloadFile = async (doc: any) => {
-    try {
-      const { data, error } = await supabase.storage
-        .from(BUCKET_NAME)
-        .createSignedUrl(doc.caminho, 60);
-
-      if (error) {
-        console.error("[BIBLIOTECA] Erro ao gerar link:", error);
-        toast.error("Não foi possível baixar o arquivo.");
-        return;
-      }
-
-      if (data?.signedUrl) {
-        window.open(data.signedUrl, "_blank");
-        console.log(`[BIBLIOTECA] Download: ${doc.nome}`);
-      }
-    } catch (err) {
-      console.error("[BIBLIOTECA] Erro no download:", err);
-      toast.error("Não foi possível baixar o arquivo.");
-    }
-  };
-
-  const handleDeleteFile = async (doc: any, tab: string) => {
-    const confirmar = window.confirm(`Tem certeza que deseja excluir "${doc.nome}"?`);
+  // Excluir arquivo
+  const handleDeleteFile = async (doc: any) => {
+    const confirmar = window.confirm(`Tem certeza que deseja excluir o arquivo "${doc.nome}"?`);
     if (!confirmar) return;
 
     try {
-      const { error } = await supabase.storage
+      // 1. Remover do Storage
+      const { error: storageError } = await supabase.storage
         .from(BUCKET_NAME)
         .remove([doc.caminho]);
 
-      if (error) {
-        console.error("[BIBLIOTECA] Erro ao excluir:", error);
-        toast.error("Erro ao excluir arquivo: " + error.message);
-        return;
+      if (storageError) {
+        console.warn("[BIBLIOTECA] Erro ao remover do storage:", storageError.message);
+      }
+
+      // 2. Remover do Banco de Dados
+      const { error: dbError } = await supabase
+        .from('biblioteca_documentos')
+        .delete()
+        .eq('id', doc.id);
+
+      if (dbError) {
+        // Se a tabela não existir, podemos precisar encontrar uma forma de limpar o estado local
+        console.error("[BIBLIOTECA] Erro ao excluir metadados do banco:", dbError.message);
       }
 
       toast.success("Arquivo excluído com sucesso!");
-      await loadDocuments(tab);
-      console.log(`[BIBLIOTECA] Excluído: ${doc.nome}`);
-    } catch (err) {
+      await loadDocuments(currentTab);
+    } catch (err: any) {
       console.error("[BIBLIOTECA] Erro na exclusão:", err);
       toast.error("Erro ao excluir arquivo.");
     }
   };
 
-  useEffect(() => {
-    if (bucketExists && currentTab && ["operacional", "prestador", "cliente", "modelos"].includes(currentTab)) {
-      loadDocuments(currentTab);
+  // Abrir arquivo
+  const handleOpenFile = (doc: any) => {
+    if (doc.url) {
+      window.open(doc.url, "_blank");
+    } else {
+      toast.error("Link do arquivo não disponível.");
     }
-  }, [currentTab, bucketExists]);
+  };
 
+  // Compartilhar arquivo (Copiar link)
+  const handleShareFile = (doc: any) => {
+    if (doc.url) {
+      navigator.clipboard.writeText(doc.url);
+      toast.success("Link do arquivo copiado para a área de transferência!");
+    } else {
+      toast.error("Link indisponível para compartilhamento.");
+    }
+  };
+
+  // Abrir modal de exportação WhatsApp
+  const handleOpenWhatsAppExport = (doc: any) => {
+    setWhatsappDoc(doc);
+    setWhatsappMessage(`Olá! Segue o link para o arquivo "${doc.nome}":\n\n${doc.url}`);
+    
+    // Tentar localizar telefone do cliente/prestador vinculado
+    let defaultPhone = "";
+    if (doc.cliente_id) {
+      const cli = clientes.find(c => c.id === doc.cliente_id);
+      if (cli?.telefone) defaultPhone = cli.telefone;
+    } else if (doc.prestador_id) {
+      const prest = prestadores.find(p => p.id === doc.prestador_id);
+      if (prest?.telefone) defaultPhone = prest.telefone;
+    }
+    
+    setWhatsappPhone(defaultPhone);
+    setShowWhatsAppDialog(true);
+  };
+
+  // Executar exportação de WhatsApp
+  const handleConfirmWhatsAppExport = () => {
+    if (!whatsappPhone.trim()) {
+      toast.error("Por favor, digite o número do WhatsApp.");
+      return;
+    }
+    
+    const cleanPhone = whatsappPhone.replace(/\D/g, "");
+    const finalPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;
+    
+    const url = `https://wa.me/${finalPhone}?text=${encodeURIComponent(whatsappMessage)}`;
+    window.open(url, "_blank");
+    setShowWhatsAppDialog(false);
+    toast.success("Redirecionando para o WhatsApp...");
+  };
+
+  // Criar nova mensagem rápida
   const handleNovaMensagem = () => {
-    const nova: MensagemRapida = {
-      id: Date.now().toString(),
-      titulo: "Nova mensagem",
+    setMensagemEditando({
+      id: "",
+      titulo: "",
       categoria: "Operacional",
-      texto: "Digite sua mensagem aqui...",
+      texto: "",
       cliente_id: null,
       cliente_nome: null,
-      cliente_documento: null
-    };
-    setMensagemEditando(nova);
+      cliente_documento: null,
+    });
+    setEditandoId(null);
     setShowNovaMensagem(true);
   };
 
-  const handleSalvarMensagem = () => {
+  // Salvar Mensagem Rápida
+  const handleSalvarMensagem = async () => {
     if (!mensagemEditando) return;
     if (!mensagemEditando.titulo?.trim() || !mensagemEditando.texto?.trim()) {
       toast.error("Título e mensagem são obrigatórios!");
       return;
     }
+
+    const idMsg = mensagemEditando.id || Date.now().toString();
+    const msgNormalizada = {
+      id: idMsg,
+      titulo: mensagemEditando.titulo.trim(),
+      categoria: mensagemEditando.categoria,
+      texto: mensagemEditando.texto.trim(),
+      cliente_id: mensagemEditando.cliente_id || null,
+      cliente_nome: mensagemEditando.cliente_nome || null,
+      cliente_documento: mensagemEditando.cliente_documento || null
+    };
+
+    // Atualizar localmente
+    const novasMsgs = mensagens.some(m => m.id === idMsg)
+      ? mensagens.map(m => m.id === idMsg ? msgNormalizada : m)
+      : [...mensagens, msgNormalizada];
     
-    const isEdicao = mensagens.some(m => m.id === mensagemEditando.id);
-    const existentes = mensagens.filter(m => m.id !== mensagemEditando.id);
-    const msgNormalizada = { ...mensagemEditando, titulo: mensagemEditando.titulo.trim(), texto: mensagemEditando.texto.trim() };
-    saveMensagens([...existentes, msgNormalizada]);
+    setMensagens(novasMsgs);
+    localStorage.setItem('conexao_mensagens_rapidas', JSON.stringify(novasMsgs));
+
+    // Tentar persistência no Supabase
+    try {
+      const { error } = await supabase
+        .from('modelos_mensagens')
+        .upsert([{
+          id: idMsg,
+          titulo: msgNormalizada.titulo,
+          categoria: msgNormalizada.categoria,
+          texto: msgNormalizada.texto,
+          cliente_id: msgNormalizada.cliente_id,
+          cliente_nome: msgNormalizada.cliente_nome,
+          cliente_documento: msgNormalizada.cliente_documento,
+          updated_at: new Date().toISOString()
+        }], { onConflict: 'id' });
+
+      if (error) {
+        if (isTabelaInexistente(error)) {
+          toast.warning("Tabela modelos_mensagens não encontrada. Salvo localmente neste navegador.");
+        } else {
+          toast.error("Erro ao sincronizar com Supabase: " + error.message);
+        }
+      } else {
+        toast.success("Mensagem salva e sincronizada com sucesso!");
+      }
+    } catch (e: any) {
+      console.warn("Erro ao salvar mensagem no Supabase:", e);
+    }
+
     setMensagemEditando(null);
     setEditandoId(null);
     setShowNovaMensagem(false);
-    console.log(`[MENSAGENS RAPIDAS] Mensagem ${isEdicao ? 'editada' : 'criada'}: ${msgNormalizada.titulo}`);
-    toast.success(isEdicao ? "Mensagem atualizada com sucesso!" : "Mensagem criada com sucesso!");
   };
 
-  const handleExcluirMensagem = (id: string) => {
-    const msg = mensagens.find(m => m.id === id);
-    console.log(`[MENSAGENS RAPIDAS] Mensagem excluída: ${msg?.titulo || id}`);
-    saveMensagens(mensagens.filter(m => m.id !== id));
-    toast.success("Mensagem excluída!");
+  // Excluir Mensagem Rápida
+  const handleExcluirMensagem = async (id: string) => {
+    const confirmar = window.confirm("Excluir esta mensagem rápida?");
+    if (!confirmar) return;
+
+    // Atualizar localmente
+    const filtradas = mensagens.filter(m => m.id !== id);
+    setMensagens(filtradas);
+    localStorage.setItem('conexao_mensagens_rapidas', JSON.stringify(filtradas));
+
+    // Tentar apagar no Supabase
+    try {
+      const { error } = await supabase
+        .from('modelos_mensagens')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        if (!isTabelaInexistente(error)) {
+          toast.error("Erro ao deletar do Supabase: " + error.message);
+        }
+      } else {
+        toast.success("Mensagem excluída do banco com sucesso.");
+      }
+    } catch (e) {
+      console.warn("Erro ao deletar no Supabase:", e);
+    }
   };
 
-  const handleSalvarFluxo = () => {
-    saveFluxo(fluxoEtapas);
-    toast.success("Fluxo de recrutamento salvo!");
+  // Salvar Fluxo de Recrutamento
+  const handleSalvarFluxo = async () => {
+    localStorage.setItem('conexao_fluxo_recrutamento', JSON.stringify(fluxoEtapas));
+    
+    try {
+      let errosCount = 0;
+      for (const etapa of fluxoEtapas) {
+        const { error } = await supabase
+          .from('fluxo_recrutamento')
+          .upsert([{
+            id: etapa.id,
+            titulo: etapa.titulo,
+            texto: etapa.texto,
+            ordem: etapa.ordem,
+            updated_at: new Date().toISOString()
+          }], { onConflict: 'id' });
+        
+        if (error) errosCount++;
+      }
+
+      if (errosCount > 0) {
+        toast.warning("Fluxo salvo localmente, mas ocorreram erros ao sincronizar com o banco.");
+      } else {
+        toast.success("Fluxo de recrutamento atualizado e salvo com sucesso!");
+      }
+    } catch (e) {
+      console.warn("Erro ao salvar fluxo:", e);
+      toast.error("Erro de sincronização.");
+    }
   };
 
   const handleFluxoChange = (id: string, campo: 'titulo' | 'texto', valor: string) => {
     setFluxoEtapas(fluxoEtapas.map(e => e.id === id ? { ...e, [campo]: valor } : e));
   };
 
-  const categorias = ["Captação de prestadores", "Operacional", "Ocorrências", "Financeiro", "Clientes"];
-  
-  const mensagensFiltradas = mensagens.filter(m => {
-    const matchCategoria = filtroCategoria === "todas" || m.categoria === filtroCategoria;
-    const matchCliente = filtroCliente === "todos" || !m.cliente_id || m.cliente_id === filtroCliente;
-    return matchCategoria && matchCliente;
-  });
-
-  const getDocIcon = (tipo: string) => {
-     if(tipo.includes("pdf")) return <FileText className="w-5 h-5 text-red-500" />;
-     if(tipo.includes("image")) return <Image className="w-5 h-5 text-blue-500" />;
-     if(tipo.includes("video")) return <Video className="w-5 h-5 text-purple-500" />;
-     return <FileText className="w-5 h-5 text-slate-500" />;
+  const copyToClipboard = (texto: string) => {
+    navigator.clipboard.writeText(texto);
+    toast.success("Mensagem copiada para transferência!");
   };
 
-  const getCategoriaIcon = (categoria: string) => {
-    if (categoria.includes("Captação")) return <Users className="w-4 h-4" />;
-    if (categoria.includes("Operacional")) return <Truck className="w-4 h-4" />;
-    if (categoria.includes("Financeiro")) return <DollarSign className="w-4 h-4" />;
-    if (categoria.includes("Ocorrência")) return <ShieldAlert className="w-4 h-4" />;
-    return <Package className="w-4 h-4" />;
+  // Filtros aplicados aos documentos listados
+  const getFilteredDocs = () => {
+    const list = documentos[currentTab] || [];
+    
+    return list.filter(doc => {
+      // Filtro de busca de texto
+      const matchSearch = searchQuery.trim() === "" || 
+        doc.nome.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        (doc.categoria && doc.categoria.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      // Filtro de cliente na aba de clientes
+      const matchCliente = currentTab !== "cliente" || 
+        clienteFiltroId === "todos" || 
+        doc.cliente_id === clienteFiltroId;
+
+      // Filtro de prestador na aba de prestadores
+      const matchPrestador = currentTab !== "prestador" || 
+        prestadorFiltroId === "todos" || 
+        doc.prestador_id === prestadorFiltroId;
+
+      return matchSearch && matchCliente && matchPrestador;
+    });
   };
 
-const renderBibliotecaTable = (tab: string, demoDocs: any[]) => {
-    const tabDocs = documentos[tab] || [];
-    const hasRealDocs = tabDocs.length > 0;
-    // Combinar: arquivos reais primeiro, depois demos marcados
-    const demosMarcados = demoDocs.map(d => ({ ...d, _isDemo: true }));
-    const displayDocs = hasRealDocs ? [...tabDocs, ...demosMarcados] : demosMarcados;
-
-    const handleDocDownload = (d: any) => {
-      if (d._isDemo) {
-        toast.info("Arquivo demonstrativo sem anexo real. Faça upload de um arquivo para esta pasta.");
-        return;
-      }
-      if (d.caminho) {
-        handleDownloadFile(d);
-      } else {
-        toast.info("Arquivo sem caminho de storage.");
-      }
-    };
-
-    const handleDocDelete = (d: any) => {
-      if (d._isDemo) {
-        toast.info("Arquivo demonstrativo não pode ser excluído.");
-        return;
-      }
-      handleDeleteFile(d, tab);
-    };
-
-    return (
-      <Card>
-        <CardHeader className="flex flex-row justify-between items-center py-4">
-           <div className="relative w-full max-w-md">
-             <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-             <Input placeholder="Buscar por nome de documento ou tag..." className="pl-9 h-9" />
-           </div>
-           <div className="flex gap-2">
-             <Button variant="outline" type="button"><Filter className="w-4 h-4 mr-1"/> Categorias</Button>
-             <div className="relative">
-               <input
-                 ref={fileInputRef}
-                 type="file"
-                 accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt,.xml"
-                 className="hidden"
-                 onChange={(e) => { e.stopPropagation(); handleUploadFile(e, tab); }}
-                 disabled={isUploading}
-               />
-               <Button 
-                 type="button"
-                 className="bg-orange-500 hover:bg-orange-600 text-white"
-                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }}
-                 disabled={isUploading}
-               >
-                 {isUploading ? (
-                   <>
-                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
-                     Enviando...
-                   </>
-                 ) : (
-                   <><Upload className="w-4 h-4 mr-1"/> Subir Arquivo</>
-                 )}
-               </Button>
-             </div>
-           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-           <Table>
-             <TableHeader><TableRow><TableHead className="w-10"></TableHead><TableHead>Nome e Descrição</TableHead><TableHead>Categoria / Pasta</TableHead><TableHead>Modificado Em</TableHead><TableHead>Tamanho</TableHead><TableHead className="text-right">Ação</TableHead></TableRow></TableHeader>
-             <TableBody>
-               {displayDocs.map((d: any, idx: number) => (
-                 <TableRow key={d?.id || `doc-${idx}`} className={d._isDemo ? "opacity-60" : ""}>
-                   <TableCell>{getDocIcon(d?.tipo || "file")}</TableCell>
-                   <TableCell>
-                     <div className="flex items-center gap-2">
-                       <p className="font-bold text-sm text-slate-800">{d?.nome || d?.titulo || "Documento sem nome"}</p>
-                       {d._isDemo && <Badge variant="outline" className="text-[9px] py-0 text-slate-400">Demo</Badge>}
-                     </div>
-                     {d?.desc && <p className="text-xs text-muted-foreground truncate w-48 lg:w-96">{d.desc}</p>}
-                   </TableCell>
-                   <TableCell><Badge variant="secondary" className="bg-slate-100 text-slate-700 font-mono text-[10px]"><Folder className="w-3 h-3 mr-1 inline"/> {d?.cat || "-"}</Badge></TableCell>
-                   <TableCell className="text-xs">{d?.data || "-"}</TableCell>
-                   <TableCell className="text-xs">{d?.tamanho || "-"}</TableCell>
-                   <TableCell className="text-right">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-blue-600"
-                        onClick={() => handleDocDownload(d)}
-                        title={d._isDemo ? "Arquivo demonstrativo" : "Baixar"}
-                        type="button"
-                      >
-                        <Download className="w-4 h-4"/>
-                      </Button>
-                      {!d._isDemo && (
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 text-red-600 hover:bg-red-50"
-                          onClick={() => handleDocDelete(d)}
-                          title="Excluir"
-                          type="button"
-                        >
-                          <Trash className="w-4 h-4"/>
-                        </Button>
-                      )}
-                   </TableCell>
-                 </TableRow>
-               ))}
-               {displayDocs.length === 0 && (
-                 <TableRow>
-                   <TableCell colSpan={6} className="text-center py-12 text-muted-foreground border-dashed border-2">
-                     Nenhum documento encontrado. Use "Subir Arquivo" para adicionar.
-                   </TableCell>
-                 </TableRow>
-               )}
-             </TableBody>
-           </Table>
-        </CardContent>
-      </Card>
-    );
-  };
+  const activeTabDocs = getFilteredDocs();
 
   return (
-    <div className="space-y-6 w-full px-6">
+    <div className="space-y-6 w-full px-6 py-4">
+      {/* Banner de Diagnóstico do Supabase */}
+      {missingTables.length > 0 && (
+        <Card className="border-red-200 bg-red-50/50 shadow-sm animate-pulse">
+          <CardContent className="flex items-start gap-3 p-4">
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <h4 className="text-sm font-bold text-red-800">
+                Tabelas do Módulo Ausentes no Supabase
+              </h4>
+              <p className="text-xs text-red-700 leading-relaxed">
+                As tabelas <code className="font-mono bg-red-100 px-1 rounded">{missingTables.join(', ')}</code> não foram encontradas no banco remoto. 
+                Por favor, acesse seu <strong>Supabase Dashboard &gt; SQL Editor</strong> e execute o script de migração completo localizado em 
+                <span className="font-mono bg-red-100 px-1 rounded text-red-900 ml-1">supabase_biblioteca_fix.sql</span> na raiz deste projeto para estabilizar a persistência.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Header do Módulo */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+          <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2 tracking-tight">
             <Library className="w-8 h-8 text-orange-500" /> Biblioteca de Manuais e Arquivos
           </h1>
-          <p className="text-muted-foreground flex items-center gap-2">Hospedagem unificada e versionada de anexos cruciais da empresa.</p>
+          <p className="text-sm text-slate-500">
+            Hospedagem documental, templates, controle operacional e gerenciador de mensagens rápidas da transportadora.
+          </p>
         </div>
       </div>
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="bg-card justify-start overflow-x-auto border-b rounded-none w-full">
-           <TabsTrigger value="operacional" className="px-5"><ShieldAlert className="w-4 h-4 mr-2"/> Central Operacional</TabsTrigger>
-           <TabsTrigger value="prestador" className="px-5"><Folder className="w-4 h-4 mr-2"/> Pasta do Prestador (App)</TabsTrigger>
-           <TabsTrigger value="cliente" className="px-5"><Folder className="w-4 h-4 mr-2"/> Pasta do Cliente (Portal)</TabsTrigger>
-           <TabsTrigger value="modelos" className="px-5"><FileText className="w-4 h-4 mr-2"/> Modelos e Templates</TabsTrigger>
-           <TabsTrigger value="mensagens" className="px-5"><MessageSquare className="w-4 h-4 mr-2"/> Mensagens Rápidas</TabsTrigger>
-           <TabsTrigger value="fluxo" className="px-5"><Users className="w-4 h-4 mr-2"/> Fluxo de Recrutamento</TabsTrigger>
+        <TabsList className="bg-slate-100/80 p-1 border rounded-xl w-full justify-start overflow-x-auto gap-1">
+           <TabsTrigger value="operacional" className="rounded-lg px-4 py-2 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm">
+             <ShieldAlert className="w-4 h-4 mr-2 text-orange-500"/> Central Operacional
+           </TabsTrigger>
+           <TabsTrigger value="prestador" className="rounded-lg px-4 py-2 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm">
+             <Folder className="w-4 h-4 mr-2 text-blue-500"/> Pasta do Prestador (App)
+           </TabsTrigger>
+           <TabsTrigger value="cliente" className="rounded-lg px-4 py-2 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm">
+             <Folder className="w-4 h-4 mr-2 text-purple-500"/> Pasta do Cliente (Portal)
+           </TabsTrigger>
+           <TabsTrigger value="modelos" className="rounded-lg px-4 py-2 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm">
+             <FileText className="w-4 h-4 mr-2 text-green-500"/> Modelos e Templates
+           </TabsTrigger>
+           <TabsTrigger value="mensagens" className="rounded-lg px-4 py-2 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm">
+             <MessageSquare className="w-4 h-4 mr-2 text-sky-500"/> Mensagens Rápidas
+           </TabsTrigger>
+           <TabsTrigger value="fluxo" className="rounded-lg px-4 py-2 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm">
+             <Users className="w-4 h-4 mr-2 text-emerald-500"/> Fluxo de Recrutamento
+           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="operacional" className="pt-4">
-           <Card className="mb-4 bg-orange-50/50 border-orange-200">
-             <CardContent className="p-4 text-sm text-orange-900 font-medium max-w-3xl">PGRs Oficiais, Procedimentos Operacionais Padrão (POP), e Guias Internos da Transportadora. Reservado apenas para logins corporativos.</CardContent>
-           </Card>
-{renderBibliotecaTable("operacional", [
-              { id: 1, nome: "PGR Corporativo Versão 2.1", desc: "Plano de Gerenciamento de Risco Integrado com a Seguradora", tipo: "pdf", cat: "SGR / Risco", data: "26/03/2026", tamanho: "2.4 MB", admin: true },
-              { id: 2, nome: "Guia de Cubagem Prática", desc: "Como conferir volumes x peso de mercadorias atípicas na rodo", tipo: "pdf", cat: "Mesa Treinamento", data: "10/01/2026", tamanho: "600 KB", admin: true },
-              { id: 3, nome: "Videoaulas Supabase ERP", desc: "Link para playlists do time de dev", tipo: "video", cat: "Treinamento Módulos", data: "27/03/2026", tamanho: "URL Externa", admin: true },
-            ])}
-        </TabsContent>
+        {/* --- CONTEÚDO DOCUMENTOS (ABAS OPERACIONAL, PRESTADOR, CLIENTE, MODELOS) --- */}
+        {["operacional", "prestador", "cliente", "modelos"].includes(currentTab) && (
+          <TabsContent value={currentTab} className="pt-4 space-y-4">
+            
+            {/* Bloco de descrição / Banner informativo */}
+            {currentTab === "operacional" && (
+              <Card className="bg-orange-50/40 border-orange-200 shadow-none">
+                <CardContent className="p-4 text-xs text-orange-950 font-medium leading-relaxed">
+                  🔐 <strong>Central Operacional:</strong> Espaço voltado a POPs, normas de segurança e planos de gerenciamento de risco da transportadora. Estes documentos são de acesso exclusivo aos funcionários internos.
+                </CardContent>
+              </Card>
+            )}
+            {currentTab === "prestador" && (
+              <Card className="bg-blue-50/40 border-blue-200 shadow-none">
+                <CardContent className="p-4 text-xs text-blue-950 font-medium leading-relaxed">
+                  🚚 <strong>Pasta do Prestador:</strong> Documentos vinculados diretamente aos agregados e motoristas parceiros (ex: CNH, CRLV, ANTT). Ficam visíveis na consulta cadastral e no app do prestador.
+                </CardContent>
+              </Card>
+            )}
+            {currentTab === "cliente" && (
+              <Card className="bg-purple-50/40 border-purple-200 shadow-none">
+                <CardContent className="p-4 text-xs text-purple-950 font-medium leading-relaxed">
+                  🏢 <strong>Pasta do Cliente:</strong> Central de faturamento, tabelas de tarifas, contratos e acordos de nível de serviço (SLA) específicos para cada cliente corporativo.
+                </CardContent>
+              </Card>
+            )}
+            {currentTab === "modelos" && (
+              <Card className="bg-green-50/40 border-green-200 shadow-none">
+                <CardContent className="p-4 text-xs text-green-950 font-medium leading-relaxed">
+                  📄 <strong>Modelos e Templates:</strong> Repositório de arquivos padrão para download, como fichas cadastrais em PDF, modelos de proposta comercial e planilhas de referência.
+                </CardContent>
+              </Card>
+            )}
 
-        <TabsContent value="prestador" className="pt-4">
-{renderBibliotecaTable("prestador", [
-              { id: 10, nome: "Regulamento do Agregado SP", desc: "Regras de convivência, estadias e fardamento obrigatório", tipo: "pdf", cat: "Onboarding Motoristas", data: "12/02/2026", tamanho: "1.2 MB", admin: true },
-              { id: 11, nome: "Tutorial de Baixa de Ocorrência", desc: "Como reportar chuva ou transito via WhatsApp", tipo: "image", cat: "Infográficos", data: "22/03/2026", tamanho: "150 KB", admin: true },
-            ])}
-        </TabsContent>
+            {/* Painel Geral de Upload e Filtros */}
+            <Card className="border-slate-200 shadow-sm overflow-hidden">
+              <CardHeader className="bg-slate-50 border-b p-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  
+                  {/* Busca e Filtros de Listagem */}
+                  <div className="flex flex-wrap items-center gap-3 flex-1">
+                    <div className="relative w-full sm:w-64">
+                      <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                      <Input 
+                        placeholder="Buscar por nome..." 
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9 h-9 text-xs focus-visible:ring-slate-400" 
+                      />
+                    </div>
 
-        <TabsContent value="cliente" className="pt-4">
-{renderBibliotecaTable("cliente", [
-              { id: 20, nome: "Apresentação Institucional 2026", desc: "Nosso deck pra fechar com C-Levels", tipo: "pdf", cat: "Materiais Venda", data: "05/01/2026", tamanho: "5.1 MB", admin: true },
-              { id: 21, nome: "SLA Operacional Standard.pdf", desc: "Qualidade de Entrega vs Reversas Prazo Comum", tipo: "pdf", cat: "Políticas SLA Púb.", data: "18/03/2026", tamanho: "15 MB", admin: true },
-            ])}
-        </TabsContent>
+                    {/* Filtro Cliente (Apenas na aba cliente) */}
+                    {currentTab === "cliente" && (
+                      <Select value={clienteFiltroId} onValueChange={setClienteFiltroId}>
+                        <SelectTrigger className="w-full sm:w-64 h-9 text-xs">
+                          <SelectValue placeholder="Filtrar por Cliente" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="todos">Todos os Clientes</SelectItem>
+                          {clientes.map(c => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.nome_fantasia || c.razao_social}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
 
-        <TabsContent value="modelos" className="pt-4">
-           {renderBibliotecaTable("modelos", [])}
-        </TabsContent>
+                    {/* Filtro Prestador (Apenas na aba prestador) */}
+                    {currentTab === "prestador" && (
+                      <Select value={prestadorFiltroId} onValueChange={setPrestadorFiltroId}>
+                        <SelectTrigger className="w-full sm:w-64 h-9 text-xs">
+                          <SelectValue placeholder="Filtrar por Prestador" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="todos">Todos os Prestadores</SelectItem>
+                          {prestadores.map(p => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.nome_completo}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
 
-        {/* --- MENSAGENS RÁPIDAS --- */}
+                  {/* Formulário de Upload */}
+                  <div className="flex flex-wrap items-center gap-2 border-t lg:border-t-0 pt-4 lg:pt-0">
+                    
+                    {/* Categoria do documento */}
+                    <div className="flex flex-col gap-1">
+                      <Select value={selectedUploadCategory} onValueChange={setSelectedUploadCategory}>
+                        <SelectTrigger className="w-44 h-9 text-xs">
+                          <SelectValue placeholder="Escolha a categoria" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CATEGORIES_BY_TAB[currentTab]?.map(cat => (
+                            <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Vincular Cliente ao Upload (na aba cliente) */}
+                    {currentTab === "cliente" && (
+                      <div className="flex flex-col gap-1">
+                        <Select value={selectedUploadClient} onValueChange={setSelectedUploadClient}>
+                          <SelectTrigger className="w-48 h-9 text-xs">
+                            <SelectValue placeholder="Vincular Cliente" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="geral">Geral / Sem vínculo</SelectItem>
+                            {clientes.map(c => (
+                              <SelectItem key={c.id} value={c.id}>
+                                {c.nome_fantasia || c.razao_social}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {/* Vincular Prestador ao Upload (na aba prestador) */}
+                    {currentTab === "prestador" && (
+                      <div className="flex flex-col gap-1">
+                        <Select value={selectedUploadProvider} onValueChange={setSelectedUploadProvider}>
+                          <SelectTrigger className="w-48 h-9 text-xs">
+                            <SelectValue placeholder="Vincular Prestador" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="geral">Geral / Sem vínculo</SelectItem>
+                            {prestadores.map(p => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.nome_completo}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {/* Botão de Upload */}
+                    <div className="relative">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="hidden"
+                        onChange={handleUploadFile}
+                        disabled={isUploading}
+                      />
+                      <Button 
+                        type="button"
+                        size="sm"
+                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold h-9 shadow-md shadow-orange-500/10"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploading}
+                      >
+                        {isUploading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Enviando {uploadProgress}%
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 mr-2"/>
+                            Subir Arquivo
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader className="bg-slate-50/50">
+                    <TableRow>
+                      <TableHead className="w-10"></TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700">Nome do Documento</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700">Categoria</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700">Modificado Em</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700">Tamanho</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700">Uploader</TableHead>
+                      <TableHead className="text-right text-xs font-bold text-slate-700">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {activeTabDocs.map((doc, idx) => (
+                      <TableRow key={doc.id || `doc-${idx}`} className="hover:bg-slate-50/40">
+                        <TableCell>{getDocIcon(doc.nome)}</TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-bold text-sm text-slate-800 leading-none">{doc.nome}</p>
+                            {currentTab === "cliente" && doc.cliente_id && (
+                              <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-1.5 py-0.5 rounded-md mt-1 inline-block">
+                                Cliente: {clientes.find(c => c.id === doc.cliente_id)?.nome_fantasia || "Carregando..."}
+                              </span>
+                            )}
+                            {currentTab === "prestador" && doc.prestador_id && (
+                              <span className="text-[10px] text-blue-600 font-semibold bg-blue-50 px-1.5 py-0.5 rounded-md mt-1 inline-block">
+                                Prestador: {prestadores.find(p => p.id === doc.prestador_id)?.nome_completo || "Carregando..."}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="bg-slate-100 text-slate-700 text-[10px] font-medium font-mono">
+                            {doc.categoria || "Geral"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-500 font-medium">{doc.data || "-"}</TableCell>
+                        <TableCell className="text-xs text-slate-500 font-medium font-mono">{doc.tamanho || "-"}</TableCell>
+                        <TableCell className="text-xs text-slate-500">{doc.usuario_nome || "Sistema"}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-blue-600 hover:bg-blue-50"
+                              onClick={() => handleOpenFile(doc)}
+                              title="Abrir em Nova Aba"
+                            >
+                              <ExternalLink className="w-4 h-4"/>
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-slate-600 hover:bg-slate-50"
+                              onClick={() => handleShareFile(doc)}
+                              title="Copiar Link"
+                            >
+                              <Share2 className="w-4 h-4"/>
+                            </Button>
+                            {(currentTab === "cliente" || currentTab === "prestador") && (
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-8 w-8 text-emerald-600 hover:bg-emerald-50"
+                                onClick={() => handleOpenWhatsAppExport(doc)}
+                                title="Enviar via WhatsApp"
+                              >
+                                <Send className="w-4 h-4"/>
+                              </Button>
+                            )}
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-red-600 hover:bg-red-50"
+                              onClick={() => handleDeleteFile(doc)}
+                              title="Excluir"
+                            >
+                              <Trash className="w-4 h-4"/>
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {activeTabDocs.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-16 text-slate-400 border-dashed border-2 bg-slate-50/20">
+                          <Folder className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                          Nenhum documento encontrado para os filtros selecionados.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
+
+        {/* --- ABA MENSAGENS RÁPIDAS --- */}
         <TabsContent value="mensagens" className="pt-4 space-y-4">
-           <Card>
-             <CardHeader className="flex flex-row items-center justify-between">
+           <Card className="border-slate-200 shadow-sm">
+             <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
                <div>
-                 <CardTitle className="text-lg flex items-center gap-2">
-                   <MessageSquare className="w-5 h-5 text-primary" />
+                 <CardTitle className="text-lg flex items-center gap-2 text-slate-900 font-bold">
+                   <MessageSquare className="w-5 h-5 text-sky-500" />
                    Mensagens Rápidas para WhatsApp
                  </CardTitle>
-                 <CardDescription>Modelos de mensagens prontos para copiar e enviar.</CardDescription>
+                 <CardDescription className="text-xs">Modelos e templates de WhatsApp para contato instantâneo com prestadores e clientes.</CardDescription>
                </div>
-               <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleNovaMensagem}>
+               <Button className="bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs h-9 shadow-md shadow-sky-600/10" onClick={handleNovaMensagem}>
                  <Plus className="w-4 h-4 mr-2" /> Nova Mensagem
                </Button>
              </CardHeader>
-             <CardContent>
-<div className="flex gap-4 mb-6">
+             <CardContent className="pt-6">
+                <div className="flex flex-col sm:flex-row gap-4 mb-6">
                   <Select value={filtroCategoria} onValueChange={setFiltroCategoria}>
-                    <SelectTrigger className="w-64"><SelectValue placeholder="Filtrar por categoria" /></SelectTrigger>
+                    <SelectTrigger className="w-64 h-9 text-xs"><SelectValue placeholder="Filtrar por categoria" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todas">Todas as categorias</SelectItem>
-                      {categorias.map(cat => (
+                      {["Captação de prestadores", "Operacional", "Ocorrências", "Financeiro", "Clientes"].map(cat => (
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <Select value={filtroCliente} onValueChange={setFiltroCliente}>
-                    <SelectTrigger className="w-64"><SelectValue placeholder={clientes.length > 0 ? "Filtrar por cliente" : "Nenhum cliente"} /></SelectTrigger>
+                    <SelectTrigger className="w-64 h-9 text-xs"><SelectValue placeholder="Filtrar por cliente" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todos os clientes</SelectItem>
                       {clientes.length === 0 ? (
-                        <div className="p-2 text-sm text-muted-foreground italic">Nenhum cliente cadastrado</div>
+                        <SelectItem value="none" disabled className="text-sm text-muted-foreground italic">
+                          Nenhum cliente cadastrado
+                        </SelectItem>
                       ) : (
                         clientes.map(cli => (
                           <SelectItem key={cli.id} value={cli.id}>
-                            {(cli.nome_fantasia || cli.razao_social)} {cli.cnpj_cpf ? `/ ${cli.cnpj_cpf}` : ''}
+                            {cli.nome_fantasia || cli.razao_social}
                           </SelectItem>
                         ))
                       )}
@@ -771,51 +1089,55 @@ const renderBibliotecaTable = (tab: string, demoDocs: any[]) => {
                   </Select>
                 </div>
 
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {mensagensFiltradas.map((msg) => {
-                    const corCategoria = CATEGORIA_CORES[msg.categoria] || "bg-gray-100 text-gray-700 border-gray-300";
-                    const bordaCategoria = CATEGORIA_BORDA[msg.categoria] || "border-l-gray-500";
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {mensagens.filter(m => {
+                    const matchCat = filtroCategoria === "todas" || m.categoria === filtroCategoria;
+                    const matchCli = filtroCliente === "todos" || m.cliente_id === filtroCliente;
+                    return matchCat && matchCli;
+                  }).map((msg) => {
+                    const corCategoria = CATEGORIA_CORES[msg.categoria] || "bg-slate-50 text-slate-700 border-slate-200";
+                    const bordaCategoria = CATEGORIA_BORDA[msg.categoria] || "border-l-slate-400";
                     return (
                       <Card key={msg.id} className={`border-l-4 ${bordaCategoria} hover:shadow-md transition-shadow ${editandoId === msg.id ? 'ring-2 ring-primary' : ''}`}>
                         <CardHeader className="pb-2">
                           <div className="flex items-center justify-between">
-                            <Badge variant="secondary" className={`flex items-center gap-1 ${corCategoria}`}>
+                            <Badge variant="secondary" className={`flex items-center gap-1 ${corCategoria} font-medium text-[10px]`}>
                               {getCategoriaIcon(msg.categoria)}
                               {msg.categoria}
                             </Badge>
-                            <div className="flex gap-1">
-                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setMensagemEditando(msg); setShowNovaMensagem(true); setEditandoId(msg.id); }}>
-                                <Pencil className="w-4 h-4" />
+                            <div className="flex gap-0.5">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100" onClick={() => { setMensagemEditando(msg); setShowNovaMensagem(true); setEditandoId(msg.id); }}>
+                                <Pencil className="w-3.5 h-3.5" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => copyToClipboard(msg.texto)}>
-                                <Copy className="w-4 h-4" />
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-sky-500 hover:bg-sky-50" onClick={() => copyToClipboard(msg.texto)} title="Copiar Texto">
+                                <Copy className="w-3.5 h-3.5" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleExcluirMensagem(msg.id)}>
-                                <Trash className="w-4 h-4" />
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => handleExcluirMensagem(msg.id)} title="Excluir">
+                                <Trash className="w-3.5 h-3.5" />
                               </Button>
                             </div>
                           </div>
                           {msg.cliente_nome ? (
-                            <div className="mt-2">
-                              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 text-xs">
+                            <div className="mt-1">
+                              <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-1.5 py-0.5 rounded-md">
                                 Cliente: {msg.cliente_nome}
-                              </Badge>
+                              </span>
                             </div>
                           ) : (
-                            <div className="mt-2">
-                              <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-300 text-xs">
+                            <div className="mt-1">
+                              <span className="text-[10px] text-slate-500 font-semibold bg-slate-50 px-1.5 py-0.5 rounded-md">
                                 Geral
-                              </Badge>
+                              </span>
                             </div>
                           )}
-                          <CardTitle className="text-sm mt-2">{msg.titulo}</CardTitle>
+                          <CardTitle className="text-sm font-bold text-slate-800 mt-2">{msg.titulo}</CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <p className="text-xs text-muted-foreground line-clamp-3">{msg.texto}</p>
+                          <p className="text-xs text-slate-600 line-clamp-4 min-h-[64px] font-mono leading-relaxed bg-slate-50 p-2 rounded-lg mt-1 whitespace-pre-wrap">{msg.texto}</p>
                           <div className="flex justify-between items-center mt-3">
-                            <span className="text-xs text-muted-foreground">{msg.texto.length} caracteres</span>
-                            <Button variant="outline" size="sm" onClick={() => copyToClipboard(msg.texto)}>
-                              <Copy className="w-4 h-4 mr-2" /> Copiar
+                            <span className="text-[10px] text-slate-400 font-semibold">{msg.texto.length} caracteres</span>
+                            <Button variant="outline" size="sm" className="h-7 text-xs font-semibold" onClick={() => copyToClipboard(msg.texto)}>
+                              <Copy className="w-3 h-3 mr-1" /> Copiar
                             </Button>
                           </div>
                         </CardContent>
@@ -824,107 +1146,110 @@ const renderBibliotecaTable = (tab: string, demoDocs: any[]) => {
                   })}
                 </div>
 
-               {mensagensFiltradas.length === 0 && (
-                 <div className="text-center py-12 text-muted-foreground">
-                   <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                   <p>Nenhuma mensagem encontrada.</p>
-                 </div>
-               )}
+                {mensagens.length === 0 && (
+                  <div className="text-center py-16 text-slate-400">
+                    <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                    Nenhuma mensagem rápida cadastrada.
+                  </div>
+                )}
              </CardContent>
            </Card>
         </TabsContent>
 
         {/* --- FLUXO DE RECRUTAMENTO --- */}
         <TabsContent value="fluxo" className="pt-4 space-y-4">
-           <Card>
-             <CardHeader>
-               <CardTitle className="text-lg flex items-center gap-2">
-                 <Users className="w-5 h-5 text-primary" />
+           <Card className="border-slate-200 shadow-sm">
+             <CardHeader className="border-b pb-4">
+               <CardTitle className="text-lg flex items-center gap-2 text-slate-900 font-bold">
+                 <Users className="w-5 h-5 text-emerald-500" />
                  Fluxo de Recrutamento de Prestadores
                </CardTitle>
-               <CardDescription>
-                 Passo a passo padrão para captação e onboarding de novos prestadores. Edite os textos e clique em salvar.
+               <CardDescription className="text-xs">
+                 Passo a passo com mensagens padronizadas de recrutamento e onboardings. Edite os textos e clique em salvar.
                </CardDescription>
              </CardHeader>
-             <CardContent>
-               <div className="space-y-4">
-                 {fluxoEtapas.sort((a, b) => a.ordem - b.ordem).map((etapa, index) => (
-                   <div key={etapa.id} className="relative">
-                     <div className="flex items-start gap-4">
-                       <div className="flex flex-col items-center">
-                         <div className="w-10 h-10 rounded-full bg-orange-500 text-white flex items-center justify-center font-bold">
-                           {etapa.ordem}
-                         </div>
-                         {index < fluxoEtapas.length - 1 && (
-                           <div className="w-0.5 h-16 bg-orange-200 mt-2"></div>
-                         )}
-                       </div>
-                       <Card className="flex-1">
-                         <CardHeader className="pb-2">
-                           <Input 
-                             value={etapa.titulo} 
-                             onChange={(e) => handleFluxoChange(etapa.id, 'titulo', e.target.value)}
-                             className="font-bold text-lg border-0 focus-visible:ring-0 px-0"
-                           />
-                         </CardHeader>
-                         <CardContent>
-                           <Textarea 
-                             value={etapa.texto} 
-                             onChange={(e) => handleFluxoChange(etapa.id, 'texto', e.target.value)}
-                             className="min-h-[80px] text-sm"
-                             placeholder="Digite a mensagem padrão desta etapa..."
-                           />
-                           <Button variant="outline" size="sm" className="mt-3" onClick={() => copyToClipboard(etapa.texto)}>
-                             <Copy className="w-4 h-4 mr-2" /> Copiar Mensagem
-                           </Button>
-                         </CardContent>
-                       </Card>
-                     </div>
-                   </div>
-                 ))}
-               </div>
+             <CardContent className="pt-6">
+                <div className="space-y-4">
+                  {fluxoEtapas.sort((a, b) => a.ordem - b.ordem).map((etapa, index) => (
+                    <div key={etapa.id} className="relative">
+                      <div className="flex items-start gap-4">
+                        <div className="flex flex-col items-center">
+                          <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-sm shadow-md shadow-emerald-500/10">
+                            {etapa.ordem}
+                          </div>
+                          {index < fluxoEtapas.length - 1 && (
+                            <div className="w-0.5 h-20 bg-slate-200 mt-2"></div>
+                          )}
+                        </div>
+                        <Card className="flex-1 shadow-none border-slate-200">
+                          <CardHeader className="pb-2 p-4">
+                            <Input 
+                              value={etapa.titulo} 
+                              onChange={(e) => handleFluxoChange(etapa.id, 'titulo', e.target.value)}
+                              className="font-bold text-sm border-0 focus-visible:ring-0 px-0 h-7"
+                            />
+                          </CardHeader>
+                          <CardContent className="p-4 pt-0">
+                            <Textarea 
+                              value={etapa.texto} 
+                              onChange={(e) => handleFluxoChange(etapa.id, 'texto', e.target.value)}
+                              className="min-h-[70px] text-xs font-mono bg-slate-50 focus-visible:ring-slate-400"
+                              placeholder="Digite a mensagem padrão desta etapa..."
+                            />
+                            <div className="flex justify-end gap-2 mt-2">
+                              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => copyToClipboard(etapa.texto)}>
+                                <Copy className="w-3.5 h-3.5 mr-1" /> Copiar Texto
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
-               <div className="flex justify-end mt-6">
-                 <Button className="bg-green-600 hover:bg-green-700" onClick={handleSalvarFluxo}>
-                   <Save className="w-4 h-4 mr-2" /> Salvar Alterações
-                 </Button>
-               </div>
+                <div className="flex justify-end mt-6 pt-4 border-t">
+                  <Button className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/10" onClick={handleSalvarFluxo}>
+                    <Save className="w-4 h-4 mr-2" /> Salvar Alterações do Funil
+                  </Button>
+                </div>
              </CardContent>
            </Card>
         </TabsContent>
       </Tabs>
 
-      {/* Nova Mensagem Modal */}
+      {/* MODAL: NOVA MENSAGEM RÁPIDA */}
       <Dialog open={showNovaMensagem} onOpenChange={setShowNovaMensagem}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Nova Mensagem Rápida</DialogTitle>
+            <DialogTitle className="font-bold text-slate-800 text-base">Nova Mensagem Rápida</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Título</Label>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Título</Label>
               <Input 
                 value={mensagemEditando?.titulo || ''} 
                 onChange={(e) => setMensagemEditando(mensagemEditando ? { ...mensagemEditando, titulo: e.target.value } : null)}
-                placeholder="Ex: Bem-vindo à equipe"
+                placeholder="Ex: Confirmação de OS"
+                className="h-9 text-xs focus-visible:ring-slate-400"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Categoria</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Categoria</Label>
               <Select 
                 value={mensagemEditando?.categoria || 'Operacional'} 
                 onValueChange={(v) => setMensagemEditando(mensagemEditando ? { ...mensagemEditando, categoria: v } : null)}
               >
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {categorias.map(cat => (
+                  {["Captação de prestadores", "Operacional", "Ocorrências", "Financeiro", "Clientes"].map(cat => (
                     <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Cliente vinculado</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Cliente vinculado (opcional)</Label>
               <Select 
                 value={mensagemEditando?.cliente_id || "nenhum"} 
                 onValueChange={(v) => {
@@ -936,43 +1261,76 @@ const renderBibliotecaTable = (tab: string, demoDocs: any[]) => {
                       ...mensagemEditando, 
                       cliente_id: v,
                       cliente_nome: cliente?.nome_fantasia || cliente?.razao_social || null,
-                      cliente_documento: cliente?.cnpj_cpf || null
+                      cliente_documento: cliente?.cnpj || null
                     } : null);
                   }
                 }}
               >
-                <SelectTrigger><SelectValue placeholder={clientes.length > 0 ? "Selecione um cliente" : "Nenhum cliente cadastrado"} /></SelectTrigger>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Selecione um cliente" />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="nenhum">Todos os clientes / Mensagem geral</SelectItem>
-                  {clientes.length === 0 ? (
-                    <div className="p-2 text-sm text-muted-foreground italic">Nenhum cliente cadastrado</div>
-                  ) : (
-                    clientes.map(cli => (
-                      <SelectItem key={cli.id} value={cli.id}>
-                        {(cli.nome_fantasia || cli.razao_social)} {cli.cnpj_cpf ? `/ ${cli.cnpj_cpf}` : ''}
-                      </SelectItem>
-                    ))
-                  )}
+                  <SelectItem value="nenhum">Mensagem geral (Sem cliente)</SelectItem>
+                  {clientes.map(cli => (
+                    <SelectItem key={cli.id} value={cli.id}>
+                      {cli.nome_fantasia || cli.razao_social}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Mensagem</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Conteúdo da Mensagem</Label>
               <Textarea 
                 value={mensagemEditando?.texto || ''} 
                 onChange={(e) => setMensagemEditando(mensagemEditando ? { ...mensagemEditando, texto: e.target.value } : null)}
-                placeholder="Digite a mensagem usando variavel para dados dinâmicos... (sem limite de caracteres)"
-                className="min-h-[120px] resize-y"
+                placeholder="Ex: Olá {{nome}}, o pagamento de R$ {{valor}} foi realizado."
+                className="min-h-[100px] text-xs font-mono focus-visible:ring-slate-400"
               />
-              <div className="flex justify-between items-center">
-                <p className="text-xs text-muted-foreground">Use {"{{nome}}"}, {"{{os}}"}, {"{{valor}}"}, {"{{origem}}"}, {"{{destino}}"} como variáveis.</p>
-                <p className="text-xs text-muted-foreground font-mono">{mensagemEditando?.texto?.length || 0} caracteres</p>
+              <div className="flex justify-between items-center text-[10px] text-slate-400 font-medium">
+                <span>Variáveis: {"{{nome}}"}, {"{{os}}"}, {"{{valor}}"}, {"{{origem}}"}, {"{{destino}}"}</span>
+                <span>{mensagemEditando?.texto?.length || 0} caract.</span>
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowNovaMensagem(false); setMensagemEditando(null); setEditandoId(null); }}>Cancelar</Button>
-            <Button onClick={handleSalvarMensagem}>Salvar Mensagem</Button>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" className="h-8 text-xs font-semibold" onClick={() => { setShowNovaMensagem(false); setMensagemEditando(null); setEditandoId(null); }}>Cancelar</Button>
+            <Button size="sm" className="bg-sky-600 hover:bg-sky-700 text-white font-semibold h-8 text-xs" onClick={handleSalvarMensagem}>Salvar Mensagem</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: EXPORTAR PARA WHATSAPP */}
+      <Dialog open={showWhatsAppDialog} onOpenChange={setShowWhatsAppDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-bold text-slate-800 text-base">Exportar Documento para WhatsApp</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Número do WhatsApp (com DDD)</Label>
+              <Input 
+                value={whatsappPhone} 
+                onChange={(e) => setWhatsappPhone(e.target.value)}
+                placeholder="Ex: 11999998888"
+                className="h-9 text-xs focus-visible:ring-slate-400"
+              />
+              <p className="text-[10px] text-slate-400">Prefixo DDI 55 (Brasil) será adicionado automaticamente se omitido.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Mensagem que será enviada</Label>
+              <Textarea 
+                value={whatsappMessage} 
+                onChange={(e) => setWhatsappMessage(e.target.value)}
+                className="min-h-[100px] text-xs focus-visible:ring-slate-400"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" className="h-8 text-xs font-semibold" onClick={() => setShowWhatsAppDialog(false)}>Cancelar</Button>
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold h-8 text-xs flex items-center gap-1" onClick={handleConfirmWhatsAppExport}>
+              <Send className="w-3.5 h-3.5" /> Enviar Mensagem
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

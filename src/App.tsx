@@ -45,19 +45,21 @@ import DevTesteTMS from "@/pages/DevTesteTMS";
 import IntegracoesTMS from "@/pages/IntegracoesTMS";
 import MensagensWhatsApp from "@/pages/MensagensWhatsApp";
 import TesteInteligencia from "@/pages/TesteInteligencia";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <ThemeProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/cadastro-prestador" element={<CadastroPrestador />} />
+    <ErrorBoundary>
+      <TooltipProvider>
+        <ThemeProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/cadastro-prestador" element={<CadastroPrestador />} />
           <Route path="/rastrear/:codigo" element={<Tracking />} />
           <Route path="/t/:codigo" element={<Tracking />} />
           <Route path="/rastrear" element={<Tracking />} />
@@ -105,8 +107,9 @@ const App = () => (
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
-      </ThemeProvider>
-    </TooltipProvider>
+        </ThemeProvider>
+      </TooltipProvider>
+    </ErrorBoundary>
   </QueryClientProvider>
 );
 

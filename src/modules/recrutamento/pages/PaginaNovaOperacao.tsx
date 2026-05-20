@@ -7,7 +7,7 @@ import { PremiumBadge } from '../components/design-system/PremiumBadge'
 import { useOperacoes } from '../hooks/useOperacoes'
 import { useRecrutamentoUI } from '../hooks/useRecrutamentoUI'
 import { formatCurrency, cn } from '../utils/cn'
-import type { Operacao, TipoCarga, Recurrencia, PrioridadeOperacao } from '../types/recrutamento'
+import type { Operacao, TipoCarga, Recurrencia, PrioridadeOperacao, FrequenciaOperacao } from '../types/recrutamento'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,6 +30,7 @@ export function PaginaNovaOperacao() {
     rotaDestino: '',
     tipoVeiculo: '',
     tipoCarga: 'seco',
+    temperatura: '',
     pesoCarga: '',
     dimensoes: '',
     localCarregamento: '',
@@ -39,6 +40,7 @@ export function PaginaNovaOperacao() {
     dataInicio: '',
     dataFim: '',
     recurrencia: 'diaria',
+    frequencia: 'fixa',
     prioridade: 'media',
     observacoes: '',
     financeiro: {
@@ -46,6 +48,8 @@ export function PaginaNovaOperacao() {
       valorPrestador: 0,
       percentualImposto: 0,
       percentualSeguro: 0,
+      percentualPrestador: 0,
+      margemTransportadora: 0,
       valorImposto: 0,
       valorSeguro: 0,
       receitaLiquida: 0,
@@ -57,6 +61,7 @@ export function PaginaNovaOperacao() {
       franquiaKm: 0,
       formaPagamento: '',
       prazoPagamento: 30,
+      dataPagamento: '',
     },
     meta: {
       vagasTotais: 1,
@@ -182,6 +187,17 @@ export function PaginaNovaOperacao() {
                   </Select>
                 </div>
                 <div>
+                  <Label>Frequência</Label>
+                  <Select value={form.frequencia} onValueChange={v => setForm({...form, frequencia: v as FrequenciaOperacao})}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fixa">Fixa</SelectItem>
+                      <SelectItem value="recorrente">Recorrente</SelectItem>
+                      <SelectItem value="esporadica">Esporádica</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
                   <Label>Data Início</Label>
                   <Input type="date" value={form.dataInicio} onChange={e => setForm({...form, dataInicio: e.target.value})} />
                 </div>
@@ -220,6 +236,29 @@ export function PaginaNovaOperacao() {
                       <SelectItem value="alimenticio">Alimentício</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div>
+                  <Label>Temperatura Controlada</Label>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.temperatura !== ''}
+                        onChange={e => setForm({...form, temperatura: e.target.checked ? '0' : ''})}
+                        className="rounded border-border"
+                      />
+                      <span className="text-xs text-muted-foreground">Controlada</span>
+                    </label>
+                    {form.temperatura !== '' && (
+                      <Input
+                        type="text"
+                        value={form.temperatura}
+                        onChange={e => setForm({...form, temperatura: e.target.value})}
+                        placeholder="Ex: -5°C a 8°C"
+                        className="flex-1 h-8 text-xs"
+                      />
+                    )}
+                  </div>
                 </div>
                 <div>
                   <Label>Região</Label>
@@ -322,6 +361,11 @@ export function PaginaNovaOperacao() {
                     onChange={e => setForm({...form, financeiro: {...form.financeiro!, valorPrestador: parseFloat(e.target.value) || 0}})} />
                 </div>
                 <div>
+                  <Label>% Prestador</Label>
+                  <Input type="number" step="0.01" value={form.financeiro?.percentualPrestador || ''}
+                    onChange={e => setForm({...form, financeiro: {...form.financeiro!, percentualPrestador: parseFloat(e.target.value) || 0}})} />
+                </div>
+                <div>
                   <Label>Imposto (%)</Label>
                   <Input type="number" step="0.01" value={form.financeiro?.percentualImposto || ''}
                     onChange={e => setForm({...form, financeiro: {...form.financeiro!, percentualImposto: parseFloat(e.target.value) || 0}})} />
@@ -330,6 +374,11 @@ export function PaginaNovaOperacao() {
                   <Label>Seguro (%)</Label>
                   <Input type="number" step="0.01" value={form.financeiro?.percentualSeguro || ''}
                     onChange={e => setForm({...form, financeiro: {...form.financeiro!, percentualSeguro: parseFloat(e.target.value) || 0}})} />
+                </div>
+                <div>
+                  <Label>Margem Transportadora (%)</Label>
+                  <Input type="number" step="0.01" value={form.financeiro?.margemTransportadora || ''}
+                    onChange={e => setForm({...form, financeiro: {...form.financeiro!, margemTransportadora: parseFloat(e.target.value) || 0}})} />
                 </div>
                 <div>
                   <Label>Franquia KM</Label>
@@ -349,6 +398,11 @@ export function PaginaNovaOperacao() {
                   <Label>Prazo (dias)</Label>
                   <Input type="number" value={form.financeiro?.prazoPagamento || 30}
                     onChange={e => setForm({...form, financeiro: {...form.financeiro!, prazoPagamento: parseInt(e.target.value) || 30}})} />
+                </div>
+                <div>
+                  <Label>Data Pagamento</Label>
+                  <Input type="date" value={form.financeiro?.dataPagamento || ''}
+                    onChange={e => setForm({...form, financeiro: {...form.financeiro!, dataPagamento: e.target.value}})} />
                 </div>
               </PremiumCardContent>
             </PremiumCard>

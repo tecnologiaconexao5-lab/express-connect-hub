@@ -25,6 +25,9 @@ export interface ContratoGerado {
   assinatura_navegador?: string;
   assinatura_geolocalizacao?: string;
   assinatura_imagem?: string;
+  signed_hash?: string;
+  signed_name?: string;
+  metadata?: Record<string, any>;
   created_at: string;
   updated_at: string;
 }
@@ -437,6 +440,12 @@ export async function atualizarStatusContrato(
       updateData.assinatura_navegador = detalhes.navegador;
       updateData.assinatura_geolocalizacao = detalhes.geolocalizacao;
       updateData.assinatura_imagem = detalhes.assinatura;
+      updateData.metadata = {
+        signed_name: detalhes.nome || detalhes.signed_name || '',
+        signed_cpf: detalhes.cpf || '',
+        signed_hash: detalhes.signed_hash || '',
+        signed_at: new Date().toISOString(),
+      };
     }
 
     const { error } = await supabase
@@ -763,6 +772,14 @@ export async function confirmarAceiteWhatsApp(
 // =====================================================
 // REGISTRAR ASSINATURA ELETRÔNICA
 // =====================================================
+export async function gerarHashAssinatura(assinatura: string, nome: string, cpf: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(`${assinatura}|${nome}|${cpf}|${Date.now()}`);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export async function registrarAssinatura(
   contratoId: string,
   assinatura: string,
@@ -770,10 +787,13 @@ export async function registrarAssinatura(
   cpf: string
 ): Promise<boolean> {
   try {
-    const ip = await fetch('https://api.ipify.org?format=json')
-      .then(r => r.json())
-      .then(d => d.ip)
-      .catch(() => '0.0.0.0');
+    const [ip, signedHash] = await Promise.all([
+      fetch('https://api.ipify.org?format=json')
+        .then(r => r.json())
+        .then(d => d.ip)
+        .catch(() => '0.0.0.0'),
+      gerarHashAssinatura(assinatura, nome, cpf),
+    ]);
 
     const navegador = navigator.userAgent;
     
@@ -789,9 +809,12 @@ export async function registrarAssinatura(
 
     const sucesso = await atualizarStatusContrato(contratoId, 'assinado', {
       assinatura,
+      nome,
+      cpf,
       ip,
       navegador,
       geolocalizacao,
+      signed_hash: signedHash,
     });
 
     return sucesso;
@@ -799,6 +822,15 @@ export async function registrarAssinatura(
     console.error('[ContratosService] Erro ao registrar assinatura:', error);
     return false;
   }
+}
+
+export function baixarPDF(url: string, nomeArquivo: string): void {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = nomeArquivo;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 // =====================================================

@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { X, Check, FileSignature, AlertTriangle, Smartphone, Globe, Clock } from "lucide-react";
-import { registrarAssinatura, buscarContratoPorId, atualizarStatusContrato } from "@/services/contratosService";
-import { useToast } from "@/hooks/use-toast";
+import { Check, FileSignature, AlertTriangle, Smartphone, Globe, Clock, Loader2 } from "lucide-react";
+import { registrarAssinatura } from "@/services/contratosService";
+import { toast } from "sonner";
 
 interface AssinarContratoModalProps {
   open: boolean;
@@ -24,7 +24,6 @@ export function AssinarContratoModal({
   prestadorNome,
   onSuccess,
 }: AssinarContratoModalProps) {
-  const { toast } = useToast();
   const [assinatura, setAssinatura] = useState("");
   const [nomeConfirmado, setNomeConfirmado] = useState("");
   const [cpfConfirmado, setCpfConfirmado] = useState("");
@@ -33,14 +32,16 @@ export function AssinarContratoModal({
   const [ip, setIp] = useState("");
   const [geo, setGeo] = useState("");
 
-  const handleOpen = () => {
+  useEffect(() => {
     if (open) {
+      setAssinatura("");
+      setNomeConfirmado("");
+      setCpfConfirmado("");
       setNavegador(navigator.userAgent);
       fetch('https://api.ipify.org?format=json')
         .then(r => r.json())
         .then(d => setIp(d.ip))
         .catch(() => setIp('0.0.0.0'));
-      
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => setGeo(`${pos.coords.latitude},${pos.coords.longitude}`),
@@ -48,19 +49,19 @@ export function AssinarContratoModal({
         );
       }
     }
-  };
+  }, [open]);
 
   const handleConfirmar = async () => {
     if (!assinatura.trim()) {
-      toast({ title: "Assinatura obrigatória", description: "Por favor, desenhe ou digite sua assinatura" });
+      toast.error("Assinatura obrigatória", { description: "Por favor, digite sua assinatura" });
       return;
     }
     if (!nomeConfirmado.trim()) {
-      toast({ title: "Nome obrigatório", description: "Por favor, confirme seu nome completo" });
+      toast.error("Nome obrigatório", { description: "Por favor, confirme seu nome completo" });
       return;
     }
     if (!cpfConfirmado.trim()) {
-      toast({ title: "CPF obrigatório", description: "Por favor, confirme seu CPF" });
+      toast.error("CPF obrigatório", { description: "Por favor, confirme seu CPF" });
       return;
     }
 
@@ -74,15 +75,15 @@ export function AssinarContratoModal({
       );
 
       if (sucesso) {
-        toast({ title: "Contrato assinado!", description: "Assinatura eletrônica registrada com sucesso" });
+        toast.success("Contrato assinado com sucesso!", { description: "Assinatura eletrônica registrada com todos os dados de auditoria." });
         onSuccess?.();
         onOpenChange(false);
       } else {
-        toast({ title: "Erro ao assinar", description: "Não foi possível registrar a assinatura" });
+        toast.error("Erro ao assinar", { description: "Não foi possível registrar a assinatura. Tente novamente." });
       }
     } catch (error) {
       console.error("[AssinarContrato] Erro:", error);
-      toast({ title: "Erro", description: "Ocorreu um erro ao processar assinatura" });
+      toast.error("Erro ao processar assinatura");
     } finally {
       setLoading(false);
     }
@@ -169,7 +170,7 @@ export function AssinarContratoModal({
           >
             {loading ? (
               <span className="flex items-center gap-2">
-                <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 Assinando...
               </span>
             ) : (

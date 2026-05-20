@@ -8,10 +8,11 @@ export const scoreService = {
       ? Math.min(100, (data.documentos.filter(d => d.status === 'aprovado').length / Math.max(data.documentos.length, 1)) * 100)
       : 0
 
-    const pesoExperiencia = data.status === 'ativo' ? 90
-      : data.status === 'qualificado' ? 70
-      : data.status === 'em_triagem' ? 40
-      : data.status === 'potencial' ? 20
+    const pesoExperiencia = data.status === 'agregado' ? 90
+      : data.status === 'aprovado' ? 70
+      : data.status === 'reserva' ? 50
+      : data.status === 'em_analise' ? 40
+      : data.status === 'novo' ? 20
       : 10
 
     const pesoPerfil = data.contatos && data.contatos.length > 0

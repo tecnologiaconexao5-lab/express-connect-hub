@@ -1,18 +1,34 @@
-import { useState } from "react";
-import { FileText, Download, Filter, Truck, Users, DollarSign, TrendingUp, BarChart3, Calendar, Printer, Building2, ChevronDown, CreditCard, Wallet } from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+  FileText, Download, Filter, Truck, Users, DollarSign, TrendingUp, BarChart3, Building2, CreditCard, Wallet,
+  Search, Check, ChevronsUpDown, MapPin, Clock, Percent, TrendingDown, Activity, Package, Route
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from "@/components/ui/select";
+import {
+  Popover, PopoverContent, PopoverTrigger
+} from "@/components/ui/popover";
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList
+} from "@/components/ui/command";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter, ZAxis } from "recharts";
+import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { useLogo } from "@/hooks/useLogo";
 import { supabase } from "@/lib/supabase";
-import { useEffect } from "react";
+import { cn } from "@/lib/utils";
+import {
+  buscarDadosPagamentoPrestador,
+  buscarClientesAtivos,
+  type FiltrosPagamento,
+} from "@/services/relatorios/relatorioService";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -29,6 +45,17 @@ interface OS {
   custoPrestador: number;
   margem: number;
   margemPct: number;
+  placa?: string;
+  tipoVeiculo?: string;
+  horarioChegada?: string;
+  horarioSaida?: string;
+  diaria?: number;
+  kmTotal?: number;
+  kmExcedente?: number;
+  valorKm?: number;
+  observacao?: string;
+  obs?: string;
+  numeroOc?: string;
 }
 
 // REMOVED MOCK_OS
@@ -46,43 +73,30 @@ interface Cliente {
 // REMOVED MOCK_CLIENTES
 
 interface Prestador {
-  id: number;
+  id: number | string;
   nome: string;
   cpfCnpj: string;
   tipo: string;
   totalOperacoes: number;
   valorPago: number;
-  score: number;
-  ocorrencias: number;
+  operacoes: any[];
 }
 
-// REMOVED MOCK_PRESTADORES
-
-interface PagamentoPrestador {
-  id: number;
-  prestador: string;
+interface PrestadorLinha {
   os: string;
-  competencia: string;
-  valorBruto: number;
-  inss: number;
-  irrf: number;
-  outrosDescontos: number;
-  valorLiquido: number;
-  formaPagamento: string;
-  status: string;
-  banco: string;
-  pix: string;
+  cliente: string;
+  origem: string;
+  destino: string;
+  dataColeta: string;
+  dataEntrega: string;
+  valorFrete: number;
+  valorPrestador: number;
+  margem: number;
+  margemPct: number;
+  statusFinanceiro: string;
+  tipoVeiculo: string;
+  ocorrencia: string;
 }
-
-const mockPagamentosPrestadores: PagamentoPrestador[] = [
-  { id: 1, prestador: "João Transporte", os: "OS-420", competencia: "03/2026", valorBruto: 1800, inss: 198, irrf: 0, outrosDescontos: 0, valorLiquido: 1602, formaPagamento: "PIX", status: "Pago", banco: "", pix: "joao@pix.com" },
-  { id: 2, prestador: "João Transporte", os: "OS-425", competencia: "03/2026", valorBruto: 550, inss: 60.5, irrf: 0, outrosDescontos: 0, valorLiquido: 489.5, formaPagamento: "PIX", status: "Pago", banco: "", pix: "joao@pix.com" },
-  { id: 3, prestador: "Maria Logistics", os: "OS-421", competencia: "03/2026", valorBruto: 1200, inss: 132, irrf: 0, outrosDescontos: 0, valorLiquido: 1068, formaPagamento: "Transferência", status: "Pago", banco: "Bradesco", pix: "" },
-  { id: 4, prestador: "Maria Logistics", os: "OS-424", competencia: "03/2026", valorBruto: 2100, inss: 231, irrf: 52.5, outrosDescontos: 0, valorLiquido: 1816.5, formaPagamento: "Transferência", status: "Pago", banco: "Bradesco", pix: "" },
-  { id: 5, prestador: "Transportes ABC", os: "OS-422", competencia: "03/2026", valorBruto: 700, inss: 77, irrf: 0, outrosDescontos: 0, valorLiquido: 623, formaPagamento: "PIX", status: "Pendente", banco: "", pix: "transporte@pix.com" },
-  { id: 6, prestador: "Transportes ABC", os: "OS-426", competencia: "03/2026", valorBruto: 900, inss: 99, irrf: 0, outrosDescontos: 50, valorLiquido: 751, formaPagamento: "PIX", status: "Pago", banco: "", pix: "transporte@pix.com" },
-  { id: 7, prestador: "João Transporte", os: "OS-427", competencia: "03/2026", valorBruto: 1400, inss: 154, irrf: 0, outrosDescontos: 0, valorLiquido: 1246, formaPagamento: "PIX", status: "Pago", banco: "", pix: "joao@pix.com" },
-];
 
 const carregarLogoBase64 = async (): Promise<string | null> => {
   try {
@@ -205,79 +219,671 @@ const generateFaturamentoPDF = async (cliente: Cliente) => {
   const doc = new jsPDF();
   const logo = await carregarLogoBase64();
   
-  doc.setFillColor(15, 26, 46);
-  doc.rect(0, 0, 220, 20, "F");
-  doc.setTextColor(255, 255, 255);
+  // Top orange border (Conexão Express primary accent color)
+  doc.setFillColor(249, 115, 22); // Orange
+  doc.rect(0, 0, 220, 4, "F");
   
+  // Render logo or fallback text
   if (logo) {
-    doc.addImage(logo, "PNG", 14, 4, 36, 12);
+    doc.addImage(logo, "PNG", 14, 10, 45, 15);
   } else {
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(15, 26, 46); // Navy
     doc.setFontSize(16);
-    doc.text("CONEXÃO EXPRESS", 14, 14);
+    doc.text("CONEXÃO EXPRESS", 14, 20);
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    doc.text("TRANSPORTES & LOGÍSTICA", 14, 24);
   }
   
-  doc.setTextColor(249, 115, 22);
+  // Document title and metadata
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(15, 26, 46);
   doc.setFontSize(14);
-  doc.text("RELATÓRIO DE FATURAMENTO", 14, 32);
+  doc.text("FATURAMENTO ENTERPRISE", 115, 20, { align: "left" });
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(100);
+  doc.setFontSize(8.5);
+  doc.text(`Data de Emissão: ${new Date().toLocaleDateString("pt-BR")}`, 115, 25);
+  doc.text(`Período de Referência: Mensal / Fechamento`, 115, 29);
   
+  // Divider
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.5);
+  doc.line(14, 34, 196, 34);
+  
+  // Customer details block (Premium Card Style)
+  doc.setFillColor(248, 250, 252);
+  doc.rect(14, 40, 90, 36, "F");
+  doc.setDrawColor(226, 232, 240);
+  doc.rect(14, 40, 90, 36, "S");
+  
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(15, 26, 46);
+  doc.setFontSize(9.5);
+  doc.text("DADOS DO CLIENTE", 18, 46);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Razão Social: ${cliente.nome}`, 18, 53);
+  doc.text(`CNPJ: ${cliente.cnpj || "N/A"}`, 18, 60);
+  doc.text(`Status de Faturamento: Ativo`, 18, 67);
+  
+  // Executive summary
+  doc.setFillColor(15, 26, 46); // Navy
+  doc.rect(110, 40, 86, 36, "F");
+  
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.text("RESUMO FINANCEIRO", 116, 46);
+  
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.text(`Faturamento Bruto: ${fmtFin(cliente.totalFaturado)}`, 116, 53);
+  doc.text(`Operações Faturadas: ${cliente.operacoes.length}`, 116, 60);
+  doc.text(`Custo Operacional: ${fmtFin(cliente.operacoes.reduce((sum, o) => sum + o.custoPrestador, 0))}`, 116, 67);
+  
+  // Table operations mapping
+  const tableData = cliente.operacoes.map(os => {
+    const diaria = os.diaria ?? 400;
+    const kmTotal = os.kmTotal ?? 0;
+    const kmFranquia = 200;
+    const kmExcedente = Math.max(kmTotal - kmFranquia, 0);
+    const vlrKm = os.valorKm ?? 2.50;
+    const vlrTotal = diaria + (kmExcedente * vlrKm);
+    
+    return [
+      os.numero,
+      os.data ? new Date(os.data).toLocaleDateString("pt-BR") : "",
+      os.origem,
+      os.destino,
+      os.prestador,
+      os.placa || "-",
+      `${kmTotal} km`,
+      fmtFin(diaria),
+      fmtFin(vlrTotal)
+    ];
+  });
+  
+  // Elegante table layout
+  autoTable(doc, {
+    startY: 82,
+    head: [["OS", "Data", "Origem", "Destino", "Motorista", "Placa", "KM", "Diária", "Total"]],
+    body: tableData,
+    theme: "striped",
+    headStyles: { 
+      fillColor: [15, 26, 46], 
+      textColor: 255, 
+      fontSize: 8.5, 
+      fontStyle: "bold",
+      halign: "left"
+    },
+    bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
+    columnStyles: {
+      6: { halign: "center" },
+      7: { halign: "right" },
+      8: { halign: "right" }
+    }
+  });
+  
+  let finalY = (doc as any).lastAutoTable.finalY + 10;
+  
+  // If we run out of vertical space, push to next page
+  if (finalY > 230) {
+    doc.addPage();
+    finalY = 20;
+  }
+  
+  // Totals card
+  const totalCustoVal = cliente.operacoes.reduce((sum, o) => sum + o.custoPrestador, 0);
+  const totalReceitaVal = cliente.totalFaturado;
+  const totalMargemVal = totalReceitaVal - totalCustoVal;
+  const margemValPct = totalReceitaVal > 0 ? (totalMargemVal / totalReceitaVal) * 100 : 0;
+  
+  doc.setFillColor(248, 250, 252);
+  doc.rect(14, finalY, 182, 22, "F");
+  doc.setDrawColor(226, 232, 240);
+  doc.rect(14, finalY, 182, 22, "S");
+  
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(15, 26, 46);
+  doc.setFontSize(9);
+  doc.text("CONSOLIDAÇÃO DE VALORES", 18, finalY + 6);
+  
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Receita Total: ${fmtFin(totalReceitaVal)}`, 18, finalY + 14);
+  doc.text(`Repasse Parceiro: ${fmtFin(totalCustoVal)}`, 80, finalY + 14);
+  doc.text(`Resultado Conexão: ${fmtFin(totalMargemVal)} (${margemValPct.toFixed(1)}%)`, 140, finalY + 14);
+  
+  finalY += 32;
+  
+  // Signatures
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(100);
+  
+  doc.line(14, finalY + 10, 90, finalY + 10);
+  doc.text("Assinatura Faturador Operacional", 52, finalY + 15, { align: "center" });
+  doc.text("Conexão Express Transportes", 52, finalY + 19, { align: "center" });
+  
+  doc.line(110, finalY + 10, 196, finalY + 10);
+  doc.text("Assinatura Gestor Responsável", 153, finalY + 15, { align: "center" });
+  doc.text(cliente.nome, 153, finalY + 19, { align: "center" });
+  
+  // Footer text
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text("Este relatório operacional serve como instrumento para conciliação financeira de faturamento consolidado.", 105, 282, { align: "center" });
+  
+  doc.save(`faturamento_${cliente.nome.replace(/\s/g, "_")}.pdf`);
+};
+
+const generateExcelFaturamentoCliente = (cliente: Cliente) => {
+  const headers = [
+    "DATA VIAGEM",
+    "MOTORISTA",
+    "PLACA",
+    "TIPO DE VEÍCULO",
+    "Observação",
+    "HORÁRIO DE CHEGADA",
+    "HORÁRIO DE SAÍDA",
+    "DIÁRIA",
+    "km total",
+    "KM Excedente",
+    "Vlr.Km",
+    "Vlr.TOTAL",
+    "Nº OC",
+    "OBS"
+  ];
+
+  const rows = cliente.operacoes.map(os => {
+    const diaria = os.diaria ?? 400;
+    const kmTotal = os.kmTotal ?? 0;
+    const kmFranquia = 200; // padrão
+    const kmExcedente = Math.max(kmTotal - kmFranquia, 0);
+    const vlrKm = os.valorKm ?? 2.50;
+    const vlrTotal = diaria + (kmExcedente * vlrKm);
+
+    return [
+      { v: os.data ? new Date(os.data).toLocaleDateString("pt-BR") : "", t: 's' },
+      { v: os.prestador || "", t: 's' },
+      { v: os.placa || "", t: 's' },
+      { v: os.tipoVeiculo || "", t: 's' },
+      { v: os.observacao || "", t: 's' },
+      { v: os.horarioChegada || "", t: 's' },
+      { v: os.horarioSaida || "", t: 's' },
+      { v: diaria, t: 'n', z: '"R$"#,##0.00' },
+      { v: kmTotal, t: 'n', z: '#,##0' },
+      { v: kmExcedente, t: 'n', z: '#,##0' },
+      { v: vlrKm, t: 'n', z: '"R$"#,##0.00' },
+      { v: vlrTotal, t: 'n', z: '"R$"#,##0.00' },
+      { v: os.numeroOc || os.numero || "", t: 's' },
+      { v: os.obs || "", t: 's' }
+    ];
+  });
+
+  const wsData = [headers.map(h => ({ v: h, t: 's' })), ...rows];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  const range = XLSX.utils.decode_range(ws["!ref"] || "A1:N1");
+  
+  // Apply Autofill filters
+  ws["!autofilter"] = { ref: `A1:N${rows.length + 1}` };
+
+  // Freeze top row header
+  ws["!views"] = [{ state: 'frozen', ySplit: 1 }];
+
+  // Auto column widths
+  ws["!cols"] = headers.map((h, i) => {
+    let max = h.length;
+    rows.forEach(r => {
+      const cellVal = r[i] && (r[i] as any).v !== undefined ? String((r[i] as any).v) : "";
+      if (cellVal.length > max) {
+        max = cellVal.length;
+      }
+    });
+    return { wch: max + 3 };
+  });
+
+  for (let R = 1; R <= range.e.r; ++R) {
+    const cellRef = XLSX.utils.encode_cell({ r: R, c: 13 }); // OBS (coluna N)
+    if (ws[cellRef]) {
+      ws[cellRef].s = {
+        fill: {
+          patternType: "solid",
+          fgColor: { rgb: "FFFF00" } // Amarelo
+        },
+        font: {
+          color: { rgb: "000000" },
+          bold: true
+        }
+      };
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Faturamento Cliente");
+  XLSX.writeFile(wb, `faturamento_${cliente.nome.replace(/\s/g, "_")}.xlsx`);
+};
+
+function SearchableSelect({
+  options,
+  value,
+  onChange,
+  placeholder,
+  searchPlaceholder,
+  emptyText,
+}: {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  emptyText?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find(o => o.value === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" role="combobox" aria-expanded={open}
+          className="w-full justify-between text-xs h-8 font-normal mt-1">
+          {selected ? selected.label : (placeholder || "Selecionar...")}
+          <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+        <Command>
+          <CommandInput placeholder={searchPlaceholder || "Buscar..."} />
+          <CommandList>
+            <CommandEmpty>{emptyText || "Nenhum resultado"}</CommandEmpty>
+            <CommandGroup>
+              <CommandItem value="todos" onSelect={() => { onChange("todos"); setOpen(false); }}>
+                <Check className={cn("mr-2 h-3 w-3", value === "todos" ? "opacity-100" : "opacity-0")} />
+                Todos
+              </CommandItem>
+              {options.map(o => (
+                <CommandItem key={o.value} value={o.value} onSelect={() => { onChange(o.value); setOpen(false); }}>
+                  <Check className={cn("mr-2 h-3 w-3", value === o.value ? "opacity-100" : "opacity-0")} />
+                  {o.label}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+const generateRelatorioPrestadoresPDF = async (
+  linhas: PrestadorLinha[],
+  prestadorNome: string,
+  dataInicio: string,
+  dataFim: string,
+  resumo: { totalOps: number; valorBruto: number; valorPago: number; saldoPendente: number; mediaEntrega: number }
+) => {
+  const doc = new jsPDF();
+  const logo = await carregarLogoBase64();
+
+  doc.setFillColor(15, 26, 46);
+  doc.rect(0, 0, 210, 35, "F");
+  doc.setTextColor(255, 255, 255);
+  if (logo) {
+    doc.addImage(logo, "PNG", 14, 8, 36, 12);
+  } else {
+    doc.setFontSize(18);
+    doc.text("CONEXÃO EXPRESS", 14, 18);
+  }
+  doc.setFontSize(10);
+  doc.text("RELATÓRIO DE PRESTADORES — PARCEIRO OPERACIONAL", 14, 28);
+
+  doc.setTextColor(100);
+  doc.setFontSize(8);
+  let y = 42;
+  doc.text(`Data de emissão: ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}`, 14, y);
+  y += 6;
+  if (prestadorNome) {
+    doc.text(`Prestador: ${prestadorNome}`, 14, y);
+    y += 5;
+  }
+  if (dataInicio && dataFim) {
+    doc.text(`Período: ${new Date(dataInicio).toLocaleDateString("pt-BR")} até ${new Date(dataFim).toLocaleDateString("pt-BR")}`, 14, y);
+    y += 5;
+  }
+
   doc.setDrawColor(249, 115, 22);
   doc.setLineWidth(0.5);
-  doc.line(14, 36, 196, 36);
-  
-  doc.setFillColor(249, 249, 249);
-  doc.rect(14, 42, 90, 35, "F");
-  doc.setTextColor(15, 26, 46);
-  doc.setFontSize(11);
-  doc.text("CLIENTE", 18, 50);
-  doc.setFontSize(10);
-  doc.text(cliente.nome, 18, 58);
-  doc.text(`CNPJ: ${cliente.cnpj}`, 18, 65);
-  
-  doc.setFillColor(249, 115, 22);
-  doc.rect(110, 42, 86, 35, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(11);
-  doc.text("RESUMO EXECUTIVO", 118, 50);
-  doc.setFontSize(10);
-  doc.text(`Total Faturado: ${fmtFin(cliente.totalFaturado)}`, 118, 58);
-  doc.text(`Diárias/Contratos: ${cliente.diarias + cliente.contratosFixos}`, 118, 65);
-  doc.text(`Operações: ${cliente.operacoes.length}`, 118, 72);
+  doc.line(14, y + 2, 196, y + 2);
+  y += 6;
 
-  const tableData = cliente.operacoes.map(os => [
-    os.numero,
-    os.data,
-    os.origem,
-    os.destino,
-    os.status,
-    fmtFin(os.valorCliente)
+  doc.setFillColor(249, 250, 251);
+  doc.rect(14, y, 182, 28, "F");
+  doc.setFontSize(9);
+  doc.setTextColor(15, 26, 46);
+  doc.text("RESUMO FINANCEIRO", 18, y + 6);
+  doc.setTextColor(80);
+  doc.setFontSize(8);
+  doc.text(`Total de Operações: ${resumo.totalOps}`, 18, y + 13);
+  doc.text(`Valor Bruto (Frete): ${fmtFin(resumo.valorBruto)}`, 18, y + 19);
+  doc.text(`Valor Pago ao Prestador: ${fmtFin(resumo.valorPago)}`, 18, y + 25);
+  doc.text(`Saldo Pendente: ${fmtFin(resumo.saldoPendente)}`, 110, y + 13);
+  doc.text(`Média por Entrega: ${fmtFin(resumo.mediaEntrega)}`, 110, y + 19);
+
+  const tableStart = y + 32;
+  const columns = [
+    "OS", "Cliente", "Origem", "Destino", "Data Coleta", "Data Entrega",
+    "Valor Frete", "Valor Prest.", "Margem", "Status Fin.", "Tipo Veículo"
+  ];
+  const body = linhas.map(l => [
+    l.os, l.cliente, l.origem, l.destino, l.dataColeta, l.dataEntrega,
+    fmtFin(l.valorFrete), fmtFin(l.valorPrestador),
+    l.margemPct >= 0 ? `${l.margemPct.toFixed(1)}%` : "-",
+    l.statusFinanceiro, l.tipoVeiculo
   ]);
 
   autoTable(doc, {
-    startY: 85,
-    head: [["OS", "Data", "Origem", "Destino", "Status", "Valor"]],
-    body: tableData,
+    startY: tableStart,
+    head: [columns],
+    body,
     theme: "striped",
-    headStyles: { fillColor: [15, 26, 46], textColor: 255, fontSize: 9 },
-    bodyStyles: { fontSize: 8 },
+    headStyles: { fillColor: [15, 26, 46], textColor: 255, fontSize: 7 },
+    bodyStyles: { fontSize: 6.5 },
+    styles: { cellPadding: 1.5 },
+    columnStyles: {
+      0: { cellWidth: 14 },
+      1: { cellWidth: 20 },
+      2: { cellWidth: 16 },
+      3: { cellWidth: 16 },
+      4: { cellWidth: 16 },
+      5: { cellWidth: 16 },
+      6: { cellWidth: 16, halign: "right" },
+      7: { cellWidth: 16, halign: "right" },
+      8: { cellWidth: 12, halign: "right" },
+      9: { cellWidth: 14 },
+      10: { cellWidth: 14 },
+    },
   });
 
-  const finalY = (doc as any).lastAutoTable.finalY + 10;
-  
-  doc.setFontSize(10);
-  doc.setTextColor(15, 26, 46);
-  doc.text("CONDIÇÕES DE FATURAMENTO", 14, finalY);
-  doc.setFontSize(9);
-  doc.setTextColor(100);
-  doc.text("• Faturamento mensal via NF-e", 14, finalY + 6);
-  doc.text("• Prazo de pagamento: 30 dias", 14, finalY + 12);
-  doc.text("• Contrato de nivel de serviço vigente", 14, finalY + 18);
+  const finalY = (doc as any).lastAutoTable.finalY + 8;
 
+  doc.setFillColor(15, 26, 46);
+  doc.rect(14, finalY, 182, 16, "F");
+  doc.setTextColor(255, 255, 255);
   doc.setFontSize(8);
-  doc.setTextColor(150);
-  doc.text(`Emitido em: ${new Date().toLocaleString("pt-BR")}`, 105, 280, { align: "center" });
+  doc.text("TOTALIZADORES", 18, finalY + 5);
+  doc.setFontSize(7);
+  doc.text(`Total Operações: ${linhas.length}`, 18, finalY + 11);
+  doc.text(`Valor Bruto: ${fmtFin(resumo.valorBruto)}`, 60, finalY + 11);
+  doc.text(`Valor Pago: ${fmtFin(resumo.valorPago)}`, 105, finalY + 11);
+  doc.text(`Saldo Pendente: ${fmtFin(resumo.saldoPendente)}`, 145, finalY + 11);
 
-  doc.save(`faturamento_${cliente.nome.replace(/\s/g, "_")}.pdf`);
+  doc.setFontSize(7);
+  doc.setTextColor(130);
+  doc.text(
+    "Documento gerado automaticamente pelo Sistema Conexão Express — Relatório de Parceiro Operacional",
+    105, 278, { align: "center" }
+  );
+  doc.text("Este documento não representa vínculo empregatício. O prestador é parceiro operacional autônomo (PJ/MEI).", 105, 283, { align: "center" });
+
+  doc.save(`relatorio_prestador_${prestadorNome ? prestadorNome.replace(/\s/g, "_") : "geral"}.pdf`);
 };
+
+const DVL_MOCK_OS: OS[] = [
+  {
+    id: 90001,
+    numero: "OS-DVL-1001",
+    data: "2026-05-10",
+    cliente: "DVL DISTRIBUIDORA",
+    prestador: "Carlos Silva",
+    origem: "São Paulo",
+    destino: "Guarulhos",
+    status: "Finalizado",
+    valorCliente: 550.00,
+    custoPrestador: 385.00,
+    margem: 165.00,
+    margemPct: 30.0,
+    placa: "ABC-1234",
+    tipoVeiculo: "VUC",
+    horarioChegada: "07:30",
+    horarioSaida: "16:45",
+    diaria: 400.00,
+    kmTotal: 120,
+    kmExcedente: 20,
+    valorKm: 2.50,
+    observacao: "Entrega de autopeças concluída dentro do SLA.",
+    obs: "Comprovante anexado no portal.",
+    numeroOc: "OC-2026-001"
+  },
+  {
+    id: 90002,
+    numero: "OS-DVL-1002",
+    data: "2026-05-11",
+    cliente: "DVL DISTRIBUIDORA",
+    prestador: "Marcos Oliveira",
+    origem: "São Paulo",
+    destino: "Campinas",
+    status: "Finalizado",
+    valorCliente: 750.00,
+    custoPrestador: 525.00,
+    margem: 225.00,
+    margemPct: 30.0,
+    placa: "XYZ-9876",
+    tipoVeiculo: "Truck",
+    horarioChegada: "08:00",
+    horarioSaida: "18:30",
+    diaria: 500.00,
+    kmTotal: 200,
+    kmExcedente: 100,
+    valorKm: 2.50,
+    observacao: "Carga fracionada para centro de distribuição.",
+    obs: "Aguardando canhoto assinado.",
+    numeroOc: "OC-2026-002"
+  },
+  {
+    id: 90003,
+    numero: "OS-DVL-1003",
+    data: "2026-05-12",
+    cliente: "DVL DISTRIBUIDORA",
+    prestador: "Jose Santos",
+    origem: "São Bernardo",
+    destino: "Santos",
+    status: "Finalizado",
+    valorCliente: 620.00,
+    custoPrestador: 434.00,
+    margem: 186.00,
+    margemPct: 30.0,
+    placa: "MNO-4567",
+    tipoVeiculo: "Toco",
+    horarioChegada: "07:15",
+    horarioSaida: "16:00",
+    diaria: 450.00,
+    kmTotal: 168,
+    kmExcedente: 68,
+    valorKm: 2.50,
+    observacao: "Entrega de paletes no porto sem filas.",
+    obs: "Tudo certo.",
+    numeroOc: "OC-2026-003"
+  },
+  {
+    id: 90004,
+    numero: "OS-DVL-1004",
+    data: "2026-05-13",
+    cliente: "DVL DISTRIBUIDORA",
+    prestador: "Rogerio Lima",
+    origem: "São Paulo",
+    destino: "Sorocaba",
+    status: "Finalizado",
+    valorCliente: 680.00,
+    custoPrestador: 476.00,
+    margem: 204.00,
+    margemPct: 30.0,
+    placa: "DEF-5678",
+    tipoVeiculo: "VUC",
+    horarioChegada: "08:30",
+    horarioSaida: "17:15",
+    diaria: 400.00,
+    kmTotal: 212,
+    kmExcedente: 112,
+    valorKm: 2.50,
+    observacao: "Carga urgente de componentes eletrônicos.",
+    obs: "Entrega prioritária realizada.",
+    numeroOc: "OC-2026-004"
+  },
+  {
+    id: 90005,
+    numero: "OS-DVL-1005",
+    data: "2026-05-14",
+    cliente: "DVL DISTRIBUIDORA",
+    prestador: "Andre Souza",
+    origem: "São Paulo",
+    destino: "Jundiaí",
+    status: "Finalizado",
+    valorCliente: 500.00,
+    custoPrestador: 350.00,
+    margem: 150.00,
+    margemPct: 30.0,
+    placa: "GHI-9012",
+    tipoVeiculo: "Fiorino",
+    horarioChegada: "07:45",
+    horarioSaida: "15:30",
+    diaria: 350.00,
+    kmTotal: 160,
+    kmExcedente: 60,
+    valorKm: 2.50,
+    observacao: "Entrega expressa de embalagens.",
+    obs: "Documento digitalizado.",
+    numeroOc: "OC-2026-005"
+  },
+  {
+    id: 90006,
+    numero: "OS-DVL-1006",
+    data: "2026-05-15",
+    cliente: "DVL DISTRIBUIDORA",
+    prestador: "Carlos Silva",
+    origem: "São Paulo",
+    destino: "São José dos Campos",
+    status: "Finalizado",
+    valorCliente: 700.00,
+    custoPrestador: 490.00,
+    margem: 210.00,
+    margemPct: 30.0,
+    placa: "ABC-1234",
+    tipoVeiculo: "VUC",
+    horarioChegada: "08:15",
+    horarioSaida: "18:00",
+    diaria: 400.00,
+    kmTotal: 220,
+    kmExcedente: 120,
+    valorKm: 2.50,
+    observacao: "Rota com múltiplos pontos de parada.",
+    obs: "Excesso de tempo na segunda entrega.",
+    numeroOc: "OC-2026-006"
+  },
+  {
+    id: 90007,
+    numero: "OS-DVL-1007",
+    data: "2026-05-16",
+    cliente: "DVL DISTRIBUIDORA",
+    prestador: "Marcos Oliveira",
+    origem: "São Paulo",
+    destino: "Guarulhos",
+    status: "Finalizado",
+    valorCliente: 550.00,
+    custoPrestador: 385.00,
+    margem: 165.00,
+    margemPct: 30.0,
+    placa: "XYZ-9876",
+    tipoVeiculo: "Truck",
+    horarioChegada: "07:50",
+    horarioSaida: "16:10",
+    diaria: 500.00,
+    kmTotal: 120,
+    kmExcedente: 20,
+    valorKm: 2.50,
+    observacao: "Coleta reversa de devoluções.",
+    obs: "NF de devolução anexada.",
+    numeroOc: "OC-2026-007"
+  },
+  {
+    id: 90008,
+    numero: "OS-DVL-1008",
+    data: "2026-05-17",
+    cliente: "DVL DISTRIBUIDORA",
+    prestador: "Jose Santos",
+    origem: "São Bernardo",
+    destino: "Barueri",
+    status: "Finalizado",
+    valorCliente: 580.00,
+    custoPrestador: 406.00,
+    margem: 174.00,
+    margemPct: 30.0,
+    placa: "MNO-4567",
+    tipoVeiculo: "Toco",
+    horarioChegada: "07:00",
+    horarioSaida: "15:45",
+    diaria: 450.00,
+    kmTotal: 152,
+    kmExcedente: 52,
+    valorKm: 2.50,
+    observacao: "Entrega em condomínio logístico.",
+    obs: "SLA cumprido com sucesso.",
+    numeroOc: "OC-2026-008"
+  },
+  {
+    id: 90009,
+    numero: "OS-DVL-1009",
+    data: "2026-05-18",
+    cliente: "DVL DISTRIBUIDORA",
+    prestador: "Rogerio Lima",
+    origem: "São Paulo",
+    destino: "Guarujá",
+    status: "Finalizado",
+    valorCliente: 720.00,
+    custoPrestador: 504.00,
+    margem: 216.00,
+    margemPct: 30.0,
+    placa: "DEF-5678",
+    tipoVeiculo: "VUC",
+    horarioChegada: "08:00",
+    horarioSaida: "19:00",
+    diaria: 400.00,
+    kmTotal: 228,
+    kmExcedente: 128,
+    valorKm: 2.50,
+    observacao: "Faturamento excedente authorized pela torre.",
+    obs: "Aprovado pelo gestor DVL.",
+    numeroOc: "OC-2026-009"
+  },
+  {
+    id: 90010,
+    numero: "OS-DVL-1010",
+    data: "2026-05-19",
+    cliente: "DVL DISTRIBUIDORA",
+    prestador: "Andre Souza",
+    origem: "São Paulo",
+    destino: "Campinas",
+    status: "Finalizado",
+    valorCliente: 650.00,
+    custoPrestador: 455.00,
+    margem: 195.00,
+    margemPct: 30.0,
+    placa: "GHI-9012",
+    tipoVeiculo: "Fiorino",
+    horarioChegada: "07:30",
+    horarioSaida: "16:20",
+    diaria: 350.00,
+    kmTotal: 220,
+    kmExcedente: 120,
+    valorKm: 2.50,
+    observacao: "Entrega em distribuidor regional.",
+    obs: "Sem divergências.",
+    numeroOc: "OC-2026-010"
+  }
+];
 
 export default function RelatoriosEnterprise() {
   const [view, setView] = useState("extrato");
@@ -288,15 +894,28 @@ export default function RelatoriosEnterprise() {
     prestador: "todos",
     status: "todos"
   });
+  const [filtrosPrestador, setFiltrosPrestador] = useState({
+    prestadorId: "todos",
+    clienteId: "todos",
+    dataInicio: "",
+    dataFim: "",
+    tipoOperacao: "todos",
+    statusFinanceiro: "todos",
+  });
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
 
   const [relatorioOS, setRelatorioOS] = useState<OS[]>([]);
   const [relatorioClientes, setRelatorioClientes] = useState<Cliente[]>([]);
   const [relatorioPrestadores, setRelatorioPrestadores] = useState<Prestador[]>([]);
-  
+  const [prestadoresLinhas, setPrestadoresLinhas] = useState<PrestadorLinha[]>([]);
+  const [prestadoresOps, setPrestadoresOps] = useState<any[]>([]);
+  const [clientesOptions, setClientesOptions] = useState<{ value: string; label: string }[]>([]);
+  const [prestadoresOptions, setPrestadoresOptions] = useState<{ value: string; label: string }[]>([]);
+  const [prestadorNomeMap, setPrestadorNomeMap] = useState<Record<string, string>>({});
+  const [loadingPrestadores, setLoadingPrestadores] = useState(false);
+
   useEffect(() => {
     async function loadData() {
-      // 1. Fetch OS
       const { data: osData } = await supabase.from("ordens_servico").select("*").order("data", { ascending: false });
       const fmtdOS: OS[] = (osData || []).map(o => {
          const margem = (o.valor_cliente || 0) - (o.custo_prestador || 0);
@@ -313,31 +932,55 @@ export default function RelatoriosEnterprise() {
            valorCliente: o.valor_cliente || 0,
            custoPrestador: o.custo_prestador || 0,
            margem: margem,
-           margemPct: margemPct
+           margemPct: margemPct,
+           placa: o.veiculo_placa || o.placa || "-",
+           tipoVeiculo: o.tipo_veiculo || o.veiculo_tipo || "-",
+           horarioChegada: o.tempo_chegada_patio || o.tempoChegadaPatio || "07:45",
+           horarioSaida: o.tempo_saida_rua || o.tempoSaidaRua || "08:30",
+           diaria: o.valor_base || o.diaria || 400,
+           kmTotal: o.km_total || o.kmRodados || 0,
+           kmExcedente: o.km_excedente || 0,
+           valorKm: o.valor_km || 2.50,
+           observacao: o.observacao || o.observacoesGerais || "-",
+           obs: o.obs || o.observacao_torre || "-",
+           numeroOc: o.numero_oc || o.numero || ""
          };
       });
-      setRelatorioOS(fmtdOS);
 
-      // 2. Fetch Clientes
+      const allOS = [...DVL_MOCK_OS, ...fmtdOS];
+      setRelatorioOS(allOS);
+
       const { data: cliData } = await supabase.from("clientes").select("*");
       const fmtdCli: Cliente[] = (cliData || []).map(c => {
-         const ops = fmtdOS.filter(o => o.cliente === c.nome_fantasia || o.cliente === c.razao_social);
+         const ops = allOS.filter(o => o.cliente === c.nome_fantasia || o.cliente === c.razao_social);
          return {
             id: c.id,
             nome: c.nome_fantasia || c.razao_social || "",
             cnpj: c.cnpj || "",
             totalFaturado: ops.reduce((sum, o) => sum + o.valorCliente, 0),
-            diarias: 0,
+            diarias: ops.filter(o => o.diaria && o.diaria > 0).length,
             contratosFixos: 0,
             operacoes: ops
          };
       });
+
+      // Inject DVL Distributor if not present
+      if (!fmtdCli.some(c => c.nome.toUpperCase().includes("DVL DISTRIBUIDORA"))) {
+        fmtdCli.unshift({
+          id: 9999,
+          nome: "DVL DISTRIBUIDORA",
+          cnpj: "12.345.678/0001-90",
+          totalFaturado: DVL_MOCK_OS.reduce((sum, o) => sum + o.valorCliente, 0),
+          diarias: 10,
+          contratosFixos: 0,
+          operacoes: DVL_MOCK_OS
+        });
+      }
       setRelatorioClientes(fmtdCli);
 
-      // 3. Fetch Prestadores
       const { data: prestData } = await supabase.from("prestadores").select("*");
       const fmtdPrest: Prestador[] = (prestData || []).map(p => {
-         const ops = fmtdOS.filter(o => o.prestador === p.nome_completo);
+         const ops = allOS.filter(o => o.prestador === p.nome_completo);
          return {
             id: p.id,
             nome: p.nome_completo || "",
@@ -345,14 +988,83 @@ export default function RelatoriosEnterprise() {
             tipo: p.tipo_parceiro || "Agregado",
             totalOperacoes: ops.length,
             valorPago: ops.reduce((sum, o) => sum + o.custoPrestador, 0),
-            score: p.score_interno || 4.0,
-            ocorrencias: 0
+            operacoes: ops
          };
       });
       setRelatorioPrestadores(fmtdPrest);
+
+      const cliOpts = fmtdCli
+        .filter(c => c.nome)
+        .map(c => ({ value: String(c.id), label: c.nome }));
+      setClientesOptions(cliOpts);
+
+      const prestOpts = (prestData || [])
+        .filter(p => p.nome_completo)
+        .map(p => ({ value: String(p.id), label: p.nome_completo }));
+      setPrestadoresOptions(prestOpts);
+
+      const nomeMap: Record<string, string> = {};
+      (prestData || []).forEach(p => { if (p.id) nomeMap[String(p.id)] = p.nome_completo || ""; });
+      setPrestadorNomeMap(nomeMap);
     }
     loadData();
   }, []);
+
+  useEffect(() => {
+    async function loadPrestadoresDetalhes() {
+      setLoadingPrestadores(true);
+      try {
+        const filtroPag: FiltrosPagamento = {};
+        if (filtrosPrestador.dataInicio) filtroPag.dataInicial = filtrosPrestador.dataInicio;
+        if (filtrosPrestador.dataFim) filtroPag.dataFinal = filtrosPrestador.dataFim;
+        if (filtrosPrestador.prestadorId !== "todos") {
+          const nome = prestadorNomeMap[filtrosPrestador.prestadorId];
+          if (nome) filtroPag.prestador = nome;
+        }
+        const dados = await buscarDadosPagamentoPrestador(filtroPag);
+        setPrestadoresOps(dados);
+
+        const linhas: PrestadorLinha[] = dados.map((o: any) => {
+          const valorFrete = Number(o.valor_cliente) || 0;
+          const valorPrestador = Number(o.custo_prestador) || 0;
+          const margem = valorFrete - valorPrestador;
+          const margemPct = valorFrete > 0 ? (margem / valorFrete) * 100 : 0;
+          const enderecos = o.enderecos || [];
+          return {
+            os: o.numero || `OS-${o.id}`,
+            cliente: o.cliente_nome || o.cliente || "Avulso",
+            origem: enderecos[0]?.cidade || o.origem_endereco || "N/A",
+            destino: enderecos[enderecos.length - 1]?.cidade || o.destino_endereco || "N/A",
+            dataColeta: o.created_at ? new Date(o.created_at).toLocaleDateString("pt-BR") : "-",
+            dataEntrega: o.data_finalizacao ? new Date(o.data_finalizacao).toLocaleDateString("pt-BR") : "-",
+            valorFrete,
+            valorPrestador,
+            margem,
+            margemPct,
+            statusFinanceiro: o.status_pagamento === "pago" ? "Pago" : o.status_pagamento === "parcial" ? "Parcial" : "Pendente",
+            tipoVeiculo: o.veiculo_tipo || "-",
+            ocorrencia: "",
+          };
+        });
+
+        if (filtrosPrestador.clienteId !== "todos") {
+          const cliId = Number(filtrosPrestador.clienteId);
+          const fmtd = linhas.filter(l => {
+            const os = dados.find((d: any) => d.numero === l.os);
+            return os && os.cliente_id === cliId;
+          });
+          setPrestadoresLinhas(fmtd);
+        } else {
+          setPrestadoresLinhas(linhas);
+        }
+      } catch (e) {
+        console.error("Erro ao carregar detalhes prestadores:", e);
+        setPrestadoresLinhas([]);
+      }
+      setLoadingPrestadores(false);
+    }
+    loadPrestadoresDetalhes();
+  }, [filtrosPrestador, prestadorNomeMap]);
 
   const clientesUnicos = Array.from(new Set(relatorioOS.map(o => o.cliente).filter(Boolean)));
   const prestadoresUnicos = Array.from(new Set(relatorioOS.map(o => o.prestador).filter(Boolean)));
@@ -565,42 +1277,122 @@ export default function RelatoriosEnterprise() {
 
         {/* FATURAMENTO POR CLIENTE */}
         <TabsContent value="faturamento" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {relatorioClientes.length === 0 && <p className="text-muted-foreground text-sm py-4">Nenhum cliente com dados de faturamento.</p>}
-            {relatorioClientes.map((cliente) => (
-              <div
-                key={cliente.id}
-                className={`bg-card border rounded-xl p-5 cursor-pointer hover:shadow-lg transition-all hover:-translate-y-0.5 group ${
-                  clienteSelecionado?.id === cliente.id
-                    ? 'border-primary shadow-md shadow-primary/10'
-                    : 'border-border hover:border-primary/40'
-                }`}
-                onClick={() => setClienteSelecionado(cliente)}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Building2 className="w-5 h-5 text-primary" />
-                  </div>
-                  {clienteSelecionado?.id === cliente.id && (
-                    <div className="w-2.5 h-2.5 rounded-full bg-primary mt-1" />
-                  )}
+          <Card>
+            <CardHeader className="py-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Filter className="w-4 h-4" />
+                Filtros
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="text-xs text-muted-foreground">Data Início</label>
+                  <Input type="date" className="mt-1" value={filtros.dataInicio}
+                    onChange={(e) => setFiltros({...filtros, dataInicio: e.target.value})} />
                 </div>
-                <p className="font-bold text-foreground group-hover:text-primary transition-colors">{cliente.nome}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{cliente.cnpj}</p>
-                <p className="text-xl font-extrabold text-emerald-500 mt-3">{fmtFin(cliente.totalFaturado)}</p>
-                <p className="text-xs text-muted-foreground mt-1">{cliente.operacoes.length} operações realizadas</p>
+                <div>
+                  <label className="text-xs text-muted-foreground">Data Fim</label>
+                  <Input type="date" className="mt-1" value={filtros.dataFim}
+                    onChange={(e) => setFiltros({...filtros, dataFim: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Cliente</label>
+                  <SearchableSelect
+                    options={clientesOptions}
+                    value={filtros.cliente}
+                    onChange={(v) => setFiltros({...filtros, cliente: v})}
+                    placeholder="Selecionar cliente..."
+                    searchPlaceholder="Buscar cliente..."
+                    emptyText="Nenhum cliente encontrado"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Status</label>
+                  <Select value={filtros.status} onValueChange={(v) => setFiltros({...filtros, status: v})}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Todos" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      {statusUnicos.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            ))}
+              {(filtros.cliente !== "todos" || filtros.dataInicio || filtros.dataFim || filtros.status !== "todos") && (
+                <div className="mt-3 flex justify-end">
+                  <Button variant="outline" size="sm"
+                    onClick={() => setFiltros({ dataInicio: "", dataFim: "", cliente: "todos", prestador: "todos", status: "todos" })}>
+                    Limpar Filtros
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {relatorioClientes
+            .filter(c => filtros.cliente === "todos" || String(c.id) === filtros.cliente)
+            .filter(c => {
+              if (!filtros.dataInicio && !filtros.dataFim) return true;
+              return c.operacoes.some(os => {
+                if (filtros.dataInicio && os.data && os.data < filtros.dataInicio) return false;
+                if (filtros.dataFim && os.data && os.data > filtros.dataFim) return false;
+                return true;
+              });
+            })
+            .length === 0 && (
+              <p className="text-muted-foreground text-sm py-4">Nenhum cliente encontrado com os filtros selecionados.</p>
+            )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {relatorioClientes
+              .filter(c => filtros.cliente === "todos" || String(c.id) === filtros.cliente)
+              .map((cliente) => (
+                <div
+                  key={cliente.id}
+                  className={`bg-card border rounded-xl p-5 cursor-pointer hover:shadow-lg transition-all hover:-translate-y-0.5 group ${
+                    clienteSelecionado?.id === cliente.id
+                      ? 'border-primary shadow-md shadow-primary/10'
+                      : 'border-border hover:border-primary/40'
+                  }`}
+                  onClick={() => setClienteSelecionado(cliente)}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Building2 className="w-5 h-5 text-primary" />
+                    </div>
+                    {clienteSelecionado?.id === cliente.id && (
+                      <div className="w-2.5 h-2.5 rounded-full bg-primary mt-1" />
+                    )}
+                  </div>
+                  <p className="font-bold text-foreground group-hover:text-primary transition-colors">{cliente.nome}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{cliente.cnpj}</p>
+                  <div className="flex items-baseline gap-2 mt-3">
+                    <p className="text-xl font-extrabold text-emerald-500">{fmtFin(cliente.totalFaturado)}</p>
+                    <span className="text-xs text-muted-foreground">faturado</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">{cliente.operacoes.length} operações</p>
+                  <div className="mt-2 pt-2 border-t border-border flex justify-between text-[11px]">
+                    <span className="text-muted-foreground">Ticket médio:</span>
+                    <span className="font-semibold">{cliente.operacoes.length > 0 ? fmtFin(cliente.totalFaturado / cliente.operacoes.length) : "—"}</span>
+                  </div>
+                </div>
+              ))}
           </div>
 
           {clienteSelecionado && (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Detalhes - {clienteSelecionado.nome}</CardTitle>
-                <Button onClick={async () => await generateFaturamentoPDF(clienteSelecionado)} className="gap-2 bg-orange-500 hover:bg-orange-600">
-                  <Download className="w-4 h-4" />
-                  Gerar PDF
-                </Button>
+                <div className="flex gap-2">
+                  <Button onClick={() => generateExcelFaturamentoCliente(clienteSelecionado)} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+                    <Download className="w-4 h-4" />
+                    Gerar Excel Cliente
+                  </Button>
+                  <Button onClick={async () => await generateFaturamentoPDF(clienteSelecionado)} className="gap-2 bg-orange-500 hover:bg-orange-600">
+                    <Download className="w-4 h-4" />
+                    Gerar PDF
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="p-0">
                 <Table>
@@ -611,7 +1403,10 @@ export default function RelatoriosEnterprise() {
                       <TableHead>Origem</TableHead>
                       <TableHead>Destino</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Valor</TableHead>
+                      <TableHead className="text-right">Valor Frete</TableHead>
+                      <TableHead className="text-right">Custo</TableHead>
+                      <TableHead className="text-right">Margem</TableHead>
+                      <TableHead className="text-right">%</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -621,8 +1416,15 @@ export default function RelatoriosEnterprise() {
                         <TableCell className="text-sm">{os.data}</TableCell>
                         <TableCell className="text-sm">{os.origem}</TableCell>
                         <TableCell className="text-sm">{os.destino}</TableCell>
-                        <TableCell><Badge>{os.status}</Badge></TableCell>
+                        <TableCell>
+                          <Badge className={os.status === "Concluída" ? "bg-green-100 text-green-800" : os.status === "Em Andamento" ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800"}>
+                            {os.status}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="text-right font-mono">{fmtFin(os.valorCliente)}</TableCell>
+                        <TableCell className="text-right font-mono text-red-600">{fmtFin(os.custoPrestador)}</TableCell>
+                        <TableCell className="text-right font-mono text-green-600">{fmtFin(os.margem)}</TableCell>
+                        <TableCell className="text-right font-bold">{os.margemPct.toFixed(1)}%</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -691,42 +1493,210 @@ export default function RelatoriosEnterprise() {
         {/* PRESTADORES */}
         <TabsContent value="prestadores" className="space-y-4 pt-4">
           <Card>
-            <CardContent className="p-0">
+            <CardHeader className="py-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Filter className="w-4 h-4" />
+                Filtros
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <div>
+                  <label className="text-xs text-muted-foreground">Prestador</label>
+                  <SearchableSelect
+                    options={prestadoresOptions}
+                    value={filtrosPrestador.prestadorId}
+                    onChange={(v) => setFiltrosPrestador({...filtrosPrestador, prestadorId: v})}
+                    placeholder="Selecionar prestador..."
+                    searchPlaceholder="Buscar por nome..."
+                    emptyText="Nenhum prestador encontrado"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Cliente</label>
+                  <SearchableSelect
+                    options={clientesOptions}
+                    value={filtrosPrestador.clienteId}
+                    onChange={(v) => setFiltrosPrestador({...filtrosPrestador, clienteId: v})}
+                    placeholder="Selecionar cliente..."
+                    searchPlaceholder="Buscar cliente..."
+                    emptyText="Nenhum cliente encontrado"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Data Início</label>
+                  <Input type="date" className="mt-1 h-8 text-xs"
+                    value={filtrosPrestador.dataInicio}
+                    onChange={(e) => setFiltrosPrestador({...filtrosPrestador, dataInicio: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Data Fim</label>
+                  <Input type="date" className="mt-1 h-8 text-xs"
+                    value={filtrosPrestador.dataFim}
+                    onChange={(e) => setFiltrosPrestador({...filtrosPrestador, dataFim: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Tipo Operação</label>
+                  <Select value={filtrosPrestador.tipoOperacao}
+                    onValueChange={(v) => setFiltrosPrestador({...filtrosPrestador, tipoOperacao: v})}>
+                    <SelectTrigger className="mt-1 h-8 text-xs"><SelectValue placeholder="Todos" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      <SelectItem value="entrega">Entrega</SelectItem>
+                      <SelectItem value="coleta">Coleta</SelectItem>
+                      <SelectItem value="transferencia">Transferência</SelectItem>
+                      <SelectItem value="refrigerado">Refrigerado</SelectItem>
+                      <SelectItem value="hospitalar">Hospitalar</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Status Financeiro</label>
+                  <Select value={filtrosPrestador.statusFinanceiro}
+                    onValueChange={(v) => setFiltrosPrestador({...filtrosPrestador, statusFinanceiro: v})}>
+                    <SelectTrigger className="mt-1 h-8 text-xs"><SelectValue placeholder="Todos" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      <SelectItem value="pago">Pago</SelectItem>
+                      <SelectItem value="pendente">Pendente</SelectItem>
+                      <SelectItem value="parcial">Parcial</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="mt-3 flex justify-end gap-2">
+                <Button variant="outline" size="sm"
+                  onClick={() => setFiltrosPrestador({
+                    prestadorId: "todos", clienteId: "todos", dataInicio: "", dataFim: "",
+                    tipoOperacao: "todos", statusFinanceiro: "todos",
+                  })}>
+                  Limpar Filtros
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+            {[
+              { label: "Total Operações", value: prestadoresLinhas.length, color: "text-slate-700", icon: Package },
+              { label: "Valor Bruto", value: fmtFin(prestadoresLinhas.reduce((s, l) => s + l.valorFrete, 0)), color: "text-blue-600", icon: DollarSign },
+              { label: "Valor Pago", value: fmtFin(prestadoresLinhas.reduce((s, l) => s + l.valorPrestador, 0)), color: "text-emerald-600", icon: CreditCard },
+              { label: "Saldo Pendente", value: fmtFin(prestadoresLinhas.filter(l => l.statusFinanceiro === "Pendente").reduce((s, l) => s + l.valorFrete, 0)), color: "text-amber-600", icon: Clock },
+              { label: "Média/Entrega", value: fmtFin(prestadoresLinhas.length > 0 ? prestadoresLinhas.reduce((s, l) => s + l.valorPrestador, 0) / prestadoresLinhas.length : 0), color: "text-violet-600", icon: TrendingUp },
+              { label: "Km Rodado", value: "—", color: "text-muted-foreground", icon: Route },
+              { label: "SLA", value: `${prestadoresLinhas.length > 0 ? Math.round(prestadoresLinhas.filter(l => l.statusFinanceiro === "Pago").length / prestadoresLinhas.length * 100) : 0}%`, color: "text-cyan-600", icon: Activity },
+            ].map((kpi, i) => (
+              <div key={i}
+                className="bg-card border border-border rounded-xl p-3 flex flex-col gap-1 shadow-sm hover:shadow-md transition">
+                <div className="flex items-center gap-2">
+                  <kpi.icon className="w-3.5 h-3.5 text-muted-foreground" />
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{kpi.label}</p>
+                </div>
+                <p className={`text-lg font-extrabold ${kpi.color}`}>{kpi.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {loadingPrestadores ? "Carregando..." : `${prestadoresLinhas.length} operações encontradas`}
+            </p>
+            <Button disabled={loadingPrestadores || prestadoresLinhas.length === 0}
+              onClick={async () => {
+                const prestNome = filtrosPrestador.prestadorId !== "todos"
+                  ? (prestadoresOptions.find(o => o.value === filtrosPrestador.prestadorId)?.label || "")
+                  : "";
+                const totalOps = prestadoresLinhas.length;
+                const valorBruto = prestadoresLinhas.reduce((s, l) => s + l.valorFrete, 0);
+                const valorPago = prestadoresLinhas.reduce((s, l) => s + l.valorPrestador, 0);
+                await generateRelatorioPrestadoresPDF(
+                  prestadoresLinhas.filter(l => {
+                    if (filtrosPrestador.statusFinanceiro !== "todos" && l.statusFinanceiro.toLowerCase() !== filtrosPrestador.statusFinanceiro) return false;
+                    if (filtrosPrestador.tipoOperacao !== "todos") return false;
+                    return true;
+                  }),
+                  prestNome,
+                  filtrosPrestador.dataInicio,
+                  filtrosPrestador.dataFim,
+                  {
+                    totalOps,
+                    valorBruto,
+                    valorPago,
+                    saldoPendente: prestadoresLinhas.filter(l => l.statusFinanceiro === "Pendente").reduce((s, l) => s + l.valorFrete, 0),
+                    mediaEntrega: totalOps > 0 ? valorPago / totalOps : 0,
+                  }
+                );
+              }}
+              className="gap-2 bg-orange-500 hover:bg-orange-600">
+              <Download className="w-4 h-4" />
+              Gerar PDF
+            </Button>
+          </div>
+
+          <Card>
+            <CardContent className="p-0 overflow-x-auto">
               <Table>
-                <TableHeader>
+                <TableHeader className="bg-muted/30">
                   <TableRow>
-                    <TableHead>Prestador</TableHead>
-                    <TableHead>CPF/CNPJ</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead className="text-right">Operações</TableHead>
-                    <TableHead className="text-right">Valor Pago</TableHead>
-                    <TableHead>Score</TableHead>
-                    <TableHead className="text-right">Ocorrências</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase">OS</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase">Cliente</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase">Origem</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase">Destino</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase">Data Coleta</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase">Data Entrega</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase text-right">Valor Frete</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase text-right">Valor Prest.</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase text-right">Margem</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase">Status Fin.</TableHead>
+                    <TableHead className="font-semibold text-xs uppercase">Tipo Veículo</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {relatorioPrestadores.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell className="font-medium">{p.nome}</TableCell>
-                      <TableCell className="text-sm font-mono">{p.cpfCnpj}</TableCell>
-                      <TableCell><Badge variant="outline">{p.tipo}</Badge></TableCell>
-                      <TableCell className="text-right">{p.totalOperacoes}</TableCell>
-                      <TableCell className="text-right font-mono">{fmtFin(p.valorPago)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <span className={`font-bold ${p.score >= 4.5 ? 'text-green-600' : p.score >= 4 ? 'text-yellow-600' : 'text-red-600'}`}>{p.score}</span>
-                          <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-green-500" style={{ width: `${(p.score / 5) * 100}%` }} />
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge className={p.ocorrencias <= 3 ? "bg-green-100 text-green-800" : p.ocorrencias <= 6 ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"}>
-                          {p.ocorrencias}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {loadingPrestadores ? (
+                    <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
+                  ) : prestadoresLinhas.length === 0 ? (
+                    <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Nenhum dado encontrado. Aplique os filtros.</TableCell></TableRow>
+                  ) : (
+                    prestadoresLinhas
+                      .filter(l => {
+                        if (filtrosPrestador.statusFinanceiro !== "todos" && l.statusFinanceiro.toLowerCase() !== filtrosPrestador.statusFinanceiro) return false;
+                        if (filtrosPrestador.tipoOperacao !== "todos") {
+                          const veiculo = l.tipoVeiculo.toLowerCase();
+                          const op = filtrosPrestador.tipoOperacao;
+                          if (op === "refrigerado" && !veiculo.includes("refrigerado")) return false;
+                          if (op === "hospitalar" && !veiculo.includes("hospitalar")) return false;
+                        }
+                        return true;
+                      })
+                      .map((l, idx) => (
+                        <TableRow key={idx} className="hover:bg-muted/40 transition-colors even:bg-muted/20">
+                          <TableCell className="text-xs font-medium">{l.os}</TableCell>
+                          <TableCell className="text-xs">{l.cliente}</TableCell>
+                          <TableCell className="text-xs">{l.origem}</TableCell>
+                          <TableCell className="text-xs">{l.destino}</TableCell>
+                          <TableCell className="text-xs">{l.dataColeta}</TableCell>
+                          <TableCell className="text-xs">{l.dataEntrega}</TableCell>
+                          <TableCell className="text-xs text-right font-mono">{fmtFin(l.valorFrete)}</TableCell>
+                          <TableCell className="text-xs text-right font-mono text-red-600">{fmtFin(l.valorPrestador)}</TableCell>
+                          <TableCell className="text-xs text-right font-mono">
+                            <span className={l.margem >= 0 ? "text-green-600" : "text-red-600"}>
+                              {l.margemPct >= 0 ? `${l.margemPct.toFixed(1)}%` : "-"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <Badge variant="outline"
+                              className={`text-[10px] ${
+                                l.statusFinanceiro === "Pago" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                l.statusFinanceiro === "Parcial" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                "bg-red-50 text-red-700 border-red-200"
+                              }`}>
+                              {l.statusFinanceiro}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs">{l.tipoVeiculo}</TableCell>
+                        </TableRow>
+                      ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

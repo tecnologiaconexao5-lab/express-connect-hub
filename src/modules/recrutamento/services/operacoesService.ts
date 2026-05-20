@@ -24,6 +24,8 @@ function calcularFinanceiro(data: Partial<Operacao>): FinanceiroOperacao {
   const valorPrestador = data.financeiro?.valorPrestador ?? 0
   const percentualImposto = data.financeiro?.percentualImposto ?? 0
   const percentualSeguro = data.financeiro?.percentualSeguro ?? 0
+  const percentualPrestador = data.financeiro?.percentualPrestador ?? 0
+  const margemTransportadora = data.financeiro?.margemTransportadora ?? 0
   const valorImposto = valorCliente * (percentualImposto / 100)
   const valorSeguro = valorCliente * (percentualSeguro / 100)
   const receitaLiquida = valorCliente - valorImposto
@@ -40,6 +42,8 @@ function calcularFinanceiro(data: Partial<Operacao>): FinanceiroOperacao {
     valorPrestador,
     percentualImposto,
     percentualSeguro,
+    percentualPrestador,
+    margemTransportadora,
     valorImposto,
     valorSeguro,
     receitaLiquida,
@@ -51,6 +55,7 @@ function calcularFinanceiro(data: Partial<Operacao>): FinanceiroOperacao {
     franquiaKm: data.financeiro?.franquiaKm ?? 0,
     formaPagamento: data.financeiro?.formaPagamento ?? '',
     prazoPagamento: data.financeiro?.prazoPagamento ?? 30,
+    dataPagamento: data.financeiro?.dataPagamento ?? '',
   }
 }
 
@@ -100,6 +105,7 @@ export const operacoesService = {
       tipoVeiculo: data.tipoVeiculo ?? '',
       tipoCarga: data.tipoCarga ?? 'seco',
       metodoCarga: data.metodoCarga ?? 'paletizado',
+      temperatura: data.temperatura ?? '',
       pesoCarga: data.pesoCarga ?? '',
       dimensoes: data.dimensoes ?? '',
       localCarregamento: data.localCarregamento ?? '',
@@ -109,6 +115,7 @@ export const operacoesService = {
       dataInicio: data.dataInicio ?? '',
       dataFim: data.dataFim ?? '',
       recurrencia: data.recurrencia ?? 'unica',
+      frequencia: data.frequencia ?? 'fixa',
       status: data.status ?? 'aberta',
       prioridade: data.prioridade ?? 'media',
       observacoes: data.observacoes ?? '',
@@ -203,7 +210,7 @@ export const operacoesService = {
   },
 
   obterMetricas(operacoes: Operacao[]) {
-    const ativas = operacoes.filter(o => o.status === 'aberta' || o.status === 'em_andamento')
+    const ativas = operacoes.filter(o => o.status === 'aberta' || o.status === 'em_captacao')
     return {
       total: operacoes.length,
       ativas: ativas.length,

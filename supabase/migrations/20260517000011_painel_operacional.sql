@@ -2,7 +2,7 @@
 -- Created automatically by Antigravity
 
 CREATE TABLE IF NOT EXISTS public.operacao_localizacao (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     escala_id uuid REFERENCES escala_operacional(id) ON DELETE CASCADE,
     latitude numeric NOT NULL,
     longitude numeric NOT NULL,

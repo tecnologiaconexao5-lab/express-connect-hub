@@ -159,4 +159,75 @@ export const mapboxProvider: MapsProvider = {
   },
 };
 
+export interface SugestaoEndereco {
+  id: string;
+  place_name: string;
+  rua: string;
+  numero: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+  cep: string;
+  lat: number;
+  lng: number;
+}
+
+export async function buscarSugestoesEnderecos(query: string): Promise<SugestaoEndereco[]> {
+  const token = getMapboxToken();
+  if (!token || !query || query.trim().length < 3) return [];
+
+  const encodedQuery = encodeURIComponent(query);
+  const url = `${MAPBOX_GEOCODING_URL}/${encodedQuery}.json?access_token=${token}&country=br&autocomplete=true&limit=5`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+
+    if (!data.features) return [];
+
+    return data.features.map((feat: any) => {
+      const [lng, lat] = feat.center;
+
+      let rua = feat.text || "";
+      let numero = feat.address || "";
+      let bairro = "";
+      let cidade = "";
+      let uf = "";
+      let cep = "";
+
+      if (feat.context) {
+        feat.context.forEach((ctx: any) => {
+          if (ctx.id.startsWith("neighborhood")) {
+            bairro = ctx.text;
+          } else if (ctx.id.startsWith("place")) {
+            cidade = ctx.text;
+          } else if (ctx.id.startsWith("region")) {
+            uf = ctx.short_code ? ctx.short_code.replace("BR-", "") : ctx.text;
+          } else if (ctx.id.startsWith("postcode")) {
+            cep = ctx.text;
+          }
+        });
+      }
+
+      // Se o text contiver apenas o nome da rua sem número, e o place_name for mais descritivo
+      return {
+        id: feat.id,
+        place_name: feat.place_name,
+        rua: rua || feat.place_name.split(",")[0] || "",
+        numero: numero || "",
+        bairro: bairro,
+        cidade: cidade,
+        uf: uf,
+        cep: cep,
+        lat,
+        lng
+      };
+    });
+  } catch (err) {
+    console.error('[Mapbox] Erro ao buscar sugestoes:', err);
+    return [];
+  }
+}
+
 export default mapboxProvider;

@@ -30,6 +30,14 @@ function formatarCPFCNPJ(value: string): string {
   return value;
 }
 
+function arrayBufferToBase64(buffer: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < buffer.length; i++) {
+    binary += String.fromCharCode(buffer[i]);
+  }
+  return btoa(binary);
+}
+
 function formatCurrency(v: any): string {
   if (v === undefined || v === null || v === '' || v === 0) return "A DEFINIR";
   return `R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
@@ -502,17 +510,39 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`,
           storageSuccess = true;
         } else {
           console.error('[ContratoModal] Erro upload storage:', uploadError);
+          const pdfBase64 = await generateContractPDFBase64(contratoFinal, {
+            logoBase64: await getLogo(),
+            empresaNome: EMPRESA_NOME,
+            empresaCnpj: EMPRESA_CNPJ_CORRETO,
+            empresaEndereco: EMPRESA_ENDERECO
+          });
           await supabase.from('contratos_gerados').update({
-            status: 'pendente'
+            status: 'gerado',
+            metadata: {
+              pdf_base64_fallback: pdfBase64,
+              pdf_fallback_reason: 'storage_unavailable',
+              pdf_fallback_at: new Date().toISOString()
+            }
           }).eq('id', novoContrato.id);
-          toast.warning("PDF gerado, mas não foi possível enviar ao servidor (Storage).");
+          toast.warning("PDF salvo localmente (Storage indisponível). Faça o download agora.");
         }
       } catch (storageErr) {
         console.error('[ContratoModal] Erro storage:', storageErr);
+        const pdfBase64 = await generateContractPDFBase64(contratoFinal, {
+          logoBase64: await getLogo(),
+          empresaNome: EMPRESA_NOME,
+          empresaCnpj: EMPRESA_CNPJ_CORRETO,
+          empresaEndereco: EMPRESA_ENDERECO
+        });
         await supabase.from('contratos_gerados').update({
-          status: 'pendente'
+          status: 'gerado',
+          metadata: {
+            pdf_base64_fallback: pdfBase64,
+            pdf_fallback_reason: 'storage_communication_error',
+            pdf_fallback_at: new Date().toISOString()
+          }
         }).eq('id', novoContrato.id);
-        toast.warning("PDF gerado, mas houve falha na comunicação com o Storage.");
+        toast.warning("PDF salvo localmente (falha de comunicação). Faça o download agora.");
       }
 
       const url = URL.createObjectURL(pdfBlob);

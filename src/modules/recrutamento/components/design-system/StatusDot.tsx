@@ -9,7 +9,8 @@ interface StatusDotProps {
 const dotColors: Record<string, string> = {
   ativo: 'bg-emerald-400',
   aberta: 'bg-blue-400',
-  em_andamento: 'bg-emerald-400',
+  em_captacao: 'bg-violet-400',
+  preenchida: 'bg-emerald-400',
   qualificado: 'bg-cyan-400',
   potencial: 'bg-blue-400',
   em_triagem: 'bg-violet-400',

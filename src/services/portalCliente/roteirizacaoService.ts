@@ -229,7 +229,7 @@ export async function buscarSaudeOperacional(): Promise<SaudeOperacional> {
 
     const score = Math.min(100, Math.max(0,
       (slaMedio * 0.4) +
-      (100 - (atrasadas / Math.max(entregas.length, 1)) * 100) * 0.3) +
+      (100 - (atrasadas / Math.max(entregas.length, 1)) * 100) * 0.3 +
       (100 - (ocorrencias / 10) * 100) * 0.3
     ));
 

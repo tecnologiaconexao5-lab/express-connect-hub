@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FileSignature, Plus, FileText, Download, Settings, Eye, Trash, Save, X, Loader2, Search, Filter } from "lucide-react";
+import { FileSignature, Plus, FileText, Download, Settings, Eye, Trash, Save, X, Loader2, Search, Filter, Pen, History, AlertCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -14,7 +14,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { buscarContratos, buscarModelosContratos, criarModeloContrato, atualizarModeloContrato, excluirModeloContrato, excluirContrato, type ContratoGerado, type ContratoModelo, type BuscarContratosFiltros } from "@/services/contratosService";
+import { buscarContratos, buscarModelosContratos, criarModeloContrato, atualizarModeloContrato, excluirModeloContrato, excluirContrato, baixarPDF, type ContratoGerado, type ContratoModelo, type BuscarContratosFiltros } from "@/services/contratosService";
+import { AssinarContratoModal } from "@/components/contratos/AssinarContratoModal";
+import { EvidenciasContratoModal } from "@/components/contratos/EvidenciasContratoModal";
 
 interface ModeloLocal {
   id: string;
@@ -54,6 +56,12 @@ export default function Contratos() {
   const [contratoVisualizar, setContratoVisualizar] = useState<ContratoGerado | null>(null);
   const [contratoExcluir, setContratoExcluir] = useState<ContratoGerado | null>(null);
   const [excluindoContrato, setExcluindoContrato] = useState(false);
+  const [baixandoId, setBaixandoId] = useState<string | null>(null);
+  const [showAssinarModal, setShowAssinarModal] = useState(false);
+  const [assinarContratoId, setAssinarContratoId] = useState<string>("");
+  const [assinarPrestadorNome, setAssinarPrestadorNome] = useState<string>("");
+  const [showEvidenciasModal, setShowEvidenciasModal] = useState(false);
+  const [evidenciasContratoId, setEvidenciasContratoId] = useState<string>("");
 
   useEffect(() => {
     const storedConfigs = localStorage.getItem('contratos_configs');
@@ -273,12 +281,31 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`;
     }
   };
 
-  const handleBaixarPDF = (pdfUrl?: string) => {
-    if (pdfUrl) {
-      window.open(pdfUrl, '_blank');
-    } else {
-      toast.error('PDF ainda não foi gerado.');
+  const handleBaixarPDF = (contrato: ContratoGerado) => {
+    if (contrato.pdf_url) {
+      baixarPDF(contrato.pdf_url, `Contrato_${contrato.numero_contrato}.pdf`);
+      return;
     }
+    if (contrato.conteudo_html) {
+      setBaixandoId(contrato.id);
+      setTimeout(() => {
+        setBaixandoId(null);
+        toast.error("PDF não disponível. Gere o contrato novamente pelo cadastro do prestador.");
+      }, 500);
+      return;
+    }
+    toast.error("Conteúdo do contrato não disponível.");
+  };
+  
+  const handleAbrirAssinar = (contrato: ContratoGerado) => {
+    setAssinarContratoId(contrato.id);
+    setAssinarPrestadorNome(contrato.prestador_nome || "");
+    setShowAssinarModal(true);
+  };
+  
+  const handleAbrirEvidencias = (contrato: ContratoGerado) => {
+    setEvidenciasContratoId(contrato.id);
+    setShowEvidenciasModal(true);
   };
 
   const handleConfigChange = (key: keyof typeof configs, val: boolean) => {
@@ -582,8 +609,20 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`;
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleVisualizar(g)} title="Visualizar">
                               <Eye className="w-4 h-4 text-slate-600" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleBaixarPDF(g.pdf_url)} title="Baixar PDF">
-                              <Download className="w-4 h-4 text-blue-600" />
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleBaixarPDF(g)} title="Baixar PDF">
+                              {baixandoId === g.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                              ) : (
+                                <Download className="w-4 h-4 text-blue-600" />
+                              )}
+                            </Button>
+                            {g.status !== 'assinado' && g.status !== 'aceito_whatsapp' && (
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleAbrirAssinar(g)} title="Assinar">
+                                <Pen className="w-4 h-4 text-green-600" />
+                              </Button>
+                            )}
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleAbrirEvidencias(g)} title="Evidências">
+                              <History className="w-4 h-4 text-purple-600" />
                             </Button>
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleExcluirContrato(g)} title="Excluir">
                               <Trash className="w-4 h-4 text-red-500" />
@@ -696,19 +735,38 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`;
             </div>
           ) : (
             <div className="text-center py-12 text-muted-foreground">
+              <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
               <p>Conteúdo do contrato não disponível.</p>
             </div>
           )}
           <DialogFooter>
-            {contratoVisualizar?.pdf_url && (
-              <Button variant="outline" onClick={() => window.open(contratoVisualizar.pdf_url, '_blank')}>
+            {contratoVisualizar?.pdf_url ? (
+              <Button variant="outline" onClick={() => baixarPDF(contratoVisualizar.pdf_url!, `Contrato_${contratoVisualizar.numero_contrato}.pdf`)}>
                 <Download className="w-4 h-4 mr-2" /> Baixar PDF
               </Button>
-            )}
+            ) : contratoVisualizar?.conteudo_html ? (
+              <Button variant="outline" disabled className="opacity-50">
+                <AlertCircle className="w-4 h-4 mr-2" /> PDF não disponível
+              </Button>
+            ) : null}
             <Button onClick={() => setContratoVisualizar(null)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AssinarContratoModal
+        open={showAssinarModal}
+        onOpenChange={setShowAssinarModal}
+        contratoId={assinarContratoId}
+        prestadorNome={assinarPrestadorNome}
+        onSuccess={() => { carregarContratosGerados(); }}
+      />
+      
+      <EvidenciasContratoModal
+        open={showEvidenciasModal}
+        onOpenChange={setShowEvidenciasModal}
+        contratoId={evidenciasContratoId}
+      />
 
       <Dialog open={!!contratoExcluir} onOpenChange={(o) => !o && setContratoExcluir(null)}>
         <DialogContent>

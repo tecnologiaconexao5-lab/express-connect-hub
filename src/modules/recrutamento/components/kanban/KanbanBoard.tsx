@@ -14,11 +14,11 @@ interface KanbanColumn {
 }
 
 const columns: KanbanColumn[] = [
-  { id: 'potencial', title: 'Potencial', color: 'border-t-blue-500', icon: <Star className="w-3.5 h-3.5" /> },
-  { id: 'em_triagem', title: 'Em Triagem', color: 'border-t-violet-500', icon: <Star className="w-3.5 h-3.5" /> },
-  { id: 'documentacao', title: 'Documentação', color: 'border-t-amber-500', icon: <Star className="w-3.5 h-3.5" /> },
-  { id: 'qualificado', title: 'Qualificado', color: 'border-t-cyan-500', icon: <Star className="w-3.5 h-3.5" /> },
-  { id: 'ativo', title: 'Ativo', color: 'border-t-emerald-500', icon: <Star className="w-3.5 h-3.5" /> },
+  { id: 'novo', title: 'Novo', color: 'border-t-blue-500', icon: <Star className="w-3.5 h-3.5" /> },
+  { id: 'em_analise', title: 'Em Análise', color: 'border-t-violet-500', icon: <Star className="w-3.5 h-3.5" /> },
+  { id: 'aprovado', title: 'Aprovado', color: 'border-t-cyan-500', icon: <Star className="w-3.5 h-3.5" /> },
+  { id: 'reserva', title: 'Reserva', color: 'border-t-amber-500', icon: <Star className="w-3.5 h-3.5" /> },
+  { id: 'agregado', title: 'Agregado', color: 'border-t-emerald-500', icon: <Star className="w-3.5 h-3.5" /> },
 ]
 
 interface KanbanBoardProps {
@@ -112,7 +112,7 @@ function KanbanCard({ prestador, onPromote }: { prestador: Prestador; onPromote:
 }
 
 function proximoStatus(atual: StatusPrestador): StatusPrestador {
-  const ordem: StatusPrestador[] = ['potencial', 'em_triagem', 'documentacao', 'qualificado', 'ativo']
+  const ordem: StatusPrestador[] = ['novo', 'em_analise', 'aprovado', 'reserva', 'agregado']
   const idx = ordem.indexOf(atual)
   return idx < ordem.length - 1 ? ordem[idx + 1] : atual
 }

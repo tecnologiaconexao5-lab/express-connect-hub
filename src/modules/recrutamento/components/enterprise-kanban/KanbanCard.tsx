@@ -13,6 +13,7 @@ interface KanbanCardProps {
   onMove: (id: string, stage: PipelineStage) => void
   possibleStages: PipelineStage[]
   isDragging?: boolean
+  onClick?: () => void
 }
 
 export const PRIORIDADE_CONFIG: Record<Prioridade, { label: string; color: string; bg: string }> = {
@@ -128,7 +129,7 @@ function QuickActionButton({
   )
 }
 
-export function KanbanCard({ candidate, onMove, possibleStages, isDragging }: KanbanCardProps) {
+export function KanbanCard({ candidate, onMove, possibleStages, isDragging, onClick }: KanbanCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [obsExpanded, setObsExpanded] = useState(false)
   const [showActions, setShowActions] = useState(false)
@@ -152,6 +153,7 @@ export function KanbanCard({ candidate, onMove, possibleStages, isDragging }: Ka
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', candidate.id)
       }}
+      onClick={onClick}
     >
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/[0.02] pointer-events-none" />
 

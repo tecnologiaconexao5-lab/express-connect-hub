@@ -1,12 +1,15 @@
-import { useCallback, useRef, useEffect, useState } from 'react'
+import { useCallback, useRef, useEffect, useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Search, ChevronLeft, ChevronRight, Users, TrendingUp, Award, AlertCircle } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, Users, TrendingUp, Award, AlertCircle, Plus } from 'lucide-react'
 import { useEnterpriseKanban } from './useEnterpriseKanban'
 import { KanbanColumn } from './KanbanColumn'
 import { KanbanFilters } from './KanbanFilters'
+import { DetalhesCandidatoPipelineSheet } from './DetalhesCandidatoPipelineSheet'
+import { CadastrarInteressadoModal } from './CadastrarInteressadoModal'
 import { PIPELINE_COLUMNS } from './enterpriseKanbanTypes'
 import { enterpriseKanbanService } from './enterpriseKanbanService'
 import { cn } from '../../utils/cn'
+import { Button } from '@/components/ui/button'
 
 export function EnterpriseKanbanBoard() {
   const {
@@ -32,11 +35,13 @@ export function EnterpriseKanbanBoard() {
     prevPage,
     setPage,
     setSelectedCandidateId,
+    reload,
   } = useEnterpriseKanban()
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [stageCounts, setStageCounts] = useState<Record<string, number>>({})
   const [totalByStage, setTotalByStage] = useState<Record<string, number>>({})
+  const [addOpen, setAddOpen] = useState(false)
 
   useEffect(() => {
     enterpriseKanbanService.getStageCounts().then((counts) => {
@@ -68,6 +73,21 @@ export function EnterpriseKanbanBoard() {
   }, [setDraggingId])
 
   const hasMore = filteredCount > (page + 1) * pageSize * 10
+
+  const [sheetCandidateId, setSheetCandidateId] = useState<string | null>(null)
+  const sheetOpen = useMemo(() => sheetCandidateId !== null, [sheetCandidateId])
+
+  const handleCardClick = useCallback((candidateId: string) => {
+    setSelectedCandidateId(candidateId)
+    setSheetCandidateId(candidateId)
+  }, [setSelectedCandidateId])
+
+  const handleSheetOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      setSelectedCandidateId(null)
+      setSheetCandidateId(null)
+    }
+  }, [setSelectedCandidateId])
 
   const avgScore = filteredCandidates.length > 0
     ? Math.round(filteredCandidates.reduce((a, c) => a + c.score, 0) / filteredCandidates.length)
@@ -104,6 +124,15 @@ export function EnterpriseKanbanBoard() {
             onToggle={toggleShowFilters}
             hasActiveFilters={hasActiveFilters}
           />
+
+          <Button 
+            size="sm" 
+            className="h-9 gap-1.5 ml-auto text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-3 py-1.5 rounded-xl shadow-md shadow-primary/10 transition-all flex items-center shrink-0"
+            onClick={() => setAddOpen(true)}
+          >
+            <Plus className="w-4 h-4" />
+            <span>Adicionar Candidato</span>
+          </Button>
         </div>
 
         <div className="flex items-center gap-4 text-xs text-muted-foreground/60">
@@ -185,6 +214,7 @@ export function EnterpriseKanbanBoard() {
                   draggingId={draggingId}
                   pageSize={pageSize}
                   page={page}
+                  onCardClick={handleCardClick}
                 />
               ))}
             </div>
@@ -216,6 +246,18 @@ export function EnterpriseKanbanBoard() {
           </>
         )}
       </div>
+
+      <DetalhesCandidatoPipelineSheet
+        candidateId={sheetCandidateId}
+        open={sheetOpen}
+        onOpenChange={handleSheetOpenChange}
+      />
+
+      <CadastrarInteressadoModal
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onSuccess={reload}
+      />
     </div>
   )
 }

@@ -12,6 +12,7 @@ export function usePrestadores() {
     scoreMax: 100,
     tipoVeiculo: [],
     regiao: [],
+    origemCadastro: [],
     onboarding: [],
     canalCaptacao: [],
   })

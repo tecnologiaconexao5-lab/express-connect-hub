@@ -8,8 +8,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 
 interface DestinoInput {
   id: string;
+  nome: string;
   endereco: string;
-  cep?: string;
+  cep: string;
+  numero: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
   prioridade: "alta" | "media" | "baixa";
   tipo: "padrao" | "urgente" | "moto" | "refrigerado";
 }
@@ -58,7 +63,9 @@ const prioridadeLabels = {
 
 export function PortalRoteirizacao({ onGerarRoteiro, onVerDetalhes }: PortalRoteirizacaoProps) {
   const [destinos, setDestinos] = useState<DestinoInput[]>([]);
-  const [novoEndereco, setNovoEndereco] = useState("");
+  const [novoDestino, setNovoDestino] = useState({
+    nome: "", cep: "", endereco: "", numero: "", bairro: "", cidade: "", uf: ""
+  });
   const [showAgendarModal, setShowAgendarModal] = useState(false);
   const [showDetalheModal, setShowDetalheModal] = useState(false);
   const [selectedRotaDetail, setSelectedRotaDetail] = useState<Rota | null>(null);
@@ -110,15 +117,21 @@ export function PortalRoteirizacao({ onGerarRoteiro, onVerDetalhes }: PortalRote
   ]);
 
   const adicionarDestino = () => {
-    if (!novoEndereco.trim()) return;
-    const novo: DestinoInput = {
+    if (!novoDestino.endereco.trim() || !novoDestino.cidade.trim()) return;
+    const item: DestinoInput = {
       id: Date.now().toString(),
-      endereco: novoEndereco,
+      nome: novoDestino.nome,
+      endereco: novoDestino.endereco,
+      cep: novoDestino.cep,
+      numero: novoDestino.numero,
+      bairro: novoDestino.bairro,
+      cidade: novoDestino.cidade,
+      uf: novoDestino.uf,
       prioridade: "media",
       tipo: "padrao",
     };
-    setDestinos([...destinos, novo]);
-    setNovoEndereco("");
+    setDestinos([...destinos, item]);
+    setNovoDestino({ nome: "", cep: "", endereco: "", numero: "", bairro: "", cidade: "", uf: "" });
   };
 
   const removerDestino = (id: string) => {
@@ -148,8 +161,13 @@ export function PortalRoteirizacao({ onGerarRoteiro, onVerDetalhes }: PortalRote
           const parts = line.split(',');
           return {
             id: `csv-${Date.now()}-${idx}`,
-            endereco: parts[0]?.trim() || "",
-            cep: parts[1]?.trim(),
+            nome: parts[0]?.trim() || "",
+            endereco: parts[1]?.trim() || "",
+            cep: parts[2]?.trim() || "",
+            numero: parts[3]?.trim() || "",
+            bairro: parts[4]?.trim() || "",
+            cidade: parts[5]?.trim() || "",
+            uf: parts[6]?.trim() || "",
             prioridade: "media",
             tipo: "padrao",
           };
@@ -253,16 +271,31 @@ export function PortalRoteirizacao({ onGerarRoteiro, onVerDetalhes }: PortalRote
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-2 mb-3">
-            <Input
-              placeholder="Digite o endereço ou CEP..."
-              className="flex-1 bg-white border-[#E5E7EB] text-[#111827]"
-              value={novoEndereco}
-              onChange={(e) => setNovoEndereco(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && adicionarDestino()}
-            />
-            <Button className="bg-[#F97316] hover:bg-[#EA580C] text-white" onClick={adicionarDestino}>
-              Adicionar
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+            <Input placeholder="Nome da rota" className="bg-white border-[#E5E7EB] text-[#111827] text-xs"
+              value={novoDestino.nome}
+              onChange={(e) => setNovoDestino({...novoDestino, nome: e.target.value})} />
+            <Input placeholder="CEP" className="bg-white border-[#E5E7EB] text-[#111827] text-xs"
+              value={novoDestino.cep}
+              onChange={(e) => setNovoDestino({...novoDestino, cep: e.target.value})} />
+            <Input placeholder="Endereço" className="bg-white border-[#E5E7EB] text-[#111827] text-xs sm:col-span-2"
+              value={novoDestino.endereco}
+              onChange={(e) => setNovoDestino({...novoDestino, endereco: e.target.value})} />
+            <Input placeholder="Número" className="bg-white border-[#E5E7EB] text-[#111827] text-xs"
+              value={novoDestino.numero}
+              onChange={(e) => setNovoDestino({...novoDestino, numero: e.target.value})} />
+            <Input placeholder="Bairro" className="bg-white border-[#E5E7EB] text-[#111827] text-xs"
+              value={novoDestino.bairro}
+              onChange={(e) => setNovoDestino({...novoDestino, bairro: e.target.value})} />
+            <Input placeholder="Cidade" className="bg-white border-[#E5E7EB] text-[#111827] text-xs"
+              value={novoDestino.cidade}
+              onChange={(e) => setNovoDestino({...novoDestino, cidade: e.target.value})} />
+            <Input placeholder="UF" className="bg-white border-[#E5E7EB] text-[#111827] text-xs"
+              value={novoDestino.uf}
+              onChange={(e) => setNovoDestino({...novoDestino, uf: e.target.value})} />
+            <Button className="bg-[#F97316] hover:bg-[#EA580C] text-white col-span-full"
+              onClick={adicionarDestino}>
+              + Adicionar Destino
             </Button>
           </div>
 
@@ -270,13 +303,20 @@ export function PortalRoteirizacao({ onGerarRoteiro, onVerDetalhes }: PortalRote
             <div className="space-y-2 mb-3">
               {destinos.map((destino, idx) => (
                 <div key={destino.id} className="flex items-center justify-between p-2 bg-[#F8FAFC] rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-orange-50 text-[#F97316] text-xs flex items-center justify-center">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="w-6 h-6 rounded-full bg-orange-50 text-[#F97316] text-xs flex items-center justify-center shrink-0">
                       {idx + 1}
                     </span>
-                    <span className="text-sm text-[#111827]">{destino.endereco}</span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-[#111827] truncate">
+                        {destino.nome || destino.endereco}
+                      </p>
+                      <p className="text-[10px] text-[#64748B] truncate">
+                        {destino.cidade}{destino.uf ? `/${destino.uf}` : ""}{destino.cep ? ` - ${destino.cep}` : ""}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <Badge className={tipoServicoLabels[destino.tipo].color}>{tipoServicoLabels[destino.tipo].label}</Badge>
                     <Badge className={prioridadeLabels[destino.prioridade].color}>{prioridadeLabels[destino.prioridade].label}</Badge>
                     <Button variant="ghost" size="icon" className="w-6 h-6 text-[#64748B] hover:text-red-500" onClick={() => removerDestino(destino.id)}>

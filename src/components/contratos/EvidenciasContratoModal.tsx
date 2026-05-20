@@ -8,7 +8,7 @@ import {
   Copy, Download, Send, AlertTriangle, History, Hash, Phone, Mail 
 } from "lucide-react";
 import { buscarContratoPorId, buscarHistoricoContrato, type ContratoGerado, type ContratoHistorico } from "@/services/contratosService";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 interface EvidenciasContratoModalProps {
   open: boolean;
@@ -30,7 +30,6 @@ export function EvidenciasContratoModal({
   onOpenChange,
   contratoId,
 }: EvidenciasContratoModalProps) {
-  const { toast } = useToast();
   const [contrato, setContrato] = useState<ContratoGerado | null>(null);
   const [historico, setHistorico] = useState<ContratoHistorico[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,7 +52,7 @@ export function EvidenciasContratoModal({
 
   const handleCopiar = (texto: string, label: string) => {
     navigator.clipboard.writeText(texto);
-    toast({ title: "Copiado!", description: `${label} copiado para área de transferência` });
+    toast.success(`${label} copiado para área de transferência`);
   };
 
   const handleCopiarHash = () => {
@@ -143,6 +142,18 @@ export function EvidenciasContratoModal({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
+                  {contrato.signed_name && (
+                    <div className="flex items-center gap-2">
+                      <FileSignature className="w-3 h-3 text-emerald-600" />
+                      <span><strong>Assinante:</strong> {contrato.signed_name}</span>
+                    </div>
+                  )}
+                  {contrato.metadata?.signed_cpf && (
+                    <div className="flex items-center gap-2">
+                      <FileSignature className="w-3 h-3 text-emerald-600" />
+                      <span><strong>CPF:</strong> {contrato.metadata.signed_cpf}</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
                     <Globe className="w-3 h-3 text-emerald-600" />
                     <span>IP: {contrato.assinatura_ip || "Não registrado"}</span>
@@ -158,6 +169,28 @@ export function EvidenciasContratoModal({
                   {contrato.assinatura_geolocalizacao && (
                     <div className="text-xs text-emerald-600">
                       Localização: {contrato.assinatura_geolocalizacao}
+                    </div>
+                  )}
+                  {(contrato.signed_hash || contrato.metadata?.signed_hash) && (
+                    <div className="flex items-start gap-2 pt-2 border-t border-emerald-200">
+                      <Hash className="w-3 h-3 text-emerald-600 mt-0.5" />
+                      <div className="flex-1">
+                        <span className="text-xs font-bold text-emerald-600">Hash da Assinatura</span>
+                        <code className="text-[10px] font-mono break-all block mt-1 text-emerald-700">
+                          {contrato.signed_hash || contrato.metadata?.signed_hash}
+                        </code>
+                      </div>
+                      <Button size="sm" variant="ghost" onClick={() => handleCopiar(contrato.signed_hash || contrato.metadata?.signed_hash || '', "Hash")}>
+                        <Copy className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  )}
+                  {contrato.assinatura_imagem && (
+                    <div className="pt-2 border-t border-emerald-200">
+                      <p className="text-xs font-bold text-emerald-600 mb-1">Assinatura:</p>
+                      <p className="text-sm italic text-emerald-800 bg-white rounded p-2 border border-emerald-100">
+                        "{contrato.assinatura_imagem}"
+                      </p>
                     </div>
                   )}
                 </CardContent>

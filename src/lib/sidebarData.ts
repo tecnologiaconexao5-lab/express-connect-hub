@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Network, Radio, Briefcase, ClipboardList, Database,
   DollarSign, FileText, Car, FileSignature, Award, ShieldCheck,
   BarChart3, Users, Smartphone, Settings, UserPlus, Library, LucideIcon, Sparkles,
-  FileCheck, Megaphone, Route, Umbrella, Zap, BrainCircuit
+  Megaphone, Umbrella, Zap, BrainCircuit
 } from "lucide-react";
 
 import { getUser } from "./auth";

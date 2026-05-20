@@ -1,9 +1,12 @@
-export type StatusOperacao = 'rascunho' | 'aberta' | 'em_andamento' | 'pausada' | 'encerrada' | 'arquivada'
+export type StatusOperacao = 'rascunho' | 'aberta' | 'em_captacao' | 'preenchida' | 'pausada' | 'encerrada' | 'arquivada'
 export type PrioridadeOperacao = 'baixa' | 'media' | 'alta' | 'urgente'
 export type Recurrencia = 'unica' | 'diaria' | 'semanal' | 'quinzenal' | 'mensal'
+export type FrequenciaOperacao = 'fixa' | 'recorrente' | 'esporadica'
 export type TipoCarga = 'seco' | 'refrigerado' | 'perigoso' | 'fragil' | 'alimenticio'
 export type MetodoCarga = 'carga_solta' | 'paletizado' | 'granel' | 'líquido' | 'gasoso'
-export type StatusPrestador = 'potencial' | 'em_triagem' | 'documentacao' | 'qualificado' | 'ativo' | 'suspenso' | 'inativo'
+export type StatusPrestador = 'novo' | 'em_analise' | 'aprovado' | 'reserva' | 'agregado' | 'bloqueado'
+export type OrigemCadastro = 'whatsapp' | 'indicacao' | 'site' | 'manual'
+export type TipoCargaVeiculo = 'seco' | 'refrigerado' | 'termico' | 'ambos'
 export type StatusDocumento = 'pendente' | 'enviado' | 'validando' | 'aprovado' | 'reprovado' | 'vencido'
 export type TipoDocumento = 'cnh' | 'cnpj' | 'certidao_federal' | 'certidao_estadual' | 'certidao_municipal' | 'crlv' | 'seguro' | 'antt' | 'contrato_social' | 'comprovante_endereco' | 'certificado_curso_mopp' | 'certidao_trabalhista'
 export type CanalCaptacao = 'whatsapp' | 'indicacao' | 'site' | 'landing_page' | 'presencial' | 'parceiro' | 'anuncio'
@@ -17,6 +20,8 @@ export interface FinanceiroOperacao {
   valorPrestador: number
   percentualImposto: number
   percentualSeguro: number
+  percentualPrestador: number
+  margemTransportadora: number
   valorImposto: number
   valorSeguro: number
   receitaLiquida: number
@@ -28,6 +33,7 @@ export interface FinanceiroOperacao {
   franquiaKm: number
   formaPagamento: string
   prazoPagamento: number
+  dataPagamento: string
 }
 
 export interface MetaOperacao {
@@ -60,6 +66,7 @@ export interface Operacao {
   tipoVeiculo: string
   tipoCarga: TipoCarga
   metodoCarga: MetodoCarga
+  temperatura: string
   pesoCarga: string
   dimensoes: string
   localCarregamento: string
@@ -69,6 +76,7 @@ export interface Operacao {
   dataInicio: string
   dataFim: string
   recurrencia: Recurrencia
+  frequencia: FrequenciaOperacao
   status: StatusOperacao
   prioridade: PrioridadeOperacao
   observacoes: string
@@ -129,6 +137,17 @@ export interface ScoreHistoricoItem {
   motivo: string
 }
 
+export interface HistoricoPrestador {
+  jaCarregouConosco: boolean
+  quantidadeOperacoes: number
+  ultimaOperacao: string
+  clientesAtendidos: string[]
+  mediaPontualidade: number
+  mediaOcorrencias: number
+  avaliacaoOperacional: number
+  melhorPerfilOperacao: string
+}
+
 export interface Prestador {
   id: string
   nome: string
@@ -143,13 +162,17 @@ export interface Prestador {
   eixos: number
   capacidadeKg: number
   capacidadeM3: number
+  tipoCargaVeiculo: TipoCargaVeiculo
+  disponibilidade: string
   regioesAtuacao: string[]
+  origemCadastro: OrigemCadastro
   status: StatusPrestador
   score: ScorePrestador
   documentos: DocumentoPrestador[]
   onboarding: StatusOnboarding
   canalCaptacao: CanalCaptacao
   indicadoPor: string
+  historico: HistoricoPrestador
   dataCadastro: string
   dataAtivacao: string
   ultimaAtividade: string
@@ -220,13 +243,17 @@ export interface AnaliseIA {
 export interface CrmInteracao {
   id: string
   prestadorId: string
-  tipo: 'ligacao' | 'whatsapp' | 'email' | 'reuniao' | 'visita' | 'observacao'
+  prestadorNome?: string
+  tipo: 'ligacao' | 'whatsapp' | 'email' | 'reuniao' | 'visita' | 'observacao' | 'proposta_enviada' | 'retorno_prestador'
   titulo: string
   descricao: string
   data: string
   usuario: string
-  status: 'agendado' | 'realizado' | 'cancelado'
+  proximaAcao: string
+  dataProximoContato: string
+  status: 'agendado' | 'realizado' | 'cancelado' | 'pendente'
   anexos: string[]
+  createdAt: string
 }
 
 export interface TalentosCandidato {
@@ -276,6 +303,7 @@ export interface FiltrosPrestador {
   scoreMax: number
   tipoVeiculo: string[]
   regiao: string[]
+  origemCadastro: OrigemCadastro[]
   onboarding: StatusOnboarding[]
   canalCaptacao: CanalCaptacao[]
 }

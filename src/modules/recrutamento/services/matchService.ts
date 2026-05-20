@@ -44,8 +44,8 @@ function calcularScoreCompatibilidade(operacao: Operacao, prestador: Prestador):
   scoreTotal += prestador.score.geral * 0.20
   pesoTotal += 0.20
 
-  const matchStatus = prestador.status === 'ativo' || prestador.status === 'qualificado' ? 100
-    : prestador.status === 'em_triagem' || prestador.status === 'documentacao' ? 60 : 20
+  const matchStatus = prestador.status === 'agregado' || prestador.status === 'aprovado' ? 100
+    : prestador.status === 'em_analise' || prestador.status === 'reserva' ? 60 : 20
   detalhes.status = matchStatus
   scoreTotal += matchStatus * 0.15
   pesoTotal += 0.15

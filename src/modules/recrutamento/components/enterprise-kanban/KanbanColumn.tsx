@@ -14,6 +14,7 @@ interface KanbanColumnProps {
   pageSize: number
   page: number
   onLoadMore?: () => void
+  onCardClick?: (candidateId: string) => void
 }
 
 const STAGE_ICONS: Record<string, React.ReactNode> = {
@@ -77,6 +78,7 @@ export function KanbanColumn({
   draggingId,
   pageSize,
   page,
+  onCardClick,
 }: KanbanColumnProps) {
   const col = PIPELINE_COLUMNS.find(c => c.id === stage)!
   const possibleStages = STAGE_TRANSITIONS[stage] ?? []
@@ -124,6 +126,7 @@ export function KanbanColumn({
                 onMove={onMove}
                 possibleStages={possibleStages}
                 isDragging={draggingId === candidate.id}
+                onClick={onCardClick ? () => onCardClick(candidate.id) : undefined}
               />
             ))}
           </AnimatePresence>

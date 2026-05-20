@@ -18,10 +18,7 @@ export function useRecrutamentoUI() {
   return {
     currentSection: store.currentSection,
     currentView: store.currentView,
-    sidebarOpen: store.sidebarOpen,
     navegar,
     alternarView,
-    toggleSidebar: store.toggleSidebar,
-    setSidebarOpen: store.setSidebarOpen,
   }
 }

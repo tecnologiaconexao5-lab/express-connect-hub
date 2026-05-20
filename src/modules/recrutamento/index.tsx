@@ -2,6 +2,7 @@ import { RecrutamentoLayout } from './layouts/RecrutamentoLayout'
 import { DashboardRecrutamento } from './pages/DashboardRecrutamento'
 import { PaginaOperacoes } from './pages/PaginaOperacoes'
 import { PaginaNovaOperacao } from './pages/PaginaNovaOperacao'
+import { PaginaPrestadores } from './pages/PaginaPrestadores'
 import { useRecrutamentoStore } from './store/recrutamentoStore'
 import { useRecrutamentoRealtime } from './hooks/useRecrutamentoRealtime'
 import { PageHeader } from './components/design-system/PageHeader'
@@ -15,7 +16,9 @@ import { PrestadorCard } from './components/prestadores/PrestadorCard'
 import { ScoreMeter } from './components/score/ScoreMeter'
 import { CentralDocumentos } from './components/documentos/CentralDocumentos'
 import { IAChat } from './components/ia/IAChat'
+import { IAOperacional } from './components/ia/IAOperacional'
 import { OnboardingWizard } from './components/portal/OnboardingWizard'
+import { PortalPrestadorPreview } from './components/portal/PortalPrestadorPreview'
 import { AutomacoesList } from './components/automacoes/AutomacoesList'
 import { CrmLogistico } from './components/crm/CrmLogistico'
 import { BancoTalentos } from './components/talentos/BancoTalentos'
@@ -24,6 +27,7 @@ import { usePrestadores } from './hooks/usePrestadores'
 import { documentosService } from './services/documentosService'
 import { automacoesService } from './services/automacoesService'
 import { matchService } from './services/matchService'
+import { crmService } from './services/crmService'
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Truck, LayoutDashboard, FileText, Bot, Award, Users, HeartHandshake, MessageSquare, Sparkles, Columns3 } from 'lucide-react'
@@ -34,6 +38,7 @@ export {
   DashboardRecrutamento,
   PaginaOperacoes,
   PaginaNovaOperacao,
+  PaginaPrestadores,
   useRecrutamentoStore,
   useRecrutamentoRealtime,
   PageHeader,
@@ -49,6 +54,7 @@ export {
   ScoreMeter,
   CentralDocumentos,
   IAChat,
+  IAOperacional,
   OnboardingWizard,
   AutomacoesList,
   CrmLogistico,
@@ -58,6 +64,7 @@ export {
   documentosService,
   automacoesService,
   matchService,
+  crmService,
   Truck,
   LayoutDashboard,
   FileText,
@@ -105,7 +112,7 @@ function makeMock(id: string): TalentosCandidato {
     regiao: ALL_REGIODAGENS[Math.floor(Math.random() * ALL_REGIODAGENS.length)],
     experiencia: `${Math.floor(3 + Math.random() * 15)} anos`,
     score: Math.floor(40 + Math.random() * 55),
-    status: Math.random() > 0.7 ? 'ativo' : Math.random() > 0.5 ? 'em_triagem' : 'potencial',
+    status: Math.random() > 0.7 ? 'agregado' : Math.random() > 0.5 ? 'em_analise' : 'novo',
     canalCaptacao: ALL_CANAIS[Math.floor(Math.random() * ALL_CANAIS.length)],
     dataContato: new Date(Date.now() - Math.floor(Math.random() * 30) * 86400000).toISOString(),
     ultimoContato: new Date(Date.now() - Math.floor(Math.random() * 7) * 86400000).toISOString(),
@@ -130,6 +137,12 @@ export function RecrutamentoModule() {
   useEffect(() => {
     documentosService.listarPendentes().then(setDocumentos)
     automacoesService.listar().then(setAutomacoes)
+    crmService.listar().then(setInteracoesCrm)
+  }, [])
+
+  const handleCrmRefresh = useCallback(async () => {
+    const list = await crmService.listar()
+    setInteracoesCrm(list)
   }, [])
 
   useEffect(() => {
@@ -170,26 +183,8 @@ export function RecrutamentoModule() {
       case 'nova-operacao':
         return <PaginaNovaOperacao />
 
-      case 'prestadores': {
-        return (
-          <div className="space-y-6">
-            <PageHeader
-              icon={<Truck className="w-5 h-5 text-primary" />}
-              title="Prestadores"
-              description="Banco inteligente de agregados — gerencie, filtre e analise prestadores"
-            />
-            {prestadores.length === 0 ? (
-              <EmptyState title="Nenhum prestador cadastrado" description="Cadastre prestadores ou aguarde a captação automática." />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-                {prestadores.map((p) => (
-                  <PrestadorCard key={p.id} prestador={p} />
-                ))}
-              </div>
-            )}
-          </div>
-        )
-      }
+      case 'prestadores':
+        return <PaginaPrestadores />
 
       case 'crm': {
         return (
@@ -199,7 +194,7 @@ export function RecrutamentoModule() {
               title="CRM Logístico"
               description="Relacionamento com prestadores — histórico completo de interações"
             />
-            <CrmLogistico interacoes={interacoesCrm} />
+            <CrmLogistico interacoes={interacoesCrm} onRefresh={handleCrmRefresh} />
           </div>
         )
       }
@@ -219,19 +214,19 @@ export function RecrutamentoModule() {
 
       case 'ia': {
         return (
-          <div className="space-y-6 max-w-3xl">
+          <div className="space-y-6">
             <PageHeader
               icon={<Bot className="w-5 h-5 text-primary" />}
               title="IA Operacional"
-              description="Análise inteligente, recomendações e automação com IA"
+              description="Análise inteligente de operações, sugestão de prestadores e geração de mensagens com IA"
             />
-            <IAChat contexto="recrutamento" />
+            <IAOperacional />
           </div>
         )
       }
 
       case 'onboarding': {
-        const prestadorAtivo = prestadores.find(p => p.status === 'ativo' || p.status === 'qualificado')
+        const prestadorAtivo = prestadores.find(p => p.status === 'agregado' || p.status === 'aprovado')
         return (
           <div className="space-y-6 max-w-2xl">
             <PageHeader
@@ -301,25 +296,13 @@ export function RecrutamentoModule() {
 
       case 'portal': {
         return (
-          <div className="space-y-6 max-w-2xl">
+          <div className="space-y-6">
             <PageHeader
               icon={<Users className="w-5 h-5 text-primary" />}
               title="Portal do Prestador"
-              description="Autocadastro, acompanhamento e comunicação"
+              description="Autocadastro, acompanhamento, aceite de fretes e comunicação integrada"
             />
-            <PremiumCard>
-              <PremiumCardHeader>
-                <PremiumCardTitle>Portal do Prestador</PremiumCardTitle>
-                <PremiumBadge variant="info" dot>Em breve</PremiumBadge>
-              </PremiumCardHeader>
-              <PremiumCardContent>
-                <p className="text-sm text-muted-foreground/70">
-                  O portal do prestador permitirá que transportadores realizem autocadastro,
-                  acompanhem documentos, visualizem operações disponíveis e comuniquem-se
-                  diretamente com a central de recrutamento.
-                </p>
-              </PremiumCardContent>
-            </PremiumCard>
+            <PortalPrestadorPreview />
           </div>
         )
       }
