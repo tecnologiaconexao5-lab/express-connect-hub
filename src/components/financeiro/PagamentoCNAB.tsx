@@ -50,7 +50,9 @@ export default function PagamentoCNAB() {
        link.download = `CNAB240_ITAU_341_${new Date().toISOString().slice(0,10).replace(/-/g,'')}_LOTE001.txt`;
        document.body.appendChild(link);
        link.click();
-       document.body.removeChild(link);
+       if (link.parentNode) {
+         link.parentNode.removeChild(link);
+       }
        
        toast.success("Arquivo CNAB gerado com sucesso!");
        setAba("historico");

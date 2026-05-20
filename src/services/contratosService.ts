@@ -830,7 +830,9 @@ export function baixarPDF(url: string, nomeArquivo: string): void {
   link.download = nomeArquivo;
   document.body.appendChild(link);
   link.click();
-  document.body.removeChild(link);
+  if (link.parentNode) {
+    link.parentNode.removeChild(link);
+  }
 }
 
 // =====================================================

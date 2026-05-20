@@ -551,7 +551,9 @@ HASH DE VALIDAÇÃO: {{hash_documento}}`,
       link.download = `Contrato_${novoContrato.numero_contrato}.pdf`;
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
+      if (link.parentNode) {
+        link.parentNode.removeChild(link);
+      }
       setTimeout(() => URL.revokeObjectURL(url), 100);
 
       toast.success(`Contrato ${novoContrato.numero_contrato} gerado com sucesso!`);
