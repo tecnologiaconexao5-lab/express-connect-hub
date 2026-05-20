@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { carregarConfiguracaoSistema, salvarConfiguracaoSistema } from '@/services/configuracoesService';
 
 export interface EmpresaConfig {
   logoUrl: string;
@@ -43,22 +44,45 @@ export function useLogo() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        setConfig({ ...DEFAULT_CONFIG, ...parsed });
-      } catch (e) {
-        console.error('Erro ao carregar config de logo:', e);
+    const load = async () => {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      let initialConfig = DEFAULT_CONFIG;
+
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          initialConfig = { ...initialConfig, ...parsed };
+        } catch (e) {
+          console.error('Erro ao carregar config de logo do localStorage:', e);
+        }
       }
-    }
-    setLoading(false);
+
+      try {
+        const remote = await carregarConfiguracaoSistema('identidade_visual');
+        if (remote && typeof remote === 'object') {
+          initialConfig = { ...initialConfig, ...remote };
+        }
+      } catch (error) {
+        console.warn('Não foi possível carregar identidade visual do Supabase, usando localStorage.', error);
+      }
+
+      setConfig(initialConfig);
+      setLoading(false);
+    };
+
+    load();
   }, []);
 
-  const saveConfig = (newConfig: Partial<EmpresaConfig>) => {
+  const saveConfig = async (newConfig: Partial<EmpresaConfig>) => {
     const updated = { ...config, ...newConfig };
     setConfig(updated);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+
+    try {
+      await salvarConfiguracaoSistema('identidade_visual', updated);
+    } catch (error) {
+      console.warn('Não foi possível salvar identidade visual no Supabase:', error);
+    }
   };
 
   const getLogo = async (): Promise<string> => {

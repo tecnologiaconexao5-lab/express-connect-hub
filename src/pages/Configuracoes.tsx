@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Settings, Building2, Users, Table as TableIcon, Link as LinkIcon, Bell, Save, AppWindow, CheckCircle2, Copy, Shield, User, ChevronDown, Upload, Image, Palette, MessageCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,6 +22,7 @@ import {
 import { useLogo } from "@/hooks/useLogo";
 import { CentralIntegracoes } from "@/components/configuracoes/CentralIntegracoes";
 import { MonitoramentoCombustivelCard } from "@/components/financeiro/MonitoramentoCombustivel";
+import { carregarConfiguracoesSistemaComFonte, salvarConfiguracoesSistemaComFonte } from "@/services/configuracoesService";
 
 type Permissao = "ver" | "criar" | "editar" | "excluir" | "aprovar";
 
@@ -43,6 +44,34 @@ interface Usuario {
   status: string;
   permissoes: ModuloPermissao[];
 }
+
+interface NotificacaoRegra {
+  id: string;
+  label: string;
+  sistema: boolean;
+  email: boolean;
+  wpp: boolean;
+  emailDisabled?: boolean;
+  wppDisabled?: boolean;
+}
+
+const DEFAULT_NOTIFICACOES: NotificacaoRegra[] = [
+  { id: 'os_criada', label: 'Nova OS Caiu no Sistema (Demanda Criada)', sistema: true, email: false, wpp: true },
+  { id: 'rejeicao_motorista', label: 'Motorista Rejeitou a Oferta da Viagem', sistema: true, email: false, wpp: false, emailDisabled: true, wppDisabled: true },
+  { id: 'operacao_finalizada', label: 'Operação Finalizada (Entrega com POD Realizada)', sistema: true, email: true, wpp: false },
+  { id: 'ocorrencia_grave', label: 'Ocorrência Grave Submetida (Avaria, Atraso)', sistema: true, email: true, wpp: false, wppDisabled: true },
+  { id: 'alerta_docs', label: 'Alerta Docs: Vencimento Hab./CRLV/ANTT próx 7d', sistema: true, email: false, wpp: true },
+  { id: 'orcamento_aprovado', label: 'Orçamento foi Aprovado Web pelo Cliente', sistema: true, email: true, wpp: false, wppDisabled: true },
+];
+
+const EMPRESA_PADRAO = {
+  razaoSocial: "Conexão Express Transportes LTDA",
+  cnpj: "12.345.678/0001-90",
+  ender: "Av Paulista, 1000 - SP",
+  logo: "",
+  numOS: 1045,
+  numOrc: 420,
+};
 
 const modulos: { nome: string; temAprovar: boolean }[] = [
   { nome: "Dashboard Executivo", temAprovar: false },
@@ -151,17 +180,67 @@ export default function Configuracoes() {
   const [usuarioEditando, setUsuarioEditando] = useState<string | null>(null);
   const { config: identidadeVisual, saveConfig } = useLogo();
 
-  const [empresa, setEmpresa] = useState({
-    razaoSocial: "Conexão Express Transportes LTDA",
-    cnpj: "12.345.678/0001-90", ender: "Av Paulista, 1000 - SP", logo: "", numOS: 1045, numOrc: 420
-  });
+  const [empresa, setEmpresa] = useState(EMPRESA_PADRAO);
+  const [notificacoes, setNotificacoes] = useState<NotificacaoRegra[]>(DEFAULT_NOTIFICACOES);
+  const [carregandoConfigs, setCarregandoConfigs] = useState(true);
+  const [modoLocalStorage, setModoLocalStorage] = useState(false);
+  const [logoPreview, setLogoPreview] = useState("");
+  const [logoDarkPreview, setLogoDarkPreview] = useState("");
 
-  const [logoPreview, setLogoPreview] = useState(identidadeVisual.logoUrl);
-  const [logoDarkPreview, setLogoDarkPreview] = useState(identidadeVisual.logoDarkUrl);
+  useEffect(() => {
+    setLogoPreview(identidadeVisual.logoUrl);
+    setLogoDarkPreview(identidadeVisual.logoDarkUrl);
+  }, [identidadeVisual.logoUrl, identidadeVisual.logoDarkUrl]);
 
-  const onSave = () => {
+  useEffect(() => {
+    const loadSettings = async () => {
+      setCarregandoConfigs(true);
+      try {
+        const result = await carregarConfiguracoesSistemaComFonte(["empresa", "usuarios", "notificacoes"]);
+        const settings = result.data ?? {};
+
+        setModoLocalStorage(result.source === "local");
+
+        if (settings.empresa) {
+          setEmpresa({ ...EMPRESA_PADRAO, ...settings.empresa });
+        }
+
+        if (Array.isArray(settings.usuarios) && settings.usuarios.length > 0) {
+          setUsuarios(settings.usuarios);
+        }
+
+        if (Array.isArray(settings.notificacoes) && settings.notificacoes.length > 0) {
+          setNotificacoes(DEFAULT_NOTIFICACOES.map((item) => {
+            const saved = settings.notificacoes.find((savedItem: any) => savedItem.id === item.id);
+            return saved ? { ...item, ...saved } : item;
+          }));
+        }
+      } catch (error) {
+        console.warn("Falha ao carregar configurações do Supabase:", error);
+        setModoLocalStorage(true);
+      }
+      setCarregandoConfigs(false);
+    };
+
+    loadSettings();
+  }, []);
+
+  const onSave = async () => {
     setSaving(true);
-    setTimeout(() => { setSaving(false); toast.success("Configurações salvas."); }, 1000);
+    const result = await salvarConfiguracoesSistemaComFonte({
+      empresa,
+      usuarios,
+      notificacoes,
+    });
+
+    setSaving(false);
+    setModoLocalStorage(result.source === "local");
+
+    if (result.success) {
+      toast.success(result.source === "local" ? "Configurações salvas localmente (modo offline)." : "Configurações salvas.");
+    } else {
+      toast.error("Erro ao salvar configurações. Tente novamente.");
+    }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>, isDark: boolean = false) => {
@@ -266,8 +345,14 @@ export default function Configuracoes() {
             <Settings className="w-8 h-8 text-primary" /> Painel de Configurações
           </h1>
           <p className="text-muted-foreground">Parâmetros gerais, integrações, usuários e notificações.</p>
+          {modoLocalStorage && !carregandoConfigs ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <span className="font-medium">Modo offline ativo</span>
+              <span>As alterações serão salvas em localStorage até que o Supabase volte a responder.</span>
+            </div>
+          ) : null}
         </div>
-        <Button className="bg-orange-500 hover:bg-orange-600 text-white" disabled={saving} onClick={onSave}><Save className="w-4 h-4 mr-2"/> Salvar Alterações</Button>
+        <Button className="bg-orange-500 hover:bg-orange-600 text-white" disabled={saving || carregandoConfigs} onClick={onSave}><Save className="w-4 h-4 mr-2"/> Salvar Alterações</Button>
       </div>
 
       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
@@ -702,30 +787,31 @@ export default function Configuracoes() {
                 <Table>
                    <TableHeader><TableRow><TableHead>Evento Crítico</TableHead><TableHead className="text-center">Sino (Sistema)</TableHead><TableHead className="text-center">E-Mail (Cliente)</TableHead><TableHead className="text-center">WPP (Motorista)</TableHead></TableRow></TableHeader>
                    <TableBody>
-                     <TableRow>
-                       <TableCell className="font-medium text-sm">Nova OS Caiu no Sistema (Demanda Criada)</TableCell>
-                       <TableCell className="text-center"><Switch checked={true} /></TableCell><TableCell className="text-center"><Switch checked={false} /></TableCell><TableCell className="text-center"><Switch checked={true} /></TableCell>
-                     </TableRow>
-                     <TableRow>
-                       <TableCell className="font-medium text-sm">Motorista Rejeitou a Oferta da Viagem</TableCell>
-                       <TableCell className="text-center"><Switch checked={true} /></TableCell><TableCell className="text-center"><Switch checked={false} disabled /></TableCell><TableCell className="text-center"><Switch checked={false} disabled /></TableCell>
-                     </TableRow>
-                     <TableRow>
-                       <TableCell className="font-medium text-sm">Operação Finalizada (Entrega com POD Realizada)</TableCell>
-                       <TableCell className="text-center"><Switch checked={true} /></TableCell><TableCell className="text-center"><Switch checked={true} /></TableCell><TableCell className="text-center"><Switch checked={false} /></TableCell>
-                     </TableRow>
-                     <TableRow>
-                       <TableCell className="font-medium text-sm">Ocorrência Grave Submetida (Avaria, Atraso)</TableCell>
-                       <TableCell className="text-center"><Switch checked={true} /></TableCell><TableCell className="text-center"><Switch checked={true} /></TableCell><TableCell className="text-center"><Switch checked={false} disabled /></TableCell>
-                     </TableRow>
-                     <TableRow>
-                       <TableCell className="font-medium text-sm">Alerta Docs: Vencimento Hab./CRLV/ANTT próx 7d</TableCell>
-                       <TableCell className="text-center"><Switch checked={true} /></TableCell><TableCell className="text-center"><Switch checked={false} /></TableCell><TableCell className="text-center"><Switch checked={true} /></TableCell>
-                     </TableRow>
-                     <TableRow>
-                       <TableCell className="font-medium text-sm">Orçamento foi Aprovado Web pelo Cliente</TableCell>
-                       <TableCell className="text-center"><Switch checked={true} /></TableCell><TableCell className="text-center"><Switch checked={true} /></TableCell><TableCell className="text-center"><Switch checked={false} disabled /></TableCell>
-                     </TableRow>
+                     {notificacoes.map((item) => (
+                       <TableRow key={item.id}>
+                         <TableCell className="font-medium text-sm">{item.label}</TableCell>
+                         <TableCell className="text-center">
+                           <Switch
+                             checked={item.sistema}
+                             onCheckedChange={(value) => setNotificacoes((prev) => prev.map((row) => row.id === item.id ? { ...row, sistema: value as boolean } : row))}
+                           />
+                         </TableCell>
+                         <TableCell className="text-center">
+                           <Switch
+                             checked={item.email}
+                             disabled={item.emailDisabled}
+                             onCheckedChange={(value) => setNotificacoes((prev) => prev.map((row) => row.id === item.id ? { ...row, email: value as boolean } : row))}
+                           />
+                         </TableCell>
+                         <TableCell className="text-center">
+                           <Switch
+                             checked={item.wpp}
+                             disabled={item.wppDisabled}
+                             onCheckedChange={(value) => setNotificacoes((prev) => prev.map((row) => row.id === item.id ? { ...row, wpp: value as boolean } : row))}
+                           />
+                         </TableCell>
+                       </TableRow>
+                     ))}
                    </TableBody>
                 </Table>
              </CardContent>
