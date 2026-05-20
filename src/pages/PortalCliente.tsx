@@ -2127,7 +2127,7 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                     status={dashboardMetrics?.emAndamento ?? 0 > 0 ? "em_andamento" : "saudavel"}
                   />
                   <PortalKpiCard
-                    title="Concluídas no Mês"
+                    title="Entregues no Mês"
                     value={dashboardMetrics?.concluidasMes ?? metricas?.concluidos ?? "-"}
                     icon={CheckCircle}
                     loading={initialLoading}

@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Conexão Express TMS</title>
     <meta name="description" content="Portal Conexão Express Transportes">
     <link rel="manifest" href="/manifest.json" />
@@ -20,13 +23,48 @@
 
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
     <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js');
-        });
-      }
+      (function() {
+        const SW_UNREGISTERED_FLAG = 'express_sw_unregistered';
+
+        async function cleanupServiceWorker() {
+          if (!('serviceWorker' in navigator)) return false;
+
+          let cleaned = false;
+
+          try {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            if (registrations.length > 0) {
+              cleaned = true;
+              await Promise.all(registrations.map((registration) => registration.unregister()));
+            }
+          } catch (error) {
+            console.warn('[SW Cleanup] Failed to unregister service workers:', error);
+          }
+
+          if ('caches' in window) {
+            try {
+              const cacheKeys = await caches.keys();
+              if (cacheKeys.length > 0) {
+                cleaned = true;
+                await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)));
+              }
+            } catch (error) {
+              console.warn('[SW Cleanup] Failed to clear caches:', error);
+            }
+          }
+
+          if (cleaned && !localStorage.getItem(SW_UNREGISTERED_FLAG)) {
+            localStorage.setItem(SW_UNREGISTERED_FLAG, '1');
+            window.location.reload();
+          }
+
+          return cleaned;
+        }
+
+        cleanupServiceWorker();
+      })();
     </script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

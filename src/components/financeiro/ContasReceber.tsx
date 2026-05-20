@@ -434,7 +434,7 @@ export default function ContasReceber() {
 
   // ── Gerar nº fatura ──
   const gerarDocumento = () => {
-    const n = (lancamentos.length + 1).toString().padStart(4, "0");
+    const n = (lancamentos.length + 1).toString().padStart(6, "0");
     return `FAT-${n}`;
   };
 

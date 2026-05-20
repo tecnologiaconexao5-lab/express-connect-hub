@@ -148,7 +148,7 @@ const emptyOS = (): OrdemServico => {
   const agora = new Date();
   const dataHoje = agora.toISOString().split("T")[0];
   return {
-    numero: `OS-${agora.getFullYear()}${String(agora.getMonth()+1).padStart(2,'0')}-${Math.floor(Math.random()*9000)+1000}`,
+    numero: `OS-${agora.getFullYear()}${String(agora.getMonth()+1).padStart(2,'0')}-${String(Math.floor(Math.random()*900000)+100000).padStart(6,'0')}`,
     data: dataHoje, cliente: "", unidade: "", centroCusto: "", orcamentoOrigem: "", prestador: "", veiculoAlocado: "", veiculoPlaca: "",
     tipoOperacao: "Coleta e Entrega", modalidade: "esporadico", prioridade: "normal", status: "rascunho", responsavel: "", refCliente: "", pedidoInterno: "", slaOperacao: "", observacoesGerais: "",
     comprovanteObrigatorio: true, cteObrigatorio: false, xmlObrigatorio: false, operacaoDedicada: false,

@@ -417,7 +417,7 @@ v.valorFinal = v.valorBase + v.adicionais + v.pedagio + v.kmExcedente + v.ajudan
   const gerarOS = async () => {
     try {
       const rawPayload = {
-        numero: `OS-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}-${Math.floor(Math.random()*9000)+1000}`,
+        numero: `OS-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}-${String(Math.floor(Math.random()*900000)+100000).padStart(6,'0')}`,
         data_emissao: new Date().toISOString().split('T')[0],
         cliente: data.cliente,
         cliente_id: data.clienteId,

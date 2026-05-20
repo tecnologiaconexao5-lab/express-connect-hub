@@ -14,7 +14,7 @@ export interface GerarOSResult {
   erro?: string;
 }
 
-// ─── Gerador de número OS (formato: OS-AAAAMM-NNNN) ─────────────────────────
+// ─── Gerador de número OS (formato: OS-AAAAMM-NNNNNN) ─────────────────────────
 const gerarNumeroOS = async (): Promise<string> => {
   const agora = new Date();
   const ano = agora.getFullYear();
@@ -33,14 +33,14 @@ const gerarNumeroOS = async (): Promise<string> => {
       const ultimo = data[0].numero as string;
       const seq = parseInt(ultimo.replace(prefixo, ""), 10);
       if (!isNaN(seq)) {
-        return `${prefixo}${String(seq + 1).padStart(4, "0")}`;
+        return `${prefixo}${String(seq + 1).padStart(6, "0")}`;
       }
     }
   } catch {
     // silencia erros de sequência e usa random
   }
 
-  const rand = Math.floor(Math.random() * 9000) + 1000;
+  const rand = Math.floor(Math.random() * 900000) + 100000;
   return `${prefixo}${rand}`;
 };
 
