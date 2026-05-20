@@ -23,6 +23,7 @@ import {
 import { testarWebhook } from "@/services/n8nClient";
 import { supabase } from "@/lib/supabase";
 import { aiProviderManager, AIProviderConfig } from "@/services/ia/aiProviderManager";
+import PainelOperacionalMapa from "@/components/operacional/PainelOperacionalMapa";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 interface LogEntry { ts: string; msg: string; ok: boolean }
@@ -312,7 +313,11 @@ function AbaProvedoresIA({ allLogs, setAllLogs }: { allLogs: LogEntry[]; setAllL
   };
 
   useEffect(() => {
-    carregarProviders();
+    async function initProviders() {
+      await aiProviderManager.ensureDefaultProviders();
+      carregarProviders();
+    }
+    initProviders();
   }, []);
 
   const handleTestar = async (p: AIProviderConfig) => {

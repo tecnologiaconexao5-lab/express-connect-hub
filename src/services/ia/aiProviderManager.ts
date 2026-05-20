@@ -49,6 +49,39 @@ export const aiProviderManager = {
     return true;
   },
 
+  async ensureDefaultProviders(): Promise<void> {
+    const defaults: Omit<AIProviderConfig, 'id'>[] = [
+      { provider: 'groq', model: 'llama3-8b-8192', ativo: true, prioridade: 1, setor: 'Geral', temperatura: 0.7, max_tokens: 1024, is_default: true, metadata: {} },
+      { provider: 'gemini', model: 'gemini-1.5-pro', ativo: true, prioridade: 2, setor: 'Geral', temperatura: 0.7, max_tokens: 1024, is_default: false, metadata: {} },
+      { provider: 'openrouter', model: 'openrouter/auto', ativo: true, prioridade: 3, setor: 'Geral', temperatura: 0.7, max_tokens: 1024, is_default: false, metadata: {} },
+      { provider: 'openai', model: 'gpt-4o', ativo: true, prioridade: 4, setor: 'Geral', temperatura: 0.7, max_tokens: 1024, is_default: false, metadata: {} },
+    ];
+
+    const providerNames = defaults.map((item) => item.provider);
+    const { data: existing, error } = await supabase
+      .from('ia_providers_config')
+      .select('id, provider')
+      .in('provider', providerNames);
+
+    if (error) {
+      console.error('Erro ao inicializar providers padrão:', error);
+      return;
+    }
+
+    const existingProviders = (existing || []).map((item) => item.provider);
+
+    for (const prov of defaults) {
+      if (!existingProviders.includes(prov.provider)) {
+        const { error: insertError } = await supabase
+          .from('ia_providers_config')
+          .insert([prov]);
+        if (insertError) {
+          console.error(`Erro ao inserir provider padrão ${prov.provider}:`, insertError);
+        }
+      }
+    }
+  },
+
   async testarProvider(provider: AIProviderConfig): Promise<{ success: boolean; message: string }> {
     const keys = this.getKeys();
     const key = keys[provider.provider as keyof typeof keys];
