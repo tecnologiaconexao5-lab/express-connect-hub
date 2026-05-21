@@ -207,7 +207,7 @@ export const sidebarItems: SidebarItem[] = [
     ],
   },
   {
-    title: "Relatórios Enterprise",
+    title: "Relatórios Operacionais",
     icon: BarChart3,
     path: "/relatorios",
     modulo: "relatorios",
