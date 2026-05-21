@@ -100,12 +100,12 @@ const renderHeader = (
 // ===================== PDF CLIENTE =====================
 export const generatePDFCliente = async (data: any) => {
   const doc = new jsPDF("p", "mm", "a4");
-  const { base64: logo } = await getLogoWithFallback(true);
+  const logo = await getLogoWithFallback(true);
 
   const W = 210;
   const M = 15;
   const CW = W - 2 * M;
-  let y = await renderHeader(doc, data, "Cliente", logo);
+  let y = renderHeader(doc, data, "Cliente", logo);
 
   // Espaçamento inicial reduzido pois o header já tem as informações principais
   y -= 5;
