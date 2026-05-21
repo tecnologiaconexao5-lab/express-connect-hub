@@ -1,5 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { getLogoWithFallback, renderLogoTextFallback, addImageSafely } from "./pdfLogoSupport";
+import { obterNomenclatura } from "@/config/nomenclatura";
 
 const AZUL = [15, 26, 46];
 const LARANJA = [249, 115, 22];
@@ -13,139 +15,85 @@ const fmtDate = (d?: string) => {
   try { return d ? new Date(d).toLocaleDateString("pt-BR") : "—"; } catch { return "—"; }
 };
 
-// ===================== BUSCAR LOGO =====================
-const getLogoBase64 = async (isDark: boolean = false): Promise<string | null> => {
-  try {
-    // 1. Logo do sistema (configurado em localStorage)
-    const stored = localStorage.getItem('empresa_identidade_visual');
-    if (stored) {
-      const config = JSON.parse(stored);
-      const url = isDark ? config.logoDarkUrl : config.logoUrl;
-      // Retorna se existir e se estiver marcado para uso em relatórios
-      if (url && config.logoUsos?.relatoriosPdf !== false) {
-        return url;
-      }
-      // Fallback para o outro logo se o solicitado não existir
-      if (config.logoUrl && config.logoUsos?.relatoriosPdf !== false) return config.logoUrl;
-    }
-    
-    // 2. Fallback local /logo-oficial-conexao.png
-    const fallbackPath = '/logo-oficial-conexao.png';
-    const response = await fetch(fallbackPath);
-
-    if (response.ok) {
-      const blob = await response.blob();
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-    }
-  } catch (e) {
-    console.warn("Logo não encontrado ou erro ao carregar:", e);
-  }
-  return null;
-};
-
 
 
 // ===================== HEADER PADRÃO =====================
-const renderHeader = (doc: jsPDF, data: any, via: "Cliente" | "Prestador", logo: string | null = null) => {
+const renderHeader = async (
+  doc: jsPDF,
+  data: any,
+  via: "Cliente" | "Prestador",
+  logo: string | null = null
+) => {
   const W = 210;
-  const H = 45; // Altura do cabeçalho azul
-  
+  const H = 45;
+  const nomenclatura = obterNomenclatura();
+
   // Faixa azul topo
   doc.setFillColor(AZUL[0], AZUL[1], AZUL[2]);
   doc.rect(0, 0, W, H, "F");
-  
+
   // Faixa laranja (divisor)
   doc.setFillColor(LARANJA[0], LARANJA[1], LARANJA[2]);
   doc.rect(0, H, W, 2.5, "F");
 
   // --- LADO ESQUERDO: LOGO E DADOS EMPRESA ---
   if (logo) {
-    try {
-      // Logo proporcional e profissional (usar aspectRatio correto para não distorcer)
-      // Ajuste premium corporativo
-      doc.addImage(logo, "PNG", 15, 8, 48, 16);
-    } catch (e) {
-      renderLogoTexto(doc, 15, 18);
-    }
+    addImageSafely(doc, logo, 15, 8, 55, 18, () => {
+      renderLogoTextFallback(doc, 15, 22, "CONEXÃO EXPRESS");
+    });
   } else {
-    renderLogoTexto(doc, 15, 18);
+    renderLogoTextFallback(doc, 15, 22, "CONEXÃO EXPRESS");
   }
 
   // Dados da Empresa (abaixo do logo)
-  doc.setTextColor(230, 235, 245); // Branco/Cinza claro
+  doc.setTextColor(230, 235, 245);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.text("TRANSPORTES & LOGÍSTICA", 15, 30);
-  
+  doc.text("TRANSPORTES & LOGÍSTICA", 15, 32);
+
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
-  doc.text(`CNPJ: ${CNPJ_EMPRESA}`, 15, 35);
-  doc.text("São Paulo / SP", 15, 39);
-  doc.text("Contato: (11) 98765-4321", 15, 43);
-
+  doc.text(`CNPJ: ${CNPJ_EMPRESA}`, 15, 36);
+  doc.text("São Paulo / SP", 15, 40);
+  doc.text("Contato: (11) 98765-4321", 15, 44);
 
   // --- LADO DIREITO: BLOCO DE INFORMAÇÕES DA OS ---
   const rightX = W - 12;
   doc.setTextColor(BRANCO[0], BRANCO[1], BRANCO[2]);
-  
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
-  doc.text("ORDEM DE SERVIÇO", rightX, 12, { align: "right" });
-  
+  doc.text(nomenclatura.labelOS.toUpperCase(), rightX, 12, { align: "right" });
+
   doc.setFontSize(11);
   doc.setTextColor(LARANJA[0], LARANJA[1], LARANJA[2]);
-  doc.text(`OS-${data.numero || "0000"}`, rightX, 18, { align: "right" });
-  
+  doc.text(`${nomenclatura.siglaSO}-${data.numero || "0000"}`, rightX, 18, { align: "right" });
+
   doc.setTextColor(200, 210, 225);
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.text(`Emissão: ${fmtDate(data.data)}`, rightX, 26, { align: "right" });
   doc.text(`Status: ${(data.status || "Pendente").toUpperCase()}`, rightX, 31, { align: "right" });
-  
+
   doc.setFont("helvetica", "bold");
   doc.setTextColor(BRANCO[0], BRANCO[1], BRANCO[2]);
   doc.text(`Via: ${via}`, rightX, 38, { align: "right" });
 
-  return H + 12; // y inicial após header
-};
-
-const renderLogoTexto = (doc: jsPDF, x: number, y: number) => {
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  doc.setTextColor(BRANCO[0], BRANCO[1], BRANCO[2]);
-  doc.text("CONEXÃO EXPRESS", x, y);
-};
-
-
-
-// ===================== BOX PADRÃO =====================
-const renderBox = (doc: jsPDF, x: number, y: number, w: number, h: number) => {
-  doc.setFillColor(CINZA_CLARO[0], CINZA_CLARO[1], CINZA_CLARO[2]);
-  doc.roundedRect(x, y, w, h, 2, 2, "F");
-  doc.setDrawColor(220, 225, 230);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(x, y, w, h, 2, 2, "S");
+  return H + 12;
 };
 
 // ===================== PDF CLIENTE =====================
 export const generatePDFCliente = async (data: any) => {
   const doc = new jsPDF("p", "mm", "a4");
-  const logo = await getLogoBase64(true); // Usa versão white para o header azul
+  const { base64: logo } = await getLogoWithFallback(true);
 
-  
   const W = 210;
   const M = 15;
   const CW = W - 2 * M;
-  let y = renderHeader(doc, data, "Cliente", logo);
-
+  let y = await renderHeader(doc, data, "Cliente", logo);
 
   // Espaçamento inicial reduzido pois o header já tem as informações principais
   y -= 5;
-
 
   // Dados do Cliente
   renderBox(doc, M, y, CW, 30);
