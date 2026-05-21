@@ -14,7 +14,7 @@ import {
   TrendingUp, BarChart3, Users, AlertCircle, CheckCircle2, Clock
 } from "lucide-react";
 import { toast } from "sonner";
-import { gerarPDFRepassePrestador } from "@/utils/pdfEnterpriseExport";
+import { gerarPDFRepassePrestador } from "@/utils/pdfRelatorioOperacional";
 import { exportPagamentoToExcel } from "@/utils/excelExport";
 import {
   buscarDadosPagamentoPrestador,

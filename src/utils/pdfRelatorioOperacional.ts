@@ -1,34 +1,18 @@
+// ============================================================
+// PDFs do módulo de Relatório Operacional de Faturamento
+// - Usa helper global drawLogoSafe (preserva aspect ratio)
+// - Sem qualquer referência a "Enterprise"
+// - Documentos cliente-facing NÃO exibem margem, custo interno,
+//   repasse a prestador ou resultado financeiro interno.
+// ============================================================
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { empresaConfig } from "./empresaConfig";
-
-const carregarLogo = async (isDark: boolean = false): Promise<string | null> => {
-  try {
-    const stored = typeof window !== 'undefined' ? localStorage.getItem('empresa_identidade_visual') : null;
-    if (stored) {
-      const config = JSON.parse(stored);
-      const url = isDark ? config.logoDarkUrl : config.logoUrl;
-      if (url && config.logoUsos?.relatoriosPdf !== false) {
-        return url;
-      }
-      if (config.logoUrl && config.logoUsos?.relatoriosPdf !== false) return config.logoUrl;
-    }
-    
-    // Fallback local
-    const response = await fetch("/logo-oficial-conexao.png");
-    if (response.ok) {
-      const blob = await response.blob();
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-    }
-  } catch (e) {
-    console.warn("Erro ao carregar logo para o PDF:", e);
-  }
-  return null;
-};
+import {
+  getLogoWithFallback,
+  drawLogoSafe,
+  renderLogoTextFallback,
+} from "@/lib/pdfLogoSupport";
 
 interface PDFReportOptions {
   titulo: string;
@@ -40,51 +24,50 @@ interface PDFReportOptions {
   totais?: { label: string; valor: string }[];
   rodape?: string;
   orientacao?: "portrait" | "landscape";
-  logoUrl?: string;
 }
 
-export const gerarPDFEnterprise = async (
+const primaryRGB = [249, 115, 22]; // Orange Conexão Express
+const darkRGB = [15, 26, 46]; // Navy Dark
+const grayRGB = [100, 116, 139];
+const lightBgRGB = [248, 250, 252];
+
+/**
+ * Gera o PDF profissional do Relatório Operacional de Faturamento
+ * (visão agregada por cliente / consolidado).
+ */
+export const gerarPDFRelatorioOperacional = async (
   options: PDFReportOptions
 ): Promise<void> => {
-  const logo = options.logoUrl || (await carregarLogo(true));
+  const logo = await getLogoWithFallback(true);
   const doc = new jsPDF(options.orientacao || "landscape", "mm", "a4");
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
   const usableWidth = pageWidth - margin * 2;
-
-  const primaryRGB = [249, 115, 22]; // Orange Conexão Express
-  const darkRGB = [15, 26, 46]; // Navy Blue Dark
-  const grayRGB = [100, 116, 139];
-  const lightBgRGB = [248, 250, 252];
   const dataHora = new Date().toLocaleString("pt-BR");
 
   const drawHeader = () => {
     doc.setFillColor(darkRGB[0], darkRGB[1], darkRGB[2]);
     doc.rect(0, 0, pageWidth, 38, "F");
 
-    if (logo) {
-      try {
-        doc.addImage(logo, "PNG", margin, 6, 40, 13);
-      } catch {
-        doc.setFontSize(14);
-        doc.setTextColor(255, 255, 255);
-        doc.setFont("helvetica", "bold");
-        doc.text(empresaConfig.nome, margin, 15);
-      }
-    } else {
-      doc.setFontSize(14);
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.text("CONEXÃO EXPRESS", margin, 15);
-    }
+    drawLogoSafe(doc, logo, {
+      x: margin,
+      y: 5,
+      maxWidth: 50,
+      maxHeight: 28,
+      align: "left",
+      valign: "middle",
+      onFallback: () => renderLogoTextFallback(doc, margin, 18, "CONEXÃO EXPRESS", true),
+    });
 
     doc.setFontSize(7);
     doc.setTextColor(200, 200, 200);
     doc.setFont("helvetica", "normal");
-    doc.text(empresaConfig.cnpj, margin, 22);
-    doc.text(empresaConfig.telefone, margin, 27);
-    doc.text(empresaConfig.email, margin, 32);
+    doc.text(
+      `${empresaConfig.cnpj}  •  ${empresaConfig.telefone}  •  ${empresaConfig.email}`,
+      margin,
+      35
+    );
 
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
@@ -94,23 +77,15 @@ export const gerarPDFEnterprise = async (
     if (options.subtitulo) {
       doc.setFontSize(8);
       doc.setFont("helvetica", "normal");
-      doc.text(options.subtitulo, pageWidth - margin, 21, {
-        align: "right",
-      });
+      doc.text(options.subtitulo, pageWidth - margin, 21, { align: "right" });
     }
 
     doc.setFontSize(7);
-    doc.text(`Gerado em: ${dataHora}`, pageWidth - margin, 28, {
-      align: "right",
-    });
+    doc.text(`Gerado em: ${dataHora}`, pageWidth - margin, 28, { align: "right" });
     if (options.periodo) {
-      doc.text(`Período: ${options.periodo}`, pageWidth - margin, 32, {
-        align: "right",
-      });
+      doc.text(`Período: ${options.periodo}`, pageWidth - margin, 32, { align: "right" });
     } else if (options.usuario) {
-      doc.text(`Responsável: ${options.usuario}`, pageWidth - margin, 32, {
-        align: "right",
-      });
+      doc.text(`Responsável: ${options.usuario}`, pageWidth - margin, 32, { align: "right" });
     }
 
     doc.setDrawColor(primaryRGB[0], primaryRGB[1], primaryRGB[2]);
@@ -135,14 +110,8 @@ export const gerarPDFEnterprise = async (
       halign: "center",
       valign: "middle",
     },
-    bodyStyles: {
-      fontSize: 7,
-      textColor: [51, 65, 85],
-      valign: "middle",
-    },
-    alternateRowStyles: {
-      fillColor: [lightBgRGB[0], lightBgRGB[1], lightBgRGB[2]],
-    },
+    bodyStyles: { fontSize: 7, textColor: [51, 65, 85], valign: "middle" },
+    alternateRowStyles: { fillColor: [lightBgRGB[0], lightBgRGB[1], lightBgRGB[2]] },
     margin: { top: startY, right: margin, bottom: 35, left: margin },
     didDrawPage: (data: any) => {
       const pageNum = doc.internal.getNumberOfPages();
@@ -153,27 +122,11 @@ export const gerarPDFEnterprise = async (
       doc.setLineWidth(0.3);
       doc.line(margin, pageHeight - 20, pageWidth - margin, pageHeight - 20);
 
-      doc.text(
-        `Página ${pageNum}`,
-        pageWidth / 2,
-        pageHeight - 14,
-        { align: "center" }
-      );
-      doc.text(
-        `Emitido por ${options.usuario || "Sistema"} - ${dataHora}`,
-        margin,
-        pageHeight - 14
-      );
-      doc.text(
-        empresaConfig.nome,
-        pageWidth - margin,
-        pageHeight - 14,
-        { align: "right" }
-      );
+      doc.text(`Página ${pageNum}`, pageWidth / 2, pageHeight - 14, { align: "center" });
+      doc.text(`Emitido por ${options.usuario || "Sistema"} - ${dataHora}`, margin, pageHeight - 14);
+      doc.text(empresaConfig.nome, pageWidth - margin, pageHeight - 14, { align: "right" });
 
-      if (data.pageNumber > 1) {
-        drawHeader();
-      }
+      if (data.pageNumber > 1) drawHeader();
     },
   });
 
@@ -193,7 +146,7 @@ export const gerarPDFEnterprise = async (
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(darkRGB[0], darkRGB[1], darkRGB[2]);
-    doc.text("RESUMO FINANCEIRO", margin + 4, totalsY + 6);
+    doc.text("RESUMO OPERACIONAL", margin + 4, totalsY + 6);
 
     doc.setFontSize(8);
     let y = totalsY + 12;
@@ -201,7 +154,7 @@ export const gerarPDFEnterprise = async (
       doc.setFont("helvetica", "normal");
       doc.setTextColor(71, 85, 105);
       doc.text(t.label, margin + 8, y);
-      
+
       doc.setFont("helvetica", "bold");
       doc.setTextColor(darkRGB[0], darkRGB[1], darkRGB[2]);
       doc.text(t.valor, pageWidth - margin - 8, y, { align: "right" });
@@ -213,9 +166,7 @@ export const gerarPDFEnterprise = async (
     doc.setFontSize(7);
     doc.setTextColor(grayRGB[0], grayRGB[1], grayRGB[2]);
     doc.setFont("helvetica", "italic");
-    doc.text(options.rodape, pageWidth / 2, pageHeight - 8, {
-      align: "center",
-    });
+    doc.text(options.rodape, pageWidth / 2, pageHeight - 8, { align: "center" });
   }
 
   const filename = options.titulo
@@ -226,77 +177,55 @@ export const gerarPDFEnterprise = async (
   doc.save(`${filename}.pdf`);
 };
 
+/**
+ * PDF de repasses operacionais a prestador (uso interno / prestador).
+ * Mantém valores de repasse pois o destinatário é o prestador.
+ */
 export const gerarPDFRepassePrestador = async (
   data: any[],
   filtros: any,
   resumo: { totalRepasses: number; qtdOperacoes: number; mediaOperacional: number; pendencias: number; valorAprovado: number },
   usuario?: string
 ) => {
-  const logo = await carregarLogo(true);
+  const logo = await getLogoWithFallback(true);
 
   const doc = new jsPDF("landscape", "mm", "a4");
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
-  const usableWidth = pageWidth - margin * 2;
-
-  const primaryRGB = [249, 115, 22];
-  const darkRGB = [15, 26, 46];
-  const lightBgRGB = [248, 250, 252];
-  const grayRGB = [100, 116, 139];
 
   const drawHeader = () => {
     doc.setFillColor(darkRGB[0], darkRGB[1], darkRGB[2]);
     doc.rect(0, 0, pageWidth, 38, "F");
 
-    if (logo) {
-      try {
-        doc.addImage(logo, "PNG", margin, 6, 40, 13);
-      } catch {
-        doc.setFontSize(14);
-        doc.setTextColor(255, 255, 255);
-        doc.setFont("helvetica", "bold");
-        doc.text("CONEXÃO EXPRESS", margin, 15);
-      }
-    } else {
-      doc.setFontSize(14);
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.text("CONEXÃO EXPRESS", margin, 15);
-    }
+    drawLogoSafe(doc, logo, {
+      x: margin,
+      y: 5,
+      maxWidth: 50,
+      maxHeight: 28,
+      align: "left",
+      valign: "middle",
+      onFallback: () => renderLogoTextFallback(doc, margin, 18, "CONEXÃO EXPRESS", true),
+    });
 
     doc.setFontSize(7);
     doc.setTextColor(200, 200, 200);
     doc.setFont("helvetica", "normal");
-    doc.text(empresaConfig.cnpj, margin, 22);
-    doc.text(empresaConfig.telefone, margin, 27);
-    doc.text(empresaConfig.email, margin, 32);
+    doc.text(
+      `${empresaConfig.cnpj}  •  ${empresaConfig.telefone}  •  ${empresaConfig.email}`,
+      margin,
+      35
+    );
 
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(255, 255, 255);
-    doc.text("RELATÓRIO DE REPASSES OPERACIONAIS", pageWidth - margin, 15, {
-      align: "right",
-    });
+    doc.text("RELATÓRIO DE REPASSES OPERACIONAIS", pageWidth - margin, 15, { align: "right" });
     doc.setFontSize(7.5);
     doc.setFont("helvetica", "normal");
-    doc.text(
-      "Prestação de Serviços Autônomos de Transporte",
-      pageWidth - margin,
-      21,
-      { align: "right" }
-    );
-    doc.text(
-      `Gerado em: ${new Date().toLocaleString("pt-BR")}`,
-      pageWidth - margin,
-      28,
-      { align: "right" }
-    );
-    if (usuario) {
-      doc.text(`Responsável: ${usuario}`, pageWidth - margin, 32, {
-        align: "right",
-      });
-    }
+    doc.text("Prestação de Serviços Autônomos de Transporte", pageWidth - margin, 21, { align: "right" });
+    doc.text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, pageWidth - margin, 28, { align: "right" });
+    if (usuario) doc.text(`Responsável: ${usuario}`, pageWidth - margin, 32, { align: "right" });
 
     doc.setDrawColor(primaryRGB[0], primaryRGB[1], primaryRGB[2]);
     doc.setLineWidth(0.5);
@@ -315,10 +244,7 @@ export const gerarPDFRepassePrestador = async (
   );
 
   const fmtBRL = (v: number) =>
-    (v || 0).toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    });
+    (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const fmtData = (d: string) =>
     d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
 
@@ -364,21 +290,7 @@ export const gerarPDFRepassePrestador = async (
 
   autoTable(doc, {
     startY: tableStartY,
-    head: [
-      [
-        "Data",
-        "Cliente",
-        "OS",
-        "Veículo",
-        "Origem",
-        "Destino",
-        "Operação",
-        "Adicional",
-        "Desconto",
-        "Repasse Final",
-        "Status",
-      ],
-    ],
+    head: [["Data", "Cliente", "OS", "Veículo", "Origem", "Destino", "Operação", "Adicional", "Desconto", "Repasse Final", "Status"]],
     body: linhas,
     theme: "striped",
     headStyles: {
@@ -389,14 +301,8 @@ export const gerarPDFRepassePrestador = async (
       halign: "center",
       valign: "middle",
     },
-    bodyStyles: {
-      fontSize: 6.5,
-      textColor: [51, 65, 85],
-      valign: "middle",
-    },
-    alternateRowStyles: {
-      fillColor: [lightBgRGB[0], lightBgRGB[1], lightBgRGB[2]],
-    },
+    bodyStyles: { fontSize: 6.5, textColor: [51, 65, 85], valign: "middle" },
+    alternateRowStyles: { fillColor: [lightBgRGB[0], lightBgRGB[1], lightBgRGB[2]] },
     margin: { top: tableStartY, right: margin, bottom: 45, left: margin },
     didDrawPage: (data: any) => {
       const pageNum = doc.internal.getNumberOfPages();
@@ -407,24 +313,11 @@ export const gerarPDFRepassePrestador = async (
       doc.setLineWidth(0.3);
       doc.line(margin, pageHeight - 25, pageWidth - margin, pageHeight - 25);
 
-      doc.text(`Página ${pageNum}`, pageWidth / 2, pageHeight - 18, {
-        align: "center",
-      });
-      doc.text(
-        `Emitido por Conexão Express - ${new Date().toLocaleString("pt-BR")}`,
-        margin,
-        pageHeight - 18
-      );
-      doc.text(
-        empresaConfig.nome,
-        pageWidth - margin,
-        pageHeight - 18,
-        { align: "right" }
-      );
+      doc.text(`Página ${pageNum}`, pageWidth / 2, pageHeight - 18, { align: "center" });
+      doc.text(`Emitido por Conexão Express - ${new Date().toLocaleString("pt-BR")}`, margin, pageHeight - 18);
+      doc.text(empresaConfig.nome, pageWidth - margin, pageHeight - 18, { align: "right" });
 
-      if (data.pageNumber > 1) {
-        drawHeader();
-      }
+      if (data.pageNumber > 1) drawHeader();
     },
   });
 
@@ -444,36 +337,16 @@ export const gerarPDFRepassePrestador = async (
   doc.setFontSize(8.5);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(darkRGB[0], darkRGB[1], darkRGB[2]);
-  doc.text("RESUMO FINANCEIRO DE REPASSES", margin + 4, resumoY + 6);
+  doc.text("RESUMO OPERACIONAL DE REPASSES", margin + 4, resumoY + 6);
 
   doc.setFontSize(7.5);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(71, 85, 105);
-  doc.text(
-    `Total de Repasses: ${fmtBRL(resumo.totalRepasses)}`,
-    margin + 6,
-    resumoY + 13
-  );
-  doc.text(
-    `Quantidade de Operações: ${resumo.qtdOperacoes}`,
-    margin + 6,
-    resumoY + 20
-  );
-  doc.text(
-    `Média por Operação: ${fmtBRL(resumo.mediaOperacional)}`,
-    pageWidth / 3 + 4,
-    resumoY + 13
-  );
-  doc.text(
-    `Valor Aprovado: ${fmtBRL(resumo.valorAprovado)}`,
-    pageWidth / 3 + 4,
-    resumoY + 20
-  );
-  doc.text(
-    `Total Pendente: ${fmtBRL(resumo.pendencias)}`,
-    (pageWidth / 3) * 2 + 4,
-    resumoY + 13
-  );
+  doc.text(`Total de Repasses: ${fmtBRL(resumo.totalRepasses)}`, margin + 6, resumoY + 13);
+  doc.text(`Quantidade de Operações: ${resumo.qtdOperacoes}`, margin + 6, resumoY + 20);
+  doc.text(`Média por Operação: ${fmtBRL(resumo.mediaOperacional)}`, pageWidth / 3 + 4, resumoY + 13);
+  doc.text(`Valor Aprovado: ${fmtBRL(resumo.valorAprovado)}`, pageWidth / 3 + 4, resumoY + 20);
+  doc.text(`Total Pendente: ${fmtBRL(resumo.pendencias)}`, (pageWidth / 3) * 2 + 4, resumoY + 13);
 
   doc.setFontSize(7);
   doc.setFont("helvetica", "italic");
@@ -488,33 +361,29 @@ export const gerarPDFRepassePrestador = async (
   doc.save("relatorio_repasses_prestadores.pdf");
 };
 
+/**
+ * PDF de Fechamento de Faturamento Detalhado (enviado ao cliente).
+ * NÃO inclui margem, custo interno, repasse ou resultado interno.
+ */
 export const gerarPDFFaturamentoDetalhado = async (
   cliente: { nome: string; cnpj: string },
   periodo: string,
   operacoes: any[],
   usuario: string = "Administrador"
 ) => {
-  const logo = await carregarLogo(true);
+  const logo = await getLogoWithFallback(true);
   const doc = new jsPDF("landscape", "mm", "a4");
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
   const usableWidth = pageWidth - margin * 2;
 
-  const primaryRGB = [249, 115, 22]; // Orange
-  const darkRGB = [15, 26, 46]; // Navy Dark
-  const grayRGB = [100, 116, 139];
-  const lightBgRGB = [248, 250, 252];
-
   const fmtBRL = (v: number) =>
-    (v || 0).toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    });
+    (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const fmtData = (d: string) =>
     d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
 
-  // Calculations
+  // Cálculos cliente-facing (sem custo/margem/repasse)
   const subtotalFrete = operacoes.reduce((s, o) => s + (Number(o.valor_cliente) || 0), 0);
   const totalPedagio = operacoes.reduce((s, o) => s + (Number(o.pedagio) || 0), 0);
   const totalAjudante = operacoes.reduce((s, o) => s + (Number(o.ajudante) || 0), 0);
@@ -524,58 +393,42 @@ export const gerarPDFFaturamentoDetalhado = async (
   const totalLiquido = subtotalFrete + totalAdicionais - totalDescontos;
 
   const drawHeader = () => {
-    // Top banner
     doc.setFillColor(darkRGB[0], darkRGB[1], darkRGB[2]);
     doc.rect(0, 0, pageWidth, 38, "F");
 
-    // Logo
-    if (logo) {
-      try {
-        doc.addImage(logo, "PNG", margin, 6, 40, 13);
-      } catch {
-        doc.setFontSize(14);
-        doc.setTextColor(255, 255, 255);
-        doc.setFont("helvetica", "bold");
-        doc.text(empresaConfig.nome, margin, 15);
-      }
-    } else {
-      doc.setFontSize(14);
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.text("CONEXÃO EXPRESS", margin, 15);
-    }
+    drawLogoSafe(doc, logo, {
+      x: margin,
+      y: 5,
+      maxWidth: 50,
+      maxHeight: 28,
+      align: "left",
+      valign: "middle",
+      onFallback: () => renderLogoTextFallback(doc, margin, 18, "CONEXÃO EXPRESS", true),
+    });
 
     doc.setFontSize(7);
     doc.setTextColor(200, 200, 200);
     doc.setFont("helvetica", "normal");
-    doc.text(empresaConfig.cnpj, margin, 22);
-    doc.text(empresaConfig.telefone, margin, 27);
-    doc.text(empresaConfig.email, margin, 32);
+    doc.text(
+      `${empresaConfig.cnpj}  •  ${empresaConfig.telefone}  •  ${empresaConfig.email}`,
+      margin,
+      35
+    );
 
-    // Title
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(255, 255, 255);
-    doc.text("FECHAMENTO DE FATURAMENTO DETALHADO", pageWidth - margin, 15, {
-      align: "right",
-    });
+    doc.text("FECHAMENTO DE FATURAMENTO DETALHADO", pageWidth - margin, 15, { align: "right" });
 
     doc.setFontSize(8);
     doc.setFont("helvetica", "normal");
-    doc.text("Demais taxas e adicionais discriminados por operação", pageWidth - margin, 21, {
-      align: "right",
-    });
+    doc.text("Demais taxas e adicionais discriminados por operação", pageWidth - margin, 21, { align: "right" });
 
     const dataHora = new Date().toLocaleString("pt-BR");
     doc.setFontSize(7);
-    doc.text(`Gerado em: ${dataHora} | Emissor: ${usuario}`, pageWidth - margin, 29, {
-      align: "right",
-    });
-    doc.text(`Período do Fechamento: ${periodo}`, pageWidth - margin, 34, {
-      align: "right",
-    });
+    doc.text(`Gerado em: ${dataHora} | Emissor: ${usuario}`, pageWidth - margin, 29, { align: "right" });
+    doc.text(`Período do Fechamento: ${periodo}`, pageWidth - margin, 34, { align: "right" });
 
-    // Orange divider line
     doc.setDrawColor(primaryRGB[0], primaryRGB[1], primaryRGB[2]);
     doc.setLineWidth(0.5);
     doc.line(margin, 38, pageWidth - margin, 38);
@@ -583,7 +436,7 @@ export const gerarPDFFaturamentoDetalhado = async (
 
   drawHeader();
 
-  // Client info card
+  // Bloco cliente
   let yPos = 44;
   doc.setFillColor(lightBgRGB[0], lightBgRGB[1], lightBgRGB[2]);
   doc.setDrawColor(226, 232, 240);
@@ -603,7 +456,7 @@ export const gerarPDFFaturamentoDetalhado = async (
   doc.text(`Qtd. de Operações Fechadas: ${operacoes.length}`, margin + 120, yPos + 11);
   doc.text(`Status Faturamento: Aprovado p/ Faturamento`, margin + 120, yPos + 15);
 
-  // Financial summary cards (Subtotal, Adicionais, Descontos, Total Líquido)
+  // Cards (sem margem / custo / repasse)
   yPos += 22;
   const cardWidth = usableWidth / 4 - 3;
   const cardNames = [
@@ -630,7 +483,6 @@ export const gerarPDFFaturamentoDetalhado = async (
     doc.text(c.valor, cx + 4, yPos + 13);
   });
 
-  // Table
   yPos += 24;
 
   const linhas = operacoes.map((item) => {
@@ -669,20 +521,7 @@ export const gerarPDFFaturamentoDetalhado = async (
 
   autoTable(doc, {
     startY: yPos,
-    head: [
-      [
-        "Data",
-        "OS",
-        "Veículo",
-        "Rota",
-        "Frete Base",
-        "Pedágio",
-        "Ajudante",
-        "Outros Adic.",
-        "Descontos",
-        "Valor Líquido",
-      ],
-    ],
+    head: [["Data", "OS", "Veículo", "Rota", "Frete Base", "Pedágio", "Ajudante", "Outros Adic.", "Descontos", "Valor Líquido"]],
     body: linhas,
     theme: "striped",
     headStyles: {
@@ -693,26 +532,20 @@ export const gerarPDFFaturamentoDetalhado = async (
       halign: "center",
       valign: "middle",
     },
-    bodyStyles: {
-      fontSize: 6.5,
-      textColor: [51, 65, 85],
-      valign: "middle",
-    },
+    bodyStyles: { fontSize: 6.5, textColor: [51, 65, 85], valign: "middle" },
     columnStyles: {
-      0: { halign: "center", width: 16 },
-      1: { halign: "center", width: 16 },
-      2: { halign: "center", width: 18 },
-      3: { halign: "left", width: 55 },
-      4: { halign: "right", width: 22 },
-      5: { halign: "right", width: 20 },
-      6: { halign: "right", width: 20 },
-      7: { halign: "right", width: 20 },
-      8: { halign: "right", width: 20 },
-      9: { halign: "right", width: 22 },
+      0: { halign: "center", cellWidth: 16 },
+      1: { halign: "center", cellWidth: 16 },
+      2: { halign: "center", cellWidth: 18 },
+      3: { halign: "left", cellWidth: 55 },
+      4: { halign: "right", cellWidth: 22 },
+      5: { halign: "right", cellWidth: 20 },
+      6: { halign: "right", cellWidth: 20 },
+      7: { halign: "right", cellWidth: 20 },
+      8: { halign: "right", cellWidth: 20 },
+      9: { halign: "right", cellWidth: 22 },
     },
-    alternateRowStyles: {
-      fillColor: [248, 250, 252],
-    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
     margin: { top: yPos, right: margin, bottom: 40, left: margin },
     didDrawPage: (data: any) => {
       const pageNum = doc.internal.getNumberOfPages();
@@ -723,24 +556,11 @@ export const gerarPDFFaturamentoDetalhado = async (
       doc.setLineWidth(0.3);
       doc.line(margin, pageHeight - 20, pageWidth - margin, pageHeight - 20);
 
-      doc.text(`Página ${pageNum}`, pageWidth / 2, pageHeight - 14, {
-        align: "center",
-      });
-      doc.text(
-        `Emitido por Conexão Express - ${new Date().toLocaleString("pt-BR")}`,
-        margin,
-        pageHeight - 14
-      );
-      doc.text(
-        empresaConfig.nome,
-        pageWidth - margin,
-        pageHeight - 14,
-        { align: "right" }
-      );
+      doc.text(`Página ${pageNum}`, pageWidth / 2, pageHeight - 14, { align: "center" });
+      doc.text(`Emitido por Conexão Express - ${new Date().toLocaleString("pt-BR")}`, margin, pageHeight - 14);
+      doc.text(empresaConfig.nome, pageWidth - margin, pageHeight - 14, { align: "right" });
 
-      if (data.pageNumber > 1) {
-        drawHeader();
-      }
+      if (data.pageNumber > 1) drawHeader();
     },
   });
 
@@ -753,7 +573,6 @@ export const gerarPDFFaturamentoDetalhado = async (
     signY = 46;
   }
 
-  // Notes Box
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(226, 232, 240);
   doc.roundedRect(margin, signY, usableWidth, 12, 1, 1, "FD");
@@ -767,7 +586,6 @@ export const gerarPDFFaturamentoDetalhado = async (
     { maxWidth: usableWidth - 8 }
   );
 
-  // Signatures
   signY += 18;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
