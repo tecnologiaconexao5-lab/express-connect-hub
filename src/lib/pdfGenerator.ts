@@ -260,7 +260,7 @@ export const generatePDFCliente = async (data: any) => {
 // ===================== PDF PRESTADOR =====================
 export const generatePDFPrestador = async (data: any) => {
   const doc = new jsPDF("p", "mm", "a4");
-  const logo = await getLogoBase64(true); // Usa versão white para o header azul
+  const logo = await getLogoWithFallback(true); // versão light para header azul
 
 
   const W = 210;
