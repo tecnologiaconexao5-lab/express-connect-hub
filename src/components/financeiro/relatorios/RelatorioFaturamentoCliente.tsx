@@ -13,7 +13,7 @@ import {
   CreditCard, BarChart3, Users, Calendar
 } from "lucide-react";
 import { toast } from "sonner";
-import { gerarPDFEnterprise, gerarPDFFaturamentoDetalhado } from "@/utils/pdfEnterpriseExport";
+import { gerarPDFRelatorioOperacional, gerarPDFFaturamentoDetalhado } from "@/utils/pdfRelatorioOperacional";
 import { exportFaturamentoToExcel } from "@/utils/excelExport";
 import {
   buscarDadosFaturamento,
@@ -208,9 +208,9 @@ export default function RelatorioFaturamentoCliente() {
       fmtBRL(d.ticket_medio || 0),
       fmtData(d.ultima_operacao),
     ]);
-    await gerarPDFEnterprise({
-      titulo: "Relatório de Faturamento por Cliente",
-      subtitulo: "Análise gerencial de faturamento e operações",
+    await gerarPDFRelatorioOperacional({
+      titulo: "Relatório Operacional de Faturamento",
+      subtitulo: "Faturamento por cliente — visão operacional consolidada",
       periodo: `${fmtData(filtros.dataInicial!)} a ${fmtData(filtros.dataFinal!)}`,
       colunas: ["Cliente", "CNPJ", "Qtd OS", "Valor Faturado", "Valor Pago", "Pendência", "Ticket Médio", "Última Operação"],
       linhas,
@@ -221,7 +221,6 @@ export default function RelatorioFaturamentoCliente() {
         { label: "Total Pendente:", valor: fmtBRL(totais.pendente) },
         { label: "Total de Operações:", valor: String(totais.qtd) },
         { label: "Ticket Médio:", valor: fmtBRL(totais.ticket) },
-        { label: "Margem Total:", valor: fmtBRL(totais.margem) },
       ],
       usuario: "Administrador",
       orientacao: "landscape",
@@ -257,9 +256,9 @@ export default function RelatorioFaturamentoCliente() {
             <BarChart3 className="w-6 h-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Faturamento por Cliente</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Relatório Operacional de Faturamento</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Análise gerencial de faturamento, operações e performance financeira
+              Faturamento por cliente — visão operacional consolidada do período
             </p>
           </div>
         </div>
