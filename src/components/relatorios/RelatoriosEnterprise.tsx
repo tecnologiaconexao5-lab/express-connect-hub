@@ -1093,21 +1093,21 @@ export default function RelatoriosEnterprise() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header enterprise */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shadow-sm">
             <BarChart3 className="w-6 h-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Relatórios Enterprise</h1>
+            <h1 className="text-2xl font-bold text-foreground">Relatórios Operacionais</h1>
             <p className="text-sm text-muted-foreground mt-0.5">Análises gerenciais, extrato operacional e exportação PDF corporativo</p>
           </div>
         </div>
       </div>
 
       <Tabs value={view} onValueChange={setView} className="w-full">
-        {/* Tabs underline enterprise */}
+        {/* Tabs underline */}
         <div className="border-b border-border mb-6">
           <TabsList className="h-auto bg-transparent p-0 gap-0">
             <TabsTrigger value="extrato" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary pb-3 px-5 gap-2">
