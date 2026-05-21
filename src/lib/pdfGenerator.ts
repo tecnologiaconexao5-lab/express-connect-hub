@@ -1,7 +1,11 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { getLogoWithFallback, renderLogoTextFallback, addImageSafely } from "./pdfLogoSupport";
-import { obterNomenclatura } from "@/config/nomenclatura";
+import {
+  getLogoWithFallback,
+  renderLogoTextFallback,
+  drawLogoSafe,
+} from "./pdfLogoSupport";
+import { resolverNomenclaturaPorTipo } from "@/config/nomenclatura";
 
 const AZUL = [15, 26, 46];
 const LARANJA = [249, 115, 22];
@@ -18,15 +22,24 @@ const fmtDate = (d?: string) => {
 
 
 // ===================== HEADER PADRÃO =====================
-const renderHeader = async (
+// Helper local: caixa com borda fina e fundo branco para os blocos de conteúdo.
+const renderBox = (doc: jsPDF, x: number, y: number, w: number, h: number) => {
+  doc.setFillColor(BRANCO[0], BRANCO[1], BRANCO[2]);
+  doc.setDrawColor(220, 225, 230);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(x, y, w, h, 1.5, 1.5, "FD");
+};
+
+const renderHeader = (
   doc: jsPDF,
   data: any,
   via: "Cliente" | "Prestador",
-  logo: string | null = null
+  logo: Awaited<ReturnType<typeof getLogoWithFallback>>
 ) => {
   const W = 210;
   const H = 45;
-  const nomenclatura = obterNomenclatura();
+  // Nomenclatura variável conforme o tipo operacional (OS vs Ordem de Carregamento)
+  const nomenclatura = resolverNomenclaturaPorTipo(data?.tipoOperacao);
 
   // Faixa azul topo
   doc.setFillColor(AZUL[0], AZUL[1], AZUL[2]);
@@ -36,26 +49,28 @@ const renderHeader = async (
   doc.setFillColor(LARANJA[0], LARANJA[1], LARANJA[2]);
   doc.rect(0, H, W, 2.5, "F");
 
-  // --- LADO ESQUERDO: LOGO E DADOS EMPRESA ---
-  if (logo) {
-    addImageSafely(doc, logo, 15, 8, 55, 18, () => {
-      renderLogoTextFallback(doc, 15, 22, "CONEXÃO EXPRESS");
-    });
-  } else {
-    renderLogoTextFallback(doc, 15, 22, "CONEXÃO EXPRESS");
-  }
+  // --- LADO ESQUERDO: LOGO (drawLogoSafe preserva aspect ratio) ---
+  // Caixa de logo ampliada ~12% (de 55x18 para 62x28) com centralização vertical.
+  drawLogoSafe(doc, logo, {
+    x: 12,
+    y: 5,
+    maxWidth: 62,
+    maxHeight: 28,
+    align: "left",
+    valign: "middle",
+    onFallback: () => renderLogoTextFallback(doc, 15, 22, "CONEXÃO EXPRESS", true),
+  });
 
   // Dados da Empresa (abaixo do logo)
   doc.setTextColor(230, 235, 245);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.text("TRANSPORTES & LOGÍSTICA", 15, 32);
+  doc.text("TRANSPORTES & LOGÍSTICA", 15, 35);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.text(`CNPJ: ${CNPJ_EMPRESA}`, 15, 36);
-  doc.text("São Paulo / SP", 15, 40);
-  doc.text("Contato: (11) 98765-4321", 15, 44);
+  doc.setFontSize(7);
+  doc.text(`CNPJ: ${CNPJ_EMPRESA}`, 15, 39);
+  doc.text("São Paulo / SP  •  (11) 98765-4321", 15, 43);
 
   // --- LADO DIREITO: BLOCO DE INFORMAÇÕES DA OS ---
   const rightX = W - 12;
@@ -85,12 +100,12 @@ const renderHeader = async (
 // ===================== PDF CLIENTE =====================
 export const generatePDFCliente = async (data: any) => {
   const doc = new jsPDF("p", "mm", "a4");
-  const { base64: logo } = await getLogoWithFallback(true);
+  const logo = await getLogoWithFallback(true);
 
   const W = 210;
   const M = 15;
   const CW = W - 2 * M;
-  let y = await renderHeader(doc, data, "Cliente", logo);
+  let y = renderHeader(doc, data, "Cliente", logo);
 
   // Espaçamento inicial reduzido pois o header já tem as informações principais
   y -= 5;
@@ -245,7 +260,7 @@ export const generatePDFCliente = async (data: any) => {
 // ===================== PDF PRESTADOR =====================
 export const generatePDFPrestador = async (data: any) => {
   const doc = new jsPDF("p", "mm", "a4");
-  const logo = await getLogoBase64(true); // Usa versão white para o header azul
+  const logo = await getLogoWithFallback(true); // versão light para header azul
 
 
   const W = 210;
