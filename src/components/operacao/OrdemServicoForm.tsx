@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Save, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Upload, X, Download, File, FilePlus, Check, Route, AlertTriangle, Calculator, Clock, ChevronDown, CheckCircle2, MessageCircle, Copy as CopyIcon, Send, Eye } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { ArrowLeft, Save, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Upload, X, Download, File, FilePlus, Check, Route, AlertTriangle, Calculator, Clock, ChevronDown, CheckCircle2, MessageCircle, Copy as CopyIcon, Send, Eye, DollarSign } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,8 +14,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { sincronizarComEscala, sincronizarFinanceiroOS } from "@/services/ordemServicoService";
+import { diagnosticarOS, type DiagnosticoSincronizacao, obterClasseBadgeDivergencia, obterLabelDivergencia } from "@/services/escala/syncDiagnostico";
 import { generateProfessionalPDF } from "@/lib/pdfGenerator";
-import { OrdemServico, OSEndereco, OSHistorico, OSCarga, STATUS_CORES, OSStatus } from "./osTypes";
+import { OrdemServico, OSEndereco, OSHistorico, OSCarga, STATUS_CORES, OSStatus, obterStatusGlobalOS } from "./osTypes";
+import { STATUS_GLOBAL_ORDER, STATUS_GLOBAL_INFO, obterClasseDotGlobal, obterClasseBadgeGlobal, type StatusGlobal } from "./statusGlobal";
 import { FavoritosDropdown, SaveFavoritoButton } from "@/components/enderecos/EnderecosFavoritos";
 import CompartilharRastreioModal from "./CompartilharRastreioModal";
 import { SearchableSelect } from "@/components/ui/SearchableSelect";
@@ -30,6 +33,7 @@ import { gerarMensagemWhatsAppOS, generatePDFCliente, generatePDFPrestador } fro
 import { copiarWhatsApp } from "@/lib/pdfGenerator";
 import { enviarMensagem as WhatsAppEnviar } from "@/services/integracoes/whatsappService";
 import { disparaEventoAutomacao } from "@/services/integracoes/automacaoCentralService";
+import { registrarLog } from "@/services/integracoes/integrationLogger";
 import { enviarWebhookWhatsAppOSCriada } from "@/services/integracoes/whatsAppOSService";
 import { enviarWhatsAppAutomatico } from "@/services/whatsappAutomation";
 import {
@@ -184,6 +188,10 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [enviarWhatsAppAuto, setEnviarWhatsAppAuto] = useState(false);
   const readOnly = modo === "ver";
   const [visualizacaoOS, setVisualizacaoOS] = useState<"cliente" | "prestador">("cliente");
+  const [ultimaOperacaoPrestador, setUltimaOperacaoPrestador] = useState<{ data: string; valor?: number } | null>(null);
+  const [escalaVinculada, setEscalaVinculada] = useState(false);
+  const [diagnosticoEscala, setDiagnosticoEscala] = useState<DiagnosticoSincronizacao | null>(null);
+  const [financeiroSincronizado, setFinanceiroSincronizado] = useState(false);
 
 const calculaRotaEValor = async () => {
     try {
@@ -265,6 +273,18 @@ const calculaRotaEValor = async () => {
     osInicialRef.current = data;
   }, [os]);
 
+  useEffect(() => {
+    if (data.id) {
+      diagnosticarOS(data.id).then((diag) => {
+        setDiagnosticoEscala(diag);
+        setEscalaVinculada(diag.existeAlocacao);
+      }).catch(() => {
+        setDiagnosticoEscala(null);
+        setEscalaVinculada(false);
+      });
+    }
+  }, [data.id]);
+
   const copiarWhatsApp = () => {
     const msg = gerarMensagemWhatsAppOS(data);
     navigator.clipboard.writeText(msg);
@@ -284,7 +304,7 @@ const calculaRotaEValor = async () => {
       const { data: prestadores } = await supabase
         .from("prestadores")
         .select("telefone")
-        .eq("nome", data.prestador)
+        .eq("nome_completo", data.prestador)
         .limit(1);
 
       if (!prestadores || prestadores.length === 0 || !prestadores[0].telefone) {
@@ -389,23 +409,17 @@ const calculaRotaEValor = async () => {
   };
 
   const sanitizeOrdemServicoPayload = (rawPayload: Record<string, any>): { payload: Record<string, any>; removed: string[] } => {
-    const payloadSeguro: Record<string, any> = {
-      numero: rawPayload.numero,
-      data: rawPayload.data,
-      cliente_id: rawPayload.cliente_id,
-      unidade: rawPayload.unidade,
-      centro_custo: rawPayload.centro_custo,
-      status: rawPayload.status,
-      valor_cliente: rawPayload.valor_cliente,
-      custo_prestador: rawPayload.custo_prestador,
-      distancia_km: rawPayload.distancia_km,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
+    const removed: string[] = [];
+    const payloadSeguro: Record<string, any> = {};
 
-    const allKeys = Object.keys(rawPayload);
-    const usedKeys = Object.keys(payloadSeguro);
-    const removed = allKeys.filter(k => !usedKeys.includes(k));
+    for (const key of Object.keys(rawPayload)) {
+      const value = rawPayload[key];
+      if (value === undefined) {
+        removed.push(key);
+        continue;
+      }
+      payloadSeguro[key] = value;
+    }
 
     console.log("[OS SAVE] Payload original:", rawPayload);
     console.log("[OS SAVE] Payload final enviado:", payloadSeguro);
@@ -427,6 +441,49 @@ const calculaRotaEValor = async () => {
 
       if (error) throw error;
       const savedOS = dbResult;
+
+      // Sincronizar com Escala automaticamente
+      (async () => {
+        try {
+          let prestadorId = (data as any).prestadorId || null;
+          if (!prestadorId && data.prestador) {
+            const { data: prestData } = await supabase
+              .from("prestadores")
+              .select("id")
+              .eq("nome_completo", data.prestador)
+              .limit(1)
+              .maybeSingle();
+            if (prestData) prestadorId = prestData.id;
+          }
+
+          const dadosSync = {
+            ...data,
+            id: savedOS?.id || data.id,
+            prestador_id: prestadorId,
+          };
+
+          const [resultadoEscala] = await Promise.all([
+            sincronizarComEscala(dadosSync),
+            sincronizarFinanceiroOS(dadosSync).then((r) => {
+              if (r.sucesso) setFinanceiroSincronizado(true);
+            }),
+          ]);
+
+          if (resultadoEscala.sucesso) {
+            const acaoLabel = resultadoEscala.acao === "criada" ? "criada" : "atualizada";
+            setEscalaVinculada(true);
+            if (savedOS?.id) {
+              diagnosticarOS(savedOS.id).then(setDiagnosticoEscala);
+            }
+            if (resultadoEscala.acao !== "ignorada") {
+              toast.success(`Escala ${acaoLabel} para OS ${data.numero}`);
+            }
+          }
+        } catch (e: any) {
+          console.warn("[SincronizacaoEscala] Falha na sincronização automática:", e.message);
+        }
+      })();
+
       toast.success("Ordem de Serviço salva com sucesso!");
 
       if (enviarWhatsAppAuto && data.prestador) {
@@ -435,7 +492,7 @@ const calculaRotaEValor = async () => {
           const { data: prestadores } = await supabase
             .from("prestadores")
             .select("telefone")
-            .eq("nome", data.prestador)
+            .eq("nome_completo", data.prestador)
             .limit(1);
 
           if (prestadores && prestadores.length > 0 && prestadores[0].telefone) {
@@ -653,6 +710,79 @@ const calculaRotaEValor = async () => {
         </div>
       </div>
 
+      {/* Cards Operacionais */}
+      <div className="px-6 pt-4 bg-slate-50">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-4 md:grid-cols-7 gap-3">
+            <div className={`bg-white rounded-xl border p-3 shadow-sm ${data.valorCliente > 0 ? 'border-blue-200' : 'border-slate-200'}`}>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase">Receita</p>
+              <p className={`text-lg font-black ${data.valorCliente > 0 ? 'text-blue-600' : 'text-slate-400'}`}>R$ {(data.valorCliente || 0).toFixed(2)}</p>
+            </div>
+            <div className={`bg-white rounded-xl border p-3 shadow-sm ${data.custoPrestador > 0 ? 'border-orange-200' : 'border-slate-200'}`}>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase">Custo Prest.</p>
+              <p className={`text-lg font-black ${data.custoPrestador > 0 ? 'text-orange-600' : 'text-slate-400'}`}>R$ {(data.custoPrestador || 0).toFixed(2)}</p>
+            </div>
+            <div className={`bg-white rounded-xl border p-3 shadow-sm ${(data.valorCliente - data.custoPrestador) > 0 ? 'border-green-200' : 'border-red-200'}`}>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase">Margem</p>
+              <p className={`text-lg font-black ${(data.valorCliente - data.custoPrestador) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                R$ {(data.valorCliente - data.custoPrestador).toFixed(2)}
+              </p>
+            </div>
+            <div className={`bg-white rounded-xl border p-3 shadow-sm ${(data.valorCliente - data.custoPrestador) > 0 ? 'border-green-200' : 'border-red-200'}`}>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase">Margem %</p>
+              <p className={`text-lg font-black ${data.valorCliente > 0 ? ((data.valorCliente - data.custoPrestador) / data.valorCliente * 100) >= 20 ? 'text-green-600' : ((data.valorCliente - data.custoPrestador) / data.valorCliente * 100) > 0 ? 'text-amber-600' : 'text-red-600' : 'text-slate-400'}`}>
+                {data.valorCliente > 0 ? ((data.valorCliente - data.custoPrestador) / data.valorCliente * 100).toFixed(1) + '%' : '—'}
+              </p>
+            </div>
+            <div className={`bg-white rounded-xl border p-3 shadow-sm ${data.statusFaturamento === 'faturada' || data.statusFaturamento === 'paga' ? 'border-green-200' : 'border-amber-200'}`}>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase">Status Fin.</p>
+              <div className="flex items-center gap-1 mt-0.5">
+                <span className={`w-2 h-2 rounded-full ${data.statusFaturamento === 'faturada' || data.statusFaturamento === 'paga' ? 'bg-green-500' : data.statusFaturamento === 'a faturar' ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                <span className="text-xs font-bold text-slate-700 uppercase">{data.statusFaturamento || "N/I"}</span>
+              </div>
+              {financeiroSincronizado && (
+                <div className="mt-0.5">
+                  <Badge className="bg-violet-50 text-violet-700 border-violet-200 text-[8px] py-0 px-1">
+                    Auto
+                  </Badge>
+                </div>
+              )}
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase">Status Op.</p>
+              <div className="flex items-center gap-1 mt-0.5">
+                <span className={`w-2 h-2 rounded-full ${obterClasseDotGlobal(obterStatusGlobalOS(data.status))}`} />
+                <span className="text-xs font-bold text-slate-700 uppercase">{STATUS_GLOBAL_INFO[obterStatusGlobalOS(data.status)].label}</span>
+              </div>
+            </div>
+            <div className={`bg-white rounded-xl border p-3 shadow-sm ${
+              diagnosticoEscala?.status === "sincronizada" ? 'border-emerald-200 bg-emerald-50/30' :
+              diagnosticoEscala?.status?.startsWith("divergencia") ? 'border-red-200 bg-red-50/30' :
+              'border-amber-200 bg-amber-50/30'
+            }`}>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase">Escala</p>
+              <div className="flex flex-col gap-1 mt-0.5">
+                <Badge className={`${obterClasseBadgeDivergencia(diagnosticoEscala?.status || "os_sem_escala")} text-[9px] flex items-center gap-1`}>
+                  {diagnosticoEscala?.status === "sincronizada" ? <CheckCircle className="w-3 h-3" /> :
+                   diagnosticoEscala?.status?.startsWith("divergencia") ? <AlertTriangle className="w-3 h-3" /> :
+                   <AlertTriangle className="w-3 h-3" />}
+                  {obterLabelDivergencia(diagnosticoEscala?.status || "os_sem_escala")}
+                </Badge>
+                {diagnosticoEscala?.descricao && (
+                  <span className="text-[8px] text-slate-500 leading-tight">{diagnosticoEscala.descricao}</span>
+                )}
+              </div>
+            </div>
+          </div>
+          {ultimaOperacaoPrestador && (
+            <div className="mt-2 text-[10px] text-slate-400 flex items-center gap-4">
+              <span>Última operação do prestador: {ultimaOperacaoPrestador.data ? new Date(ultimaOperacaoPrestador.data).toLocaleDateString('pt-BR') : 'N/A'}</span>
+              {ultimaOperacaoPrestador.valor && <span>Último valor: R$ {ultimaOperacaoPrestador.valor.toFixed(2)}</span>}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
         <div className="max-w-7xl mx-auto space-y-6 pb-24">
           <Tabs defaultValue="identificacao" className="w-full">
@@ -674,7 +804,29 @@ const calculaRotaEValor = async () => {
                   <Field label="Nº OS"><Input value={data.numero} readOnly className="bg-slate-50 font-bold" /></Field>
                   <Field label="Data de Emissão"><Input type="date" value={data.data} readOnly={readOnly} onChange={(e) => update("data", e.target.value)} /></Field>
                   <Field label="Cliente">
-                    <SearchableSelect table="clientes" labelField="nome_fantasia" valueField="nome_fantasia" returnField="id" value={data.cliente} onChange={(v, record) => { update("cliente", v); update("clienteId", record?.id || null); }} disabled={readOnly} searchFields={["nome_fantasia", "razao_social"]} />
+                    <SearchableSelect table="clientes" labelField="nome_fantasia" valueField="nome_fantasia" returnField="id" value={data.cliente} onChange={async (v, record) => { 
+                      update("cliente", v); 
+                      update("clienteId", record?.id || null); 
+                      if (record?.id) {
+                        try {
+                          const { data: clientData } = await supabase.from("clientes").select("*").eq("id", record.id).single();
+                          if (clientData) {
+                            const row = clientData as any;
+                            update("tipoCobrancaCliente", row.tipo_cobranca || null);
+                            update("vencimentoPadraoCliente", row.vencimento_padrao || null);
+                            update("cfopPadraoCliente", row.cfop_padrao || null);
+                            update("tomadorCliente", row.tomador || null);
+                            if (row.cte_obrigatorio) update("cteObrigatorio", true);
+                            if (row.xml_obrigatorio) update("xmlObrigatorio", true);
+                            if (row.comprovante_obrigatorio) update("comprovanteObrigatorio", true);
+                            setData(p => ({ 
+                              ...p, 
+                              tabelaValoresPadraoId: row.tabela_valores_padrao_id || null
+                            }));
+                          }
+                        } catch (e) { console.warn("Erro ao buscar dados do cliente:", e); }
+                      }
+                    }} disabled={readOnly} searchFields={["nome_fantasia", "razao_social"]} />
                   </Field>
                   <Field label="Tipo de Operação">
                     <Select value={data.tipoOperacao} onValueChange={(v) => update("tipoOperacao", v)} disabled={readOnly}>
@@ -726,11 +878,15 @@ const calculaRotaEValor = async () => {
                         <Select value={data.status} onValueChange={(v) => update("status", v)} disabled={readOnly}>
                           <SelectTrigger className="h-10 font-semibold"><SelectValue/></SelectTrigger>
                           <SelectContent>
-                            {Object.entries(STATUS_CORES).map(([key, val]) => (
-                              <SelectItem key={key} value={key} className="flex items-center gap-2">
-                                <span className={`w-2 h-2 rounded-full inline-block mr-2 ${val.twClass.split(' ')[0]}`}></span> {val.label}
-                              </SelectItem>
-                            ))}
+                            {Object.entries(STATUS_CORES).map(([key, val]) => {
+                              const globalStatus = obterStatusGlobalOS(key);
+                              return (
+                                <SelectItem key={key} value={key} className="flex items-center gap-2">
+                                  <span className={`w-2 h-2 rounded-full inline-block mr-2 ${obterClasseDotGlobal(globalStatus)}`}></span>
+                                  {STATUS_GLOBAL_INFO[globalStatus].label}
+                                </SelectItem>
+                              );
+                            })}
                           </SelectContent>
                         </Select>
                       </Field>
@@ -1138,16 +1294,23 @@ const calculaRotaEValor = async () => {
                   <CardContent className="p-6 space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="p-4 bg-slate-50 rounded-xl border space-y-4">
-                        <h4 className="text-xs font-bold uppercase text-slate-500">Valores Operacionais</h4>
+                        <h4 className="text-xs font-bold uppercase text-slate-500 flex items-center gap-2">
+                          Valores Operacionais
+                          {data.tabelaAplicada && data.valorCliente > 0 && (
+                            <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-[9px] ml-auto">
+                              {data.tabelaAplicada.length > 20 ? data.tabelaAplicada.substring(0, 20) + '…' : data.tabelaAplicada}
+                            </Badge>
+                          )}
+                        </h4>
                         <Field label="Valor p/ Cliente">
                           <div className="relative">
-                            <Input type="number" value={data.valorCliente} readOnly={readOnly} onChange={(e) => update("valorCliente", Number(e.target.value))} className="text-lg font-bold text-blue-600 pr-8" />
+                            <Input type="number" value={data.valorCliente} readOnly={readOnly} onChange={(e) => { update("valorCliente", Number(e.target.value)); setData(p => ({ ...p, valorClienteEditado: true })); }} className="text-lg font-bold text-blue-600 pr-8" />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-blue-400">R$</span>
                           </div>
                         </Field>
                         <Field label="Valor p/ Prestador">
                           <div className="relative">
-                            <Input type="number" value={data.custoPrestador} readOnly={readOnly} onChange={(e) => update("custoPrestador", Number(e.target.value))} className="text-lg font-bold text-orange-600 pr-8" />
+                            <Input type="number" value={data.custoPrestador} readOnly={readOnly} onChange={(e) => { update("custoPrestador", Number(e.target.value)); setData(p => ({ ...p, custoPrestadorEditado: true })); }} className="text-lg font-bold text-orange-600 pr-8" />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-orange-400">R$</span>
                           </div>
                         </Field>
@@ -1212,7 +1375,24 @@ const calculaRotaEValor = async () => {
                     <Field label="Data Programada"><Input type="date" value={data.dataProgramada} readOnly={readOnly} onChange={(e) => update("dataProgramada", e.target.value)} /></Field>
                     <Field label="Início Previsto"><Input type="datetime-local" value={data.previsaoInicio} readOnly={readOnly} onChange={(e) => update("previsaoInicio", e.target.value)} /></Field>
                     <Field label="Parceiro / Prestador">
-                      <SearchableSelect table="prestadores" labelField="nome" valueField="nome" value={data.prestador} onChange={(v) => update("prestador", v)} disabled={readOnly} />
+                      <SearchableSelect table="prestadores" labelField="nome_completo" valueField="nome_completo" searchFields={['nome_completo', 'nome_fantasia']} filters={{ status: 'ativo' }} value={data.prestador} onChange={async (v, record) => { 
+                        update("prestador", v);
+                        if (record?.id) update("prestadorId" as any, record.id);
+                        if (record?.id) {
+                          try {
+                            const { data: prestData } = await supabase.from("prestadores").select("veiculo_tipo, veiculo_placa, refrigerado, status").eq("id", record.id).single();
+                            if (prestData) {
+                              update("veiculoTipo", prestData.veiculo_tipo || data.veiculoTipo);
+                              update("veiculoPlaca", prestData.veiculo_placa || "");
+                              update("veiculoTermica", prestData.refrigerado ? "refrigerado" : data.veiculoTermica);
+                            }
+                            const { data: ultimaOS } = await supabase.from("ordens_servico").select("data, valor_cliente").eq("prestador", v).order("data", { ascending: false }).limit(1).maybeSingle();
+                            if (ultimaOS) {
+                              setUltimaOperacaoPrestador({ data: ultimaOS.data, valor: ultimaOS.valor_cliente });
+                            }
+                          } catch (e) { console.warn("Erro ao buscar dados do prestador:", e); }
+                        }
+                      }} disabled={readOnly} />
                     </Field>
                     <Field label="Placa Alocada"><Input value={data.veiculoPlaca} readOnly={readOnly} onChange={(e) => update("veiculoPlaca", e.target.value)} placeholder="ABC-1234" /></Field>
                    
@@ -1244,7 +1424,7 @@ const calculaRotaEValor = async () => {
                          </Button>
                          <Button variant="outline" className="justify-start text-left h-auto py-2" onClick={async () => {
                            if (!data.prestador) { toast.error("Selecione um prestador primeiro"); return; }
-                           const { data: p } = await supabase.from("prestadores").select("telefone").eq("nome", data.prestador).single();
+                           const { data: p } = await supabase.from("prestadores").select("telefone").eq("nome_completo", data.prestador).single();
                            if (!p?.telefone) { toast.error("Telefone do prestador não encontrado"); return; }
                            const msg = `Instruções da OS ${data.numero}\nColeta: ${data.enderecos?.[0]?.endereco || ""}\nEntrega: ${data.enderecos?.[data.enderecos?.length - 1]?.endereco || ""}\nValor que será pago: R$ ${data.custoPrestador.toFixed(2)}`;
                            await WhatsAppEnviar(p.telefone.replace(/\D/g, ""), msg);
@@ -1293,6 +1473,51 @@ const calculaRotaEValor = async () => {
             </TabsContent>
 
 <TabsContent value="historico" className="space-y-6">
+                {/* Etapas Operacionais */}
+                <Card className="border-none shadow-md rounded-2xl overflow-hidden">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-bold flex items-center gap-2"><Clock className="w-4 h-4 text-primary"/> Etapas Operacionais</CardTitle>
+                    <CardDescription>Acompanhamento do ciclo de vida da OS</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-1 overflow-x-auto pb-2">
+                      {(() => {
+                        const statusGlobalAtual = obterStatusGlobalOS(data.status);
+                        const idxAtualGlobal = STATUS_GLOBAL_ORDER.indexOf(statusGlobalAtual);
+                        const icons: Record<string, React.ElementType> = {
+                          rascunho: FileText, pendente: Clock, alocado: Calendar,
+                          carregando: Package, em_rota: Truck, entregue: CheckCircle,
+                          finalizado: CheckCircle2, faturado: CreditCard, pago_prestador: DollarSign,
+                        };
+                        return STATUS_GLOBAL_ORDER.map((key, i) => {
+                          const concluida = i < idxAtualGlobal;
+                          const atual = key === statusGlobalAtual;
+                          const Icon = icons[key] || FileText;
+                          return (
+                            <React.Fragment key={key}>
+                              <div className={`flex flex-col items-center gap-1 min-w-[80px] ${concluida || atual ? 'opacity-100' : 'opacity-40'}`}>
+                                <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${
+                                  concluida ? 'bg-emerald-500 border-emerald-500 text-white' : 
+                                  atual ? 'bg-blue-500 border-blue-500 text-white' : 
+                                  'bg-white border-slate-300 text-slate-400'
+                                }`}>
+                                  {concluida ? <Check className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
+                                </div>
+                                <span className={`text-[9px] font-bold text-center ${concluida ? 'text-emerald-700' : atual ? 'text-blue-700' : 'text-slate-400'}`}>
+                                  {STATUS_GLOBAL_INFO[key].label}
+                                </span>
+                              </div>
+                              {i < STATUS_GLOBAL_ORDER.length - 1 && (
+                                <div className={`h-0.5 flex-1 min-w-[12px] ${concluida ? 'bg-emerald-400' : 'bg-slate-200'}`} />
+                              )}
+                            </React.Fragment>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </CardContent>
+                </Card>
+
                 <Card className="border-none shadow-md rounded-2xl overflow-hidden bg-green-50/30 border-green-100">
                   <CardHeader className="bg-green-50 pb-2">
                     <CardTitle className="text-sm font-bold flex items-center gap-2 text-green-700"><Clock className="w-4 h-4"/> Resumo Operacional</CardTitle>

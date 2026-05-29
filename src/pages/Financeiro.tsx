@@ -59,33 +59,10 @@ const categoriasPagar = [
   "Folha de pagamento (CLT)", "Impostos (DAS, DCTF, etc.)", "Outros"
 ];
 
-const mockRecibos = [
-  { id: 1, numero: "REC-202603-0001", os: "OS-4815", prestador: "João Silva - ME", cpfCnpj: "123.456.789-00", servico: "Frete", dataServico: "2026-03-20", valorBruto: 8500.00, descuentos: 850, valorLiquido: 7650.00, formaPagamento: "Depósito", status: "emitido" },
-  { id: 2, numero: "REC-202603-0002", os: "OS-4802", prestador: "Transporte Rápido LTDA", cpfCnpj: "12.345.678/0001-90", servico: "Frete", dataServico: "2026-03-18", valorBruto: 12000.00, descuentos: 1200, valorLiquido: 10800.00, formaPagamento: "Transferência", status: "emitido" },
-  { id: 3, numero: "REC-202603-0003", os: "OS-4798", prestador: "Maria Freitas", cpfCnpj: "987.654.321-00", servico: "Coleta", dataServico: "2026-03-15", valorBruto: 2500.00, descuentos: 250, valorLiquido: 2250.00, formaPagamento: "Dinheiro", status: "pago" },
-];
-
-const mockRentabilidadeOS = [
-  { id: 1, os: "OS-4821", cliente: "Magazine Luiza", rota: "SP → RJ", valorCobrado: 15000, custoTotal: 10500, margem: 4500, margemPorc: 30, status: "finalizada" },
-  { id: 2, os: "OS-4820", cliente: "Amazon BR", rota: "SP → MG", valorCobrado: 8500, custoTotal: 6800, margem: 1700, margemPorc: 20, status: "finalizada" },
-  { id: 3, os: "OS-4819", cliente: "Mercado Livre", rota: "PR → SC", valorCobrado: 5200, custoTotal: 4600, margem: 600, margemPorc: 11.5, status: "finalizada" },
-  { id: 4, os: "OS-4818", cliente: "Shopee", rota: "SP → BA", valorCobrado: 12800, custoTotal: 11520, margem: 1280, margemPorc: 10, status: "finalizada" },
-  { id: 5, os: "OS-4815", cliente: "Americanas", rota: "RJ → ES", valorCobrado: 6800, custoTotal: 5440, margem: 1360, margemPorc: 20, status: "finalizada" },
-];
-
-const mockRentabilidadeCliente = [
-  { id: 1, cliente: "Magazine Luiza", qtdOS: 45, receitaTotal: 680000, custoTotal: 476000, margem: 204000, margemPorc: 30, ticketMedio: 15111, crescimento: 12 },
-  { id: 2, cliente: "Amazon BR", qtdOS: 38, receitaTotal: 520000, custoTotal: 390000, margem: 130000, margemPorc: 25, ticketMedio: 13684, crescimento: 8 },
-  { id: 3, cliente: "Mercado Livre", qtdOS: 32, receitaTotal: 410000, custoTotal: 307500, margem: 102500, margemPorc: 25, ticketMedio: 12812, crescimento: 5 },
-  { id: 4, cliente: "Shopee", qtdOS: 28, receitaTotal: 350000, custoTotal: 280000, margem: 70000, margemPorc: 20, ticketMedio: 12500, crescimento: 15 },
-  { id: 5, cliente: "Americanas", qtdOS: 22, receitaTotal: 280000, custoTotal: 224000, margem: 56000, margemPorc: 20, ticketMedio: 12727, crescimento: -3 },
-];
-
 export default function Financeiro() {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = searchParams.get("tab") || "receber";
   const [subTabRentabilidade, setSubTabRentabilidade] = useState("por-os");
-  const [recibos] = useState(mockRecibos);
   const [dateRange, setDateRange] = useState<{from: Date | undefined; to: Date | undefined}>({ from: undefined, to: undefined });
 
   const handleTabChange = (val: string) => setSearchParams({ tab: val });
@@ -114,7 +91,6 @@ export default function Financeiro() {
           <p className="text-muted-foreground">Visão geral e controle do dinheiro do Hub.</p>
         </div>
         <div className="flex gap-2">
-           <Badge variant="destructive" className="bg-red-600 font-bold px-3 shadow animate-pulse">2 Cadastros Pendentes! (Auditoria)</Badge>
         </div>
       </div>
 
@@ -325,52 +301,21 @@ export default function Financeiro() {
                <TabsTrigger value="novo-rapido"><Plus className="w-4 h-4 mr-2" /> Recibo Rápido</TabsTrigger>
              </TabsList>
              
-             <TabsContent value="lista" className="space-y-4">
-               <Card>
-                 <CardHeader className="py-3 flex flex-row items-center justify-between">
-                   <CardTitle className="text-sm">Lista de Recibos Emitidos</CardTitle>
-                 </CardHeader>
-                 <CardContent className="p-0">
-                   <Table>
-                     <TableHeader>
-                       <TableRow>
-                         <TableHead>Nº Recibo</TableHead>
-                         <TableHead>OS</TableHead>
-                         <TableHead>Prestador/Cliente</TableHead>
-                         <TableHead>CPF/CNPJ</TableHead>
-                         <TableHead>Serviço</TableHead>
-                         <TableHead>Data Serviço</TableHead>
-                         <TableHead className="text-right">Valor Líquido</TableHead>
-                         <TableHead>Status</TableHead>
-                         <TableHead className="text-right">Ações</TableHead>
-                       </TableRow>
-                     </TableHeader>
-                     <TableBody>
-                       {recibos.map((r) => (
-                         <TableRow key={r.id}>
-                           <TableCell className="font-medium text-xs">{r.numero}</TableCell>
-                           <TableCell>{r.os}</TableCell>
-                           <TableCell>{r.prestador}</TableCell>
-                           <TableCell className="text-xs font-mono">{r.cpfCnpj}</TableCell>
-                           <TableCell className="text-xs">{r.servico}</TableCell>
-                           <TableCell className="text-xs">{r.dataServico}</TableCell>
-                           <TableCell className="text-right font-mono font-semibold text-sm">{fmtFin(r.valorLiquido)}</TableCell>
-                           <TableCell>
-                             <Badge variant="outline" className={r.status === "emitido" ? "bg-blue-50 text-blue-800 border-blue-200" : "bg-green-50 text-green-800 border-green-200"}>
-                               {r.status === "emitido" ? "Emitido" : "Pago"}
-                             </Badge>
-                           </TableCell>
-                           <TableCell className="text-right">
-                             <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-muted"><Eye className="w-3.5 h-3.5 text-slate-500" /></Button>
-                             <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-red-50 text-red-500"><FileX className="w-3.5 h-3.5" /></Button>
-                           </TableCell>
-                         </TableRow>
-                       ))}
-                     </TableBody>
-                   </Table>
-                 </CardContent>
-               </Card>
-             </TabsContent>
+              <TabsContent value="lista" className="space-y-4">
+                <Card>
+                  <CardHeader className="py-3 flex flex-row items-center justify-between">
+                    <CardTitle className="text-sm">Lista de Recibos Emitidos</CardTitle>
+                    <Badge variant="secondary" className="text-[10px]">Em desenvolvimento</Badge>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center py-12 text-muted-foreground">
+                      <FileCheck className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                      <p className="font-medium">Módulo de recibos em desenvolvimento</p>
+                      <p className="text-sm mt-1">Os recibos serão gerados automaticamente a partir das OS finalizadas.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
              
              <TabsContent value="novo-rapido">
                 <ReciboRapido />
@@ -388,11 +333,11 @@ export default function Financeiro() {
                </h2>
                <p className="text-sm text-muted-foreground">Análise de margem e lucratividade</p>
              </div>
-             <div className="flex gap-2">
-               <DateRangePicker value={dateRange} onChange={setDateRange} />
-               <Button variant="outline"><Download className="w-4 h-4 mr-2" />Exportar PDF</Button>
-               <Button variant="outline"><FileCheck className="w-4 h-4 mr-2" />Exportar Excel</Button>
-             </div>
+              <div className="flex gap-2">
+                <DateRangePicker value={dateRange} onChange={setDateRange} />
+                <Button variant="outline" onClick={() => toast.info("Exportação em desenvolvimento")}><Download className="w-4 h-4 mr-2" />Exportar PDF</Button>
+                <Button variant="outline" onClick={() => toast.info("Exportação em desenvolvimento")}><FileCheck className="w-4 h-4 mr-2" />Exportar Excel</Button>
+              </div>
            </div>
 
            <Tabs value={subTabRentabilidade} onValueChange={setSubTabRentabilidade}>
@@ -404,93 +349,38 @@ export default function Financeiro() {
                <TabsTrigger value="top-desempenho">Top Desempenho</TabsTrigger>
              </TabsList>
 
-             {/* RENTABILIDADE POR OS */}
-             <TabsContent value="por-os" className="space-y-4 mt-4">
-               <Card>
-                 <CardHeader className="py-3">
-                   <CardTitle className="text-sm">Margem por Ordem de Serviço</CardTitle>
-                 </CardHeader>
-                 <CardContent className="p-0">
-                   <Table>
-                     <TableHeader>
-                       <TableRow>
-                         <TableHead>OS</TableHead>
-                         <TableHead>Cliente</TableHead>
-                         <TableHead>Rota</TableHead>
-                         <TableHead className="text-right">Valor Cobrado</TableHead>
-                         <TableHead className="text-right">Custo Total</TableHead>
-                         <TableHead className="text-right">Margem R$</TableHead>
-                         <TableHead className="text-right">Margem %</TableHead>
-                         <TableHead>Status</TableHead>
-                       </TableRow>
-                     </TableHeader>
-                     <TableBody>
-                       {mockRentabilidadeOS.map((r) => (
-                         <TableRow key={r.id}>
-                           <TableCell className="font-medium">{r.os}</TableCell>
-                           <TableCell>{r.cliente}</TableCell>
-                           <TableCell>{r.rota}</TableCell>
-                           <TableCell className="text-right font-mono">{fmtFin(r.valorCobrado)}</TableCell>
-                           <TableCell className="text-right font-mono">{fmtFin(r.custoTotal)}</TableCell>
-                           <TableCell className={`text-right font-mono font-semibold ${r.margem > 0 ? "text-green-600" : "text-red-600"}`}>
-                             {fmtFin(r.margem)}
-                           </TableCell>
-                           <TableCell className={`text-right font-mono ${r.margemPorc < 15 ? "text-red-500" : r.margemPorc >= 25 ? "text-green-600" : "text-yellow-600"}`}>
-                             {r.margemPorc.toFixed(1)}%
-                           </TableCell>
-                           <TableCell><Badge variant="outline">{r.status}</Badge></TableCell>
-                         </TableRow>
-                       ))}
-                     </TableBody>
-                   </Table>
-                 </CardContent>
-               </Card>
-             </TabsContent>
+              {/* RENTABILIDADE POR OS */}
+              <TabsContent value="por-os" className="space-y-4 mt-4">
+                <Card>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm">Margem por Ordem de Serviço</CardTitle>
+                    <CardDescription>Acesse a tab <strong>Margem por OS</strong> no menu principal para dados reais.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center py-12 text-muted-foreground">
+                      <TrendingUpIcon className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                      <p className="font-medium">Dados demonstrativos removidos</p>
+                      <p className="text-sm mt-1">A rentabilidade real está disponível em <strong>Margem por OS</strong> com dados do Supabase.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-             {/* RENTABILIDADE POR CLIENTE */}
-             <TabsContent value="por-cliente" className="space-y-4 mt-4">
-               <Card>
-                 <CardHeader className="py-3">
-                   <CardTitle className="text-sm">Margem por Cliente</CardTitle>
-                 </CardHeader>
-                 <CardContent className="p-0">
-                   <Table>
-                     <TableHeader>
-                       <TableRow>
-                         <TableHead>Cliente</TableHead>
-                         <TableHead className="text-right">Qtd OS</TableHead>
-                         <TableHead className="text-right">Receita Total</TableHead>
-                         <TableHead className="text-right">Custo Total</TableHead>
-                         <TableHead className="text-right">Margem R$</TableHead>
-                         <TableHead className="text-right">Margem %</TableHead>
-                         <TableHead className="text-right">Ticket Médio</TableHead>
-                         <TableHead className="text-right">Crescimento</TableHead>
-                       </TableRow>
-                     </TableHeader>
-                     <TableBody>
-                       {mockRentabilidadeCliente.map((r) => (
-                         <TableRow key={r.id}>
-                           <TableCell className="font-medium">{r.cliente}</TableCell>
-                           <TableCell className="text-right">{r.qtdOS}</TableCell>
-                           <TableCell className="text-right font-mono">{fmtFin(r.receitaTotal)}</TableCell>
-                           <TableCell className="text-right font-mono">{fmtFin(r.custoTotal)}</TableCell>
-                           <TableCell className={`text-right font-mono font-semibold ${r.margem > 0 ? "text-green-600" : "text-red-600"}`}>
-                             {fmtFin(r.margem)}
-                           </TableCell>
-                           <TableCell className={`text-right font-mono ${r.margemPorc < 15 ? "text-red-500" : r.margemPorc >= 25 ? "text-green-600" : "text-yellow-600"}`}>
-                             {r.margemPorc}%
-                           </TableCell>
-                           <TableCell className="text-right font-mono">{fmtFin(r.ticketMedio)}</TableCell>
-                           <TableCell className={`text-right ${r.crescimento > 0 ? "text-green-600" : "text-red-600"}`}>
-                             {r.crescimento > 0 ? "+" : ""}{r.crescimento}%
-                           </TableCell>
-                         </TableRow>
-                       ))}
-                     </TableBody>
-                   </Table>
-                 </CardContent>
-               </Card>
-             </TabsContent>
+              {/* RENTABILIDADE POR CLIENTE */}
+              <TabsContent value="por-cliente" className="space-y-4 mt-4">
+                <Card>
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm">Margem por Cliente</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-center py-12 text-muted-foreground">
+                      <TrendingUpIcon className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                      <p className="font-medium">Em desenvolvimento</p>
+                      <p className="text-sm mt-1">Relatório de rentabilidade por cliente estará disponível em breve.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
              {/* RENTABILIDADE POR CONTRATO */}
              <TabsContent value="por-contrato" className="space-y-4 mt-4">
@@ -522,47 +412,18 @@ export default function Financeiro() {
                </Card>
              </TabsContent>
 
-             {/* TOP DESEMPENHO */}
-             <TabsContent value="top-desempenho" className="space-y-4 mt-4">
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                 <Card className="bg-green-50 border-green-200">
-                   <CardHeader className="py-3">
-                     <CardTitle className="text-xs font-semibold text-green-800">Top Prestadores</CardTitle>
-                   </CardHeader>
-                   <CardContent>
-                     <p className="text-lg font-bold text-green-700">João Silva</p>
-                     <p className="text-xs text-green-600">Menor custo relativo</p>
-                   </CardContent>
-                 </Card>
-                 <Card className="bg-blue-50 border-blue-200">
-                   <CardHeader className="py-3">
-                     <CardTitle className="text-xs font-semibold text-blue-800">Top Clientes</CardTitle>
-                   </CardHeader>
-                   <CardContent>
-                     <p className="text-lg font-bold text-blue-700">Magazine Luiza</p>
-                     <p className="text-xs text-blue-600">Maior margem absoluta</p>
-                   </CardContent>
-                 </Card>
-                 <Card className="bg-purple-50 border-purple-200">
-                   <CardHeader className="py-3">
-                     <CardTitle className="text-xs font-semibold text-purple-800">Top Rotas</CardTitle>
-                   </CardHeader>
-                   <CardContent>
-                     <p className="text-lg font-bold text-purple-700">SP → RJ</p>
-                     <p className="text-xs text-purple-600">Melhor rentabilidade</p>
-                   </CardContent>
-                 </Card>
-                 <Card className="bg-orange-50 border-orange-200">
-                   <CardHeader className="py-3">
-                     <CardTitle className="text-xs font-semibold text-orange-800">Top Veículos</CardTitle>
-                   </CardHeader>
-                   <CardContent>
-                     <p className="text-lg font-bold text-orange-700">Carreta</p>
-                     <p className="text-xs text-orange-600">Maior margem %</p>
-                   </CardContent>
-                 </Card>
-               </div>
-             </TabsContent>
+              {/* TOP DESEMPENHO */}
+              <TabsContent value="top-desempenho" className="space-y-4 mt-4">
+                <Card>
+                  <CardContent>
+                    <div className="text-center py-12 text-muted-foreground">
+                      <TrendingUpIcon className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                      <p className="font-medium">Ranking em desenvolvimento</p>
+                      <p className="text-sm mt-1">Top desempenho por prestadores, clientes, rotas e veículos estará disponível em breve.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
               </Tabs>
         </TabsContent>
 

@@ -529,6 +529,31 @@ export interface ClienteForm {
   exigeSla?: boolean;
   exigePortal?: boolean;
   aceitaApi?: boolean;
+
+  // Comercial
+  tipoCobranca?: string;
+  vencimentoPadrao?: number;
+  agrupamentoFaturamento?: string;
+  cteObrigatorio?: boolean;
+  xmlObrigatorio?: boolean;
+  comprovanteObrigatorio?: boolean;
+  canhotoObrigatorio?: boolean;
+  assinaturaLegivel?: boolean;
+  protocoloObrigatorio?: boolean;
+  geolocalizacao?: boolean;
+  tabelaValoresPadraoId?: string;
+
+  // Fiscal
+  tomador?: string;
+  cnae?: string;
+  cfopPadrao?: string;
+  retencoes?: string;
+  envioXml?: boolean;
+  observacoesFiscais?: string;
+  municipioPadrao?: string;
+  regimeTributario?: string;
+  aliquotaIss?: number;
+  incentivoFiscal?: boolean;
 }
 
 export interface ClienteRow {
@@ -558,6 +583,32 @@ export interface ClienteRow {
   exige_sla?: boolean;
   exige_portal?: boolean;
   aceita_api?: boolean;
+
+  // Comercial
+  tipo_cobranca?: string;
+  vencimento_padrao?: number;
+  agrupamento_faturamento?: string;
+  cte_obrigatorio?: boolean;
+  xml_obrigatorio?: boolean;
+  comprovante_obrigatorio?: boolean;
+  canhoto_obrigatorio?: boolean;
+  assinatura_legivel?: boolean;
+  protocolo_obrigatorio?: boolean;
+  geolocalizacao?: boolean;
+  tabela_valores_padrao_id?: string;
+
+  // Fiscal
+  tomador?: string;
+  cnae?: string;
+  cfop_padrao?: string;
+  retencoes?: string;
+  envio_xml?: boolean;
+  observacoes_fiscais?: string;
+  municipio_padrao?: string;
+  regime_tributario?: string;
+  aliquota_iss?: number;
+  incentivo_fiscal?: boolean;
+
   created_at?: string;
   updated_at?: string;
 }
@@ -595,6 +646,31 @@ export const toClienteInsert = (form: Partial<ClienteForm>): Record<string, unkn
   if (form.exigeSla !== undefined) d.exige_sla = form.exigeSla;
   if (form.exigePortal !== undefined) d.exige_portal = form.exigePortal;
   if (form.aceitaApi !== undefined) d.aceita_api = form.aceitaApi;
+
+  // Comercial
+  if (has(form.tipoCobranca)) d.tipo_cobranca = form.tipoCobranca;
+  if (form.vencimentoPadrao !== undefined) d.vencimento_padrao = form.vencimentoPadrao;
+  if (has(form.agrupamentoFaturamento)) d.agrupamento_faturamento = form.agrupamentoFaturamento;
+  if (form.cteObrigatorio !== undefined) d.cte_obrigatorio = form.cteObrigatorio;
+  if (form.xmlObrigatorio !== undefined) d.xml_obrigatorio = form.xmlObrigatorio;
+  if (form.comprovanteObrigatorio !== undefined) d.comprovante_obrigatorio = form.comprovanteObrigatorio;
+  if (form.canhotoObrigatorio !== undefined) d.canhoto_obrigatorio = form.canhotoObrigatorio;
+  if (form.assinaturaLegivel !== undefined) d.assinatura_legivel = form.assinaturaLegivel;
+  if (form.protocoloObrigatorio !== undefined) d.protocolo_obrigatorio = form.protocoloObrigatorio;
+  if (form.geolocalizacao !== undefined) d.geolocalizacao = form.geolocalizacao;
+  if (has(form.tabelaValoresPadraoId)) d.tabela_valores_padrao_id = form.tabelaValoresPadraoId;
+
+  // Fiscal
+  if (has(form.tomador)) d.tomador = form.tomador;
+  if (has(form.cnae)) d.cnae = form.cnae;
+  if (has(form.cfopPadrao)) d.cfop_padrao = form.cfopPadrao;
+  if (has(form.retencoes)) d.retencoes = form.retencoes;
+  if (form.envioXml !== undefined) d.envio_xml = form.envioXml;
+  if (has(form.observacoesFiscais)) d.observacoes_fiscais = form.observacoesFiscais;
+  if (has(form.municipioPadrao)) d.municipio_padrao = form.municipioPadrao;
+  if (has(form.regimeTributario)) d.regime_tributario = form.regimeTributario;
+  if (form.aliquotaIss !== undefined) d.aliquota_iss = form.aliquotaIss;
+  if (form.incentivoFiscal !== undefined) d.incentivo_fiscal = form.incentivoFiscal;
 
   d.created_at = new Date().toISOString();
   d.updated_at = new Date().toISOString();
@@ -636,6 +712,31 @@ export const toClienteUpdate = (form: Partial<ClienteForm>): Record<string, unkn
   if (form.exigePortal !== undefined) d.exige_portal = form.exigePortal;
   if (form.aceitaApi !== undefined) d.aceita_api = form.aceitaApi;
 
+  // Comercial
+  if (has(form.tipoCobranca)) d.tipo_cobranca = form.tipoCobranca;
+  if (form.vencimentoPadrao !== undefined) d.vencimento_padrao = form.vencimentoPadrao;
+  if (has(form.agrupamentoFaturamento)) d.agrupamento_faturamento = form.agrupamentoFaturamento;
+  if (form.cteObrigatorio !== undefined) d.cte_obrigatorio = form.cteObrigatorio;
+  if (form.xmlObrigatorio !== undefined) d.xml_obrigatorio = form.xmlObrigatorio;
+  if (form.comprovanteObrigatorio !== undefined) d.comprovante_obrigatorio = form.comprovanteObrigatorio;
+  if (form.canhotoObrigatorio !== undefined) d.canhoto_obrigatorio = form.canhotoObrigatorio;
+  if (form.assinaturaLegivel !== undefined) d.assinatura_legivel = form.assinaturaLegivel;
+  if (form.protocoloObrigatorio !== undefined) d.protocolo_obrigatorio = form.protocoloObrigatorio;
+  if (form.geolocalizacao !== undefined) d.geolocalizacao = form.geolocalizacao;
+  if (has(form.tabelaValoresPadraoId)) d.tabela_valores_padrao_id = form.tabelaValoresPadraoId;
+
+  // Fiscal
+  if (has(form.tomador)) d.tomador = form.tomador;
+  if (has(form.cnae)) d.cnae = form.cnae;
+  if (has(form.cfopPadrao)) d.cfop_padrao = form.cfopPadrao;
+  if (has(form.retencoes)) d.retencoes = form.retencoes;
+  if (form.envioXml !== undefined) d.envio_xml = form.envioXml;
+  if (has(form.observacoesFiscais)) d.observacoes_fiscais = form.observacoesFiscais;
+  if (has(form.municipioPadrao)) d.municipio_padrao = form.municipioPadrao;
+  if (has(form.regimeTributario)) d.regime_tributario = form.regimeTributario;
+  if (form.aliquotaIss !== undefined) d.aliquota_iss = form.aliquotaIss;
+  if (form.incentivoFiscal !== undefined) d.incentivo_fiscal = form.incentivoFiscal;
+
   d.updated_at = new Date().toISOString();
 
   return d;
@@ -675,6 +776,31 @@ export const fromClienteRow = (item: ClienteRow): ClienteForm => ({
   exigeSla: item.exige_sla ?? item.exigeSla ?? false,
   exigePortal: item.exige_portal ?? item.exigePortal ?? false,
   aceitaApi: item.aceita_api ?? item.aceitaApi ?? false,
+
+  // Comercial
+  tipoCobranca: item.tipo_cobranca,
+  vencimentoPadrao: item.vencimento_padrao,
+  agrupamentoFaturamento: item.agrupamento_faturamento,
+  cteObrigatorio: item.cte_obrigatorio ?? false,
+  xmlObrigatorio: item.xml_obrigatorio ?? false,
+  comprovanteObrigatorio: item.comprovante_obrigatorio ?? false,
+  canhotoObrigatorio: item.canhoto_obrigatorio ?? false,
+  assinaturaLegivel: item.assinatura_legivel ?? false,
+  protocoloObrigatorio: item.protocolo_obrigatorio ?? false,
+  geolocalizacao: item.geolocalizacao ?? false,
+  tabelaValoresPadraoId: item.tabela_valores_padrao_id,
+
+  // Fiscal
+  tomador: item.tomador,
+  cnae: item.cnae,
+  cfopPadrao: item.cfop_padrao,
+  retencoes: item.retencoes,
+  envioXml: item.envio_xml ?? false,
+  observacoesFiscais: item.observacoes_fiscais,
+  municipioPadrao: item.municipio_padrao,
+  regimeTributario: item.regime_tributario,
+  aliquotaIss: item.aliquota_iss,
+  incentivoFiscal: item.incentivo_fiscal ?? false,
 });
 
 // ---------------- VEÃCULOS ----------------
@@ -1025,6 +1151,7 @@ export const toOSInsert = (form: Partial<OSForm>): Record<string, any> => {
     if (has(form.centroCusto)) d.centro_custo = s(form.centroCusto);
     if (has(form.orcamentoOrigem)) d.orcamento_origem = s(form.orcamentoOrigem);
     if (has(form.prestador)) d.prestador = s(form.prestador);
+    if (has((form as any).prestadorId)) d.prestador_id = s((form as any).prestadorId);
     if (has(form.veiculoAlocado)) d.veiculo_alocado = s(form.veiculoAlocado);
     if (has(form.tipoOperacao)) d.tipo_operacao = s(form.tipoOperacao);
     if (has(form.modalidade)) d.modalidade = s(form.modalidade);
@@ -1143,7 +1270,6 @@ export const toOSUpdate = (form: Partial<OSForm>): Record<string, any> => {
   const payload = toOSInsert(form);
   delete payload.created_at;
   delete payload.id;
-  delete payload.status;
   payload.updated_at = new Date().toISOString();
   return payload;
 };

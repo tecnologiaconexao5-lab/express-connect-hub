@@ -12,6 +12,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import CteTab from "@/components/fiscal/cte/CteTab";
+import MdfeTab from "@/components/fiscal/mdfe/MdfeTab";
+
+// Mocks isolados, usar apenas para teste se necessário via env var
+const MOCK_MODE = import.meta.env.DEV && import.meta.env.VITE_USE_FISCAL_MOCKS === 'true';
 
 const mockCtes: any[] = [];
 const mockMdfes: any[] = [];
@@ -37,14 +42,16 @@ const isFocusConfigured = () => {
 
 export default function Fiscal() {
   useEffect(() => {
-    const sCtes = localStorage.getItem("fiscal_ctes");
-    if(sCtes) setCtes(JSON.parse(sCtes)); else { setCtes(mockCtes); localStorage.setItem("fiscal_ctes", JSON.stringify(mockCtes)); }
-    const sMdfes = localStorage.getItem("fiscal_mdfes");
-    if(sMdfes) setMdfes(JSON.parse(sMdfes)); else { setMdfes(mockMdfes); localStorage.setItem("fiscal_mdfes", JSON.stringify(mockMdfes)); }
-    const sNfses = localStorage.getItem("fiscal_nfses");
-    if(sNfses) setNfses(JSON.parse(sNfses)); else { setNfses(mockNfses); localStorage.setItem("fiscal_nfses", JSON.stringify(mockNfses)); }
-    const sXmls = localStorage.getItem("fiscal_xmls");
-    if(sXmls) setXmls(JSON.parse(sXmls)); else { setXmls(mockXmls); localStorage.setItem("fiscal_xmls", JSON.stringify(mockXmls)); }
+    if (MOCK_MODE) {
+      const sCtes = localStorage.getItem("fiscal_ctes");
+      if(sCtes) setCtes(JSON.parse(sCtes)); else { setCtes(mockCtes); localStorage.setItem("fiscal_ctes", JSON.stringify(mockCtes)); }
+      const sMdfes = localStorage.getItem("fiscal_mdfes");
+      if(sMdfes) setMdfes(JSON.parse(sMdfes)); else { setMdfes(mockMdfes); localStorage.setItem("fiscal_mdfes", JSON.stringify(mockMdfes)); }
+      const sNfses = localStorage.getItem("fiscal_nfses");
+      if(sNfses) setNfses(JSON.parse(sNfses)); else { setNfses(mockNfses); localStorage.setItem("fiscal_nfses", JSON.stringify(mockNfses)); }
+      const sXmls = localStorage.getItem("fiscal_xmls");
+      if(sXmls) setXmls(JSON.parse(sXmls)); else { setXmls(mockXmls); localStorage.setItem("fiscal_xmls", JSON.stringify(mockXmls)); }
+    }
   }, []);
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -68,35 +75,39 @@ export default function Fiscal() {
   }, []);
 
   const fetchCtes = async () => {
+    if (MOCK_MODE) return;
     try {
-      const { data } = await supabase.from("cte").select("*").order("data_emissao", { ascending: false });
-      if (data && data.length > 0) setCtes(data);
-      else setCtes([
-         { id: 1, numero: "105001", chave: "352610123...4501", emitente: "Matriz SP", tomador: "Tech Solutions", valor: 1450.00, cfop: "5351", data_emissao: new Date().toISOString(), status: "Autorizado" },
-         { id: 2, numero: "105000", chave: "352610123...4400", emitente: "Matriz SP", tomador: "Indústria Global", valor: 850.50, cfop: "6352", data_emissao: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString(), status: "Cancelado" },
-      ]);
-    } catch {}
+      const { data, error } = await supabase.from("fiscal_ctes").select("*").order("data_emissao", { ascending: false });
+      if (error) throw error;
+      setCtes(data || []);
+    } catch (err: any) {
+      toast.error(`Erro ao buscar CT-es: ${err.message}`);
+      console.error(err);
+    }
   };
 
   const fetchMdfes = async () => {
+    if (MOCK_MODE) return;
     try {
-      const { data } = await supabase.from("mdfe").select("*").order("data", { ascending: false });
-      if (data && data.length > 0) setMdfes(data);
-      else setMdfes([
-         { id: 1, numero: "5020", data: new Date().toISOString(), prestador_veiculo: "João Silva - ABC1D23", uf: "SP -> RJ", cte_vinculados: 4, status: "Aberto" },
-         { id: 2, numero: "5019", data: new Date().toISOString(), prestador_veiculo: "Carlos Souza - DEF4E56", uf: "SP", cte_vinculados: 1, status: "Encerrado" },
-      ]);
-    } catch {}
+      const { data, error } = await supabase.from("fiscal_mdfes").select("*").order("data_emissao", { ascending: false });
+      if (error) throw error;
+      setMdfes(data || []);
+    } catch (err: any) {
+      toast.error(`Erro ao buscar MDF-es: ${err.message}`);
+      console.error(err);
+    }
   };
 
   const fetchNfses = async () => {
+    if (MOCK_MODE) return;
     try {
-      const { data } = await supabase.from("nfse").select("*").order("data_emissao", { ascending: false });
-      if (data && data.length > 0) setNfses(data);
-      else setNfses([
-         { id: 1, numero: "90001", cliente: "Tech Solutions", valor: 1450.00, servico: "14.01", data_emissao: new Date().toISOString(), status: "Autorizado" },
-      ]);
-    } catch {}
+      const { data, error } = await supabase.from("fiscal_nfse").select("*").order("data_emissao", { ascending: false });
+      if (error) throw error;
+      setNfses(data || []);
+    } catch (err: any) {
+      toast.error(`Erro ao buscar NFS-es: ${err.message}`);
+      console.error(err);
+    }
   };
 
   const handleEmitirDocumento = (tipo: "cte" | "mdfe" | "nfse" | "boleto") => {
@@ -198,86 +209,13 @@ export default function Fiscal() {
         </TabsList>
 
         {/* --- CT-e --- */}
-        <TabsContent value="cte" className="space-y-4 pt-4">
-           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="relative w-full max-w-sm">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Buscar CT-e, chave ou tomador..." className="pl-9 w-full" />
-              </div>
-              <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
-                 <Button variant="outline" onClick={handleVincularOS} className="border-dashed"><LinkIcon className="w-4 h-4 mr-2"/> Vincular à OS</Button>
-                 <Button variant="outline" onClick={handleImportXmlClick}><UploadCloud className="w-4 h-4 mr-2"/> Importar XML</Button>
-                 <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => handleEmitirDocumento("cte")}><FileSpreadsheet className="w-4 h-4 mr-2"/> Emitir CT-e</Button>
-              </div>
-           </div>
-
-           <Card>
-             <CardContent className="p-0">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Nº CT-e</TableHead><TableHead>Chave de Acesso</TableHead><TableHead>Emitente</TableHead><TableHead>Tomador</TableHead><TableHead>CFOP</TableHead><TableHead>Data Emissão</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Ações</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {ctes.map((c, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="font-semibold text-blue-700">{c.numero}</TableCell>
-                        <TableCell className="font-mono text-[10px] text-muted-foreground truncate max-w-[150px]">{c.chave}</TableCell>
-                        <TableCell className="text-xs">{c.emitente}</TableCell>
-                        <TableCell className="text-sm font-medium">{c.tomador}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{c.cfop}</TableCell>
-                        <TableCell className="text-xs">{new Date(c.data_emissao).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right font-medium">{fmtFin(c.valor)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={c.status === "Autorizado" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}>{c.status}</Badge>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <Button variant="ghost" size="icon" className="h-8 w-8" title="Visualizar"><Eye className="w-4 h-4" /></Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" title="Imprimir DANFE"><Printer className="w-4 h-4" /></Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" title="Baixar XML"><Download className="w-4 h-4" /></Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-             </CardContent>
-           </Card>
+        <TabsContent value="cte" className="pt-4">
+           <CteTab />
         </TabsContent>
 
         {/* --- MDF-e --- */}
-        <TabsContent value="mdfe" className="space-y-4 pt-4">
-           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="relative w-full max-w-sm">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Buscar MDF-e, veículo ou prestador..." className="pl-9 w-full" />
-              </div>
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                 <Button variant="outline"><LinkIcon className="w-4 h-4 mr-2"/> Vincular CT-es</Button>
-                 <Button variant="outline"><FileText className="w-4 h-4 mr-2"/> Encerrar MDF-e</Button>
-                 <Button className="bg-purple-600 hover:bg-purple-700 text-white" onClick={() => handleEmitirDocumento("mdfe")}><Truck className="w-4 h-4 mr-2"/> Emitir MDF-e</Button>
-              </div>
-           </div>
-
-           <Card>
-             <CardContent className="p-0">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Nº MDF-e</TableHead><TableHead>Data</TableHead><TableHead>Prestador / Veículo</TableHead><TableHead>UFs Percorridas</TableHead><TableHead>CT-es Vinculados</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {mdfes.map((m, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="font-semibold text-purple-700">{m.numero}</TableCell>
-                        <TableCell className="text-xs">{new Date(m.data).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-sm font-medium">{m.prestador_veiculo}</TableCell>
-                        <TableCell className="text-sm">{m.uf}</TableCell>
-                        <TableCell className="font-medium text-center">{m.cte_vinculados}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={m.status === "Aberto" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-gray-100 text-gray-700 border-gray-200"}>{m.status}</Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-             </CardContent>
-           </Card>
+        <TabsContent value="mdfe" className="pt-4">
+           <MdfeTab />
         </TabsContent>
 
         {/* --- NFS-e --- */}
@@ -299,15 +237,24 @@ export default function Fiscal() {
                 <Table>
                   <TableHeader><TableRow><TableHead>Nº NFS-e</TableHead><TableHead>Tomador (Cliente)</TableHead><TableHead className="text-center">Cod. Serviço</TableHead><TableHead>Data Emissão</TableHead><TableHead className="text-right">Valor do Serviço</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Documento</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    {nfses.map((n, i) => (
+                    {nfses.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="h-24 text-center">
+                          <div className="flex flex-col items-center justify-center text-muted-foreground">
+                            <Stamp className="w-8 h-8 mb-2 opacity-20" />
+                            <p>Nenhuma NFS-e encontrada no banco de dados.</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : nfses.map((n, i) => (
                       <TableRow key={i}>
-                        <TableCell className="font-semibold text-green-700">{n.numero}</TableCell>
-                        <TableCell className="text-sm font-medium">{n.cliente}</TableCell>
-                        <TableCell className="text-xs text-center">{n.servico}</TableCell>
-                        <TableCell className="text-xs">{new Date(n.data_emissao).toLocaleDateString()}</TableCell>
-                        <TableCell className="text-right font-medium">{fmtFin(n.valor)}</TableCell>
+                        <TableCell className="font-semibold text-green-700">{n.numero || "-"}</TableCell>
+                        <TableCell className="text-sm font-medium">{n.cliente || "-"}</TableCell>
+                        <TableCell className="text-xs text-center">{n.servico || "-"}</TableCell>
+                        <TableCell className="text-xs">{n.data_emissao ? new Date(n.data_emissao).toLocaleDateString() : "-"}</TableCell>
+                        <TableCell className="text-right font-medium">{fmtFin(n.valor || 0)}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={n.status === "Autorizado" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}>{n.status}</Badge>
+                          <Badge variant="outline" className={n.status === "Autorizado" ? "bg-green-50 text-green-700 border-green-200" : n.status === "Rejeitado" || n.status === "Erro" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}>{n.status}</Badge>
                         </TableCell>
                         <TableCell className="text-right"><Button variant="ghost" size="icon" className="h-8 w-8"><Download className="w-4 h-4 text-muted-foreground"/></Button></TableCell>
                       </TableRow>

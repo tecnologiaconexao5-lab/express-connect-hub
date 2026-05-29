@@ -38,11 +38,14 @@ export interface ExecutiveInsight {
   prioridade: "alta" | "media" | "baixa";
 }
 
-export async function buscarAnalyticsDashboard(): Promise<AnalyticsDashboard> {
+export async function buscarAnalyticsDashboard(clienteId?: string): Promise<AnalyticsDashboard> {
+  if (!clienteId) return getDefaultAnalytics();
+
   try {
     const { data: entregasData } = await supabase
       .from("ordens_servico")
       .select("status, sla, created_at, valor_frete")
+      .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(100);
 
@@ -76,11 +79,14 @@ export async function buscarAnalyticsDashboard(): Promise<AnalyticsDashboard> {
   }
 }
 
-export async function buscarEconomia(): Promise<EconomiaData> {
+export async function buscarEconomia(clienteId?: string): Promise<EconomiaData> {
+  if (!clienteId) return getDefaultEconomia();
+
   try {
     const { data: entregasData } = await supabase
       .from("ordens_servico")
       .select("valor_frete, peso, volumes")
+      .eq("cliente_id", clienteId)
       .limit(100);
 
     const count = entregasData?.length || 1;
@@ -100,11 +106,14 @@ export async function buscarEconomia(): Promise<EconomiaData> {
   }
 }
 
-export async function buscarNotificacoes(): Promise<NotificacaoData[]> {
+export async function buscarNotificacoes(clienteId?: string): Promise<NotificacaoData[]> {
+  if (!clienteId) return getDefaultNotificacoes();
+
   try {
     const { data, error } = await supabase
       .from("notificacoes")
       .select("*")
+      .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -133,11 +142,13 @@ export async function buscarNotificacoes(): Promise<NotificacaoData[]> {
   }
 }
 
-export async function buscarExecutiveInsights(): Promise<ExecutiveInsight[]> {
+export async function buscarExecutiveInsights(clienteId?: string): Promise<ExecutiveInsight[]> {
+  if (!clienteId) return getDefaultInsights();
+
   try {
     const [entregasData, ocorrenciasData] = await Promise.all([
-      supabase.from("ordens_servico").select("status, sla").limit(50),
-      supabase.from("ocorrencias").select("id").limit(20),
+      supabase.from("ordens_servico").select("status, sla").eq("cliente_id", clienteId).limit(50),
+      supabase.from("ocorrencias").select("id").eq("cliente_id", clienteId).limit(20),
     ]);
 
     const entregas = entregasData.data || [];

@@ -5,11 +5,11 @@ export type FrequenciaOperacao = 'fixa' | 'recorrente' | 'esporadica'
 export type TipoCarga = 'seco' | 'refrigerado' | 'perigoso' | 'fragil' | 'alimenticio'
 export type MetodoCarga = 'carga_solta' | 'paletizado' | 'granel' | 'líquido' | 'gasoso'
 export type StatusPrestador = 'novo' | 'em_analise' | 'aprovado' | 'reserva' | 'agregado' | 'bloqueado'
-export type OrigemCadastro = 'whatsapp' | 'indicacao' | 'site' | 'manual'
+export type OrigemCadastro = 'whatsapp' | 'indicacao' | 'site' | 'manual' | 'fretebras' | 'facebook' | 'linkedin' | 'anuncio' | 'outro'
 export type TipoCargaVeiculo = 'seco' | 'refrigerado' | 'termico' | 'ambos'
 export type StatusDocumento = 'pendente' | 'enviado' | 'validando' | 'aprovado' | 'reprovado' | 'vencido'
 export type TipoDocumento = 'cnh' | 'cnpj' | 'certidao_federal' | 'certidao_estadual' | 'certidao_municipal' | 'crlv' | 'seguro' | 'antt' | 'contrato_social' | 'comprovante_endereco' | 'certificado_curso_mopp' | 'certidao_trabalhista'
-export type CanalCaptacao = 'whatsapp' | 'indicacao' | 'site' | 'landing_page' | 'presencial' | 'parceiro' | 'anuncio'
+export type CanalCaptacao = 'whatsapp' | 'indicacao' | 'site' | 'landing_page' | 'presencial' | 'parceiro' | 'anuncio' | 'fretebras' | 'facebook' | 'linkedin' | 'manual' | 'outro'
 export type StatusMatch = 'pendente' | 'interessado' | 'contatado' | 'em_analise' | 'aprovado' | 'recusado'
 export type StatusOnboarding = 'nao_iniciado' | 'em_andamento' | 'documentacao' | 'treinamento' | 'homologado' | 'concluido'
 export type StatusAutomacao = 'ativa' | 'pausada' | 'desativada'
@@ -31,6 +31,11 @@ export interface FinanceiroOperacao {
   margem: number
   valorKmExcedente: number
   franquiaKm: number
+  franquiaKmIda: number
+  franquiaKmVolta: number
+  kmExcedenteCliente: number
+  kmExcedentePrestador: number
+  percentualKmPrestador: number
   formaPagamento: string
   prazoPagamento: number
   dataPagamento: string
@@ -83,6 +88,25 @@ export interface Operacao {
   financeiro: FinanceiroOperacao
   meta: MetaOperacao
   historico: HistoricoItem[]
+  // Novo: dados logísticos estruturados (opcional por compatibilidade)
+  logistica?: {
+    quantidadeMediaParadas?: number
+    tipoOperacao?: 'fixa' | 'recorrente' | 'esporadica' | 'customizada'
+    textoResumidoOperacional?: string
+    programacaoOperacional?: Array<{
+      saida: string
+      retorno?: string
+      tipoEntrega: 'D+0' | 'D+1' | 'D+2' | 'outro'
+      observacao?: string
+    }>
+    tipoVeiculoDetalhado?: string
+    volumeM3?: number
+    aceitaTermo?: boolean
+    aceitaRefrigerado?: boolean
+    perfilCarga?: string
+    temperaturaMinima?: number
+    temperaturaMaxima?: number
+  }
   createdAt: string
   updatedAt: string
   createdBy: string

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { enterpriseKanbanService } from './enterpriseKanbanService'
 import type { PipelineStage } from './enterpriseKanbanTypes'
 import { toast } from 'sonner'
+import { TIPOS_VEICULO } from '@/constants/tiposVeiculo'
 
 interface CadastrarInteressadoModalProps {
   open: boolean
@@ -12,11 +13,7 @@ interface CadastrarInteressadoModalProps {
   onSuccess: () => void
 }
 
-const VEICULO_OPTIONS = [
-  'VUC 3/4', 'VUC 7 Ton', 'Toco 12 Ton', 'Truck 23 Ton',
-  'Carreta 2 Eixos', 'Carreta 3 Eixos', 'Bitrem', 'Rodotrem',
-  'Van 1 Ton', 'Van 2 Ton', 'Caminhão Baú', 'Caminhão Sider',
-]
+const VEICULO_OPTIONS = TIPOS_VEICULO
 
 const STAGE_OPTIONS: { value: PipelineStage; label: string }[] = [
   { value: 'novo_cadastro', label: 'Novo Cadastro' },
@@ -33,6 +30,7 @@ const ORIGEM_OPTIONS = [
   { value: 'Fretebras', label: 'Fretebras' },
   { value: 'indicação', label: 'Indicação' },
   { value: 'Facebook', label: 'Facebook' },
+  { value: 'LinkedIn', label: 'LinkedIn' },
   { value: 'WhatsApp', label: 'WhatsApp' },
   { value: 'site', label: 'Site' },
   { value: 'manual', label: 'Manual' },
@@ -43,7 +41,7 @@ export function CadastrarInteressadoModal({ open, onOpenChange, onSuccess }: Cad
   const [nome, setNome] = useState('')
   const [telefone, setTelefone] = useState('')
   const [cidadeUf, setCidadeUf] = useState('')
-  const [veiculo, setVeiculo] = useState(VEICULO_OPTIONS[0])
+  const [veiculo, setVeiculo] = useState(TIPOS_VEICULO[7]?.value ?? 'vuc')
   const [placa, setPlaca] = useState('')
   const [origem, setOrigem] = useState('Fretebras')
   const [observacoes, setObservacoes] = useState('')
@@ -60,17 +58,17 @@ export function CadastrarInteressadoModal({ open, onOpenChange, onSuccess }: Cad
     setSalvando(true)
 
     try {
-      // Split Cidade and UF
-      let cidade = cidadeUf
-      let uf = 'SP'
+      let cidade = cidadeUf.trim()
+      let uf = ''
       const parts = cidadeUf.split(/[/,-]/)
       if (parts.length > 1) {
         cidade = parts[0].trim()
         uf = parts[1].trim().toUpperCase()
       }
 
-      const tags = [origem.toLowerCase()]
-      if (origem.toLowerCase() === 'indicação') {
+      const origemNormalizada = origem.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      const tags = [origemNormalizada]
+      if (origemNormalizada === 'indicacao') {
         tags.push('indicado')
       }
 
@@ -95,7 +93,7 @@ export function CadastrarInteressadoModal({ open, onOpenChange, onSuccess }: Cad
       setNome('')
       setTelefone('')
       setCidadeUf('')
-      setVeiculo(VEICULO_OPTIONS[0])
+      setVeiculo(TIPOS_VEICULO[7]?.value ?? 'vuc')
       setPlaca('')
       setOrigem('Fretebras')
       setObservacoes('')
@@ -174,7 +172,7 @@ export function CadastrarInteressadoModal({ open, onOpenChange, onSuccess }: Cad
                 className="w-full px-3 py-2 text-sm rounded-xl border border-border bg-background focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
               >
                 {VEICULO_OPTIONS.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>

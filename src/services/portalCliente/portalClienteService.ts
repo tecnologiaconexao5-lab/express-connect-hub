@@ -163,13 +163,16 @@ export async function buscarResumoCliente(clienteNome?: string): Promise<Cliente
 }
 
 export async function buscarEntregasCliente(
+  clienteId?: string,
   clienteNome?: string,
   limit: number = 50
 ): Promise<EntregaResumo[]> {
+  if (!clienteId) return [];
   try {
     const { data, error } = await supabase
       .from("ordens_servico")
       .select("*")
+      .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -204,11 +207,13 @@ export async function buscarEntregasCliente(
   }
 }
 
-export async function buscarFinanceiroCliente(): Promise<FinanceiroResumo[]> {
+export async function buscarFinanceiroCliente(clienteId?: string): Promise<FinanceiroResumo[]> {
+  if (!clienteId) return [];
   try {
     const { data, error } = await supabase
       .from("financeiro_receber")
       .select("*")
+      .eq("cliente_id", clienteId)
       .order("data_vencimento", { ascending: false })
       .limit(20);
 
@@ -241,12 +246,13 @@ export async function buscarFinanceiroCliente(): Promise<FinanceiroResumo[]> {
   }
 }
 
-export async function buscarOcorrenciasCliente(limit: number = 20): Promise<OcorrenciaResumo[]> {
+export async function buscarOcorrenciasCliente(clienteId?: string, limit: number = 20): Promise<OcorrenciaResumo[]> {
+  if (!clienteId) return [];
   try {
-    // Usar nova tabela portal_ocorrencias
     const { data, error } = await supabase
       .from("portal_ocorrencias")
       .select("*")
+      .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -274,6 +280,7 @@ export async function buscarOcorrenciasCliente(limit: number = 20): Promise<Ocor
 }
 
 export async function buscarDashboardMetrics(
+  clienteId?: string,
   clienteNome?: string
 ): Promise<DashboardMetrics> {
   const defaultMetrics: DashboardMetrics = {
@@ -289,11 +296,13 @@ export async function buscarDashboardMetrics(
     valorMedioEntrega: 0,
   };
 
+  if (!clienteId) return defaultMetrics;
+
   try {
     const [entregas, financeiro, ocorrencias] = await Promise.all([
-      buscarEntregasCliente(clienteNome, 100),
-      buscarFinanceiroCliente(),
-      buscarOcorrenciasCliente(),
+      buscarEntregasCliente(clienteId, clienteNome, 100),
+      buscarFinanceiroCliente(clienteId),
+      buscarOcorrenciasCliente(clienteId),
     ]);
 
     const hoje = new Date().toDateString();
@@ -432,11 +441,13 @@ export function gerarInsights(metrics: DashboardMetrics) {
 // Novas funções para Portal Cliente Enterprise
 // =====================================================
 
-export async function buscarNotificacoesPortal(limit: number = 20): Promise<NotificacaoResumo[]> {
+export async function buscarNotificacoesPortal(clienteId?: string, limit: number = 20): Promise<NotificacaoResumo[]> {
+  if (!clienteId) return [];
   try {
     const { data, error } = await supabase
       .from("portal_notificacoes")
       .select("*")
+      .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -461,11 +472,13 @@ export async function buscarNotificacoesPortal(limit: number = 20): Promise<Noti
   }
 }
 
-export async function buscarAvaliacoesPortal(limit: number = 20): Promise<AvaliacaoResumo[]> {
+export async function buscarAvaliacoesPortal(clienteId?: string, limit: number = 20): Promise<AvaliacaoResumo[]> {
+  if (!clienteId) return [];
   try {
     const { data, error } = await supabase
       .from("portal_avaliacoes")
       .select("*")
+      .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -489,11 +502,13 @@ export async function buscarAvaliacoesPortal(limit: number = 20): Promise<Avalia
   }
 }
 
-export async function buscarComprovantesPortal(limit: number = 20): Promise<ComprovanteResumo[]> {
+export async function buscarComprovantesPortal(clienteId?: string, limit: number = 20): Promise<ComprovanteResumo[]> {
+  if (!clienteId) return [];
   try {
     const { data, error } = await supabase
       .from("portal_comprovantes")
       .select("*")
+      .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -518,11 +533,13 @@ export async function buscarComprovantesPortal(limit: number = 20): Promise<Comp
   }
 }
 
-export async function buscarFaturasPortal(limit: number = 20): Promise<FaturaPortalResumo[]> {
+export async function buscarFaturasPortal(clienteId?: string, limit: number = 20): Promise<FaturaPortalResumo[]> {
+  if (!clienteId) return [];
   try {
     const { data, error } = await supabase
       .from("portal_faturas")
       .select("*")
+      .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -548,11 +565,13 @@ export async function buscarFaturasPortal(limit: number = 20): Promise<FaturaPor
   }
 }
 
-export async function buscarProtocolosPortal(limit: number = 20): Promise<ProtocoloResumo[]> {
+export async function buscarProtocolosPortal(clienteId?: string, limit: number = 20): Promise<ProtocoloResumo[]> {
+  if (!clienteId) return [];
   try {
     const { data, error } = await supabase
       .from("portal_protocolos")
       .select("*")
+      .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -575,11 +594,13 @@ export async function buscarProtocolosPortal(limit: number = 20): Promise<Protoc
   }
 }
 
-export async function buscarRotasPortal(limit: number = 20): Promise<RotaResumo[]> {
+export async function buscarRotasPortal(clienteId?: string, limit: number = 20): Promise<RotaResumo[]> {
+  if (!clienteId) return [];
   try {
     const { data, error } = await supabase
       .from("portal_rotas")
       .select("*")
+      .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -604,11 +625,13 @@ export async function buscarRotasPortal(limit: number = 20): Promise<RotaResumo[
   }
 }
 
-export async function criarNotificacaoPortal(notificacao: Partial<NotificacaoResumo>): Promise<boolean> {
+export async function criarNotificacaoPortal(notificacao: Partial<NotificacaoResumo>, clienteId?: string): Promise<boolean> {
+  if (!clienteId) return false;
   try {
     const { error } = await supabase
       .from("portal_notificacoes")
       .insert([{
+        cliente_id: clienteId,
         tipo: notificacao.tipo || "sistema",
         titulo: notificacao.titulo || "",
         mensagem: notificacao.mensagem || "",
@@ -628,11 +651,13 @@ export async function criarNotificacaoPortal(notificacao: Partial<NotificacaoRes
   }
 }
 
-export async function criarOcorrenciaPortal(ocorrencia: Partial<OcorrenciaResumo>): Promise<boolean> {
+export async function criarOcorrenciaPortal(ocorrencia: Partial<OcorrenciaResumo>, clienteId?: string): Promise<boolean> {
+  if (!clienteId) return false;
   try {
     const { error } = await supabase
       .from("portal_ocorrencias")
       .insert([{
+        cliente_id: clienteId,
         tipo: ocorrencia.tipo || "outro",
         descricao: ocorrencia.descricao || "",
         prioridade: ocorrencia.prioridade || "media",
@@ -650,16 +675,17 @@ export async function criarOcorrenciaPortal(ocorrencia: Partial<OcorrenciaResumo
   }
 }
 
-export async function criarAvaliacaoPortal(avaliacao: Partial<AvaliacaoResumo>): Promise<boolean> {
+export async function criarAvaliacaoPortal(avaliacao: Partial<AvaliacaoResumo>, clienteId?: string): Promise<boolean> {
+  if (!clienteId) return false;
+  if (!avaliacao.nota || avaliacao.nota < 1 || avaliacao.nota > 5) {
+    console.warn("[PortalClienteService] Nota inválida para avaliação");
+    return false;
+  }
   try {
-    if (!avaliacao.nota || avaliacao.nota < 1 || avaliacao.nota > 5) {
-      console.warn("[PortalClienteService] Nota inválida para avaliação");
-      return false;
-    }
-
     const { error } = await supabase
       .from("portal_avaliacoes")
       .insert([{
+        cliente_id: clienteId,
         nota: avaliacao.nota,
         comentario: avaliacao.comentario || "",
         canal: avaliacao.canal || "portal",

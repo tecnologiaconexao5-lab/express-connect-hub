@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { PlusCircle, Save, ArrowRight, ArrowLeft, Send, DollarSign, Truck, MapPin, Route, Calendar, Target, FileText, Info, AlertTriangle } from 'lucide-react'
+import { PlusCircle, Save, ArrowRight, ArrowLeft, Send, DollarSign, Truck, MapPin, Route, Calendar, Target, FileText, Info, AlertTriangle, Copy, Check, MessageSquare, Users } from 'lucide-react'
 import { PageHeader } from '../components/design-system/PageHeader'
 import { PremiumCard, PremiumCardHeader, PremiumCardTitle, PremiumCardContent } from '../components/design-system/PremiumCard'
 import { PremiumBadge } from '../components/design-system/PremiumBadge'
 import { useOperacoes } from '../hooks/useOperacoes'
 import { useRecrutamentoUI } from '../hooks/useRecrutamentoUI'
+import { useRecrutamentoStore } from '../store/recrutamentoStore'
 import { formatCurrency, cn } from '../utils/cn'
 import type { Operacao, TipoCarga, Recurrencia, PrioridadeOperacao, FrequenciaOperacao } from '../types/recrutamento'
 import { Button } from '@/components/ui/button'
@@ -17,11 +18,126 @@ import { toast } from 'sonner'
 
 const TIPOS_VEICULO = ['Fiorino', 'Kangoo', 'Kombi', 'Van', 'VUC', 'HR', '3/4', 'Toco', 'Truck', 'Carreta', 'Bitrem', 'Carreta LS']
 
+type CampoEditado = 'valorCliente' | 'valorPrestador' | 'percentualPrestador' | 'margemTransportadora' | 'kmExcedenteCliente' | 'kmExcedentePrestador' | 'percentualKmPrestador' | null
+
+function gerarMensagemVaga(form: Partial<Operacao> & { produto?: string; paradasMin?: number; paradasMax?: number; horarioD1?: string; formaPagamentoFutura?: string }): string {
+  const f = form
+  const fn = f.financeiro
+
+  const capacidadeKg = f.pesoCarga || 'N/I'
+  const tipoVeiculoTexto = f.tipoVeiculo || 'N/I'
+  const bauOuCarroceria = f.tipoCarga === 'refrigerado' ? 'Baú refrigerado' : 'Baú seco / Carroceria conforme operação'
+  const produto = (form as any).produto || (f.tipoCarga === 'seco' ? 'Carga Seca' : f.tipoCarga === 'refrigerado' ? 'Carga Refrigerada' : f.tipoCarga === 'perigoso' ? 'Carga Perigosa' : f.tipoCarga === 'fragil' ? 'Carga Frágil' : f.tipoCarga === 'alimenticio' ? 'Carga Alimentícia' : f.tipoCarga || 'Geral')
+  const localCarregamento = f.localCarregamento || 'N/I'
+  const regiaoEntrega = f.regiao || f.rotaDestino || 'N/I'
+  const paradasMin = (form as any).paradasMin || 5
+  const paradasMax = (form as any).paradasMax || 18
+  const horarioD0 = f.horarioCarregamento || 'N/I'
+  const horarioD1 = (form as any).horarioD1 || f.horarioDescarregamento || 'N/I'
+  const repasseSaida = formatCurrency(fn?.valorPrestador || 0)
+  const franquiaKmIda = fn?.franquiaKmIda ?? 0
+  const franquiaKmVolta = fn?.franquiaKmVolta ?? 0
+  const totalKmIncluso = franquiaKmIda + franquiaKmVolta
+  const kmExcedentePrestador = formatCurrency(fn?.kmExcedentePrestador ?? fn?.valorKmExcedente ?? 0)
+  const formaPagamentoInicial = fn?.formaPagamento || 'Quinzenal'
+  const formaPagamentoFutura = (form as any).formaPagamentoFutura || 'Semanal'
+
+  return `🚚 *SELEÇÃO DE PRESTADORES — OPERAÇÃO FIXA E RECORRENTE*
+
+Estamos ampliando nossa base de prestadores parceiros para atuação em uma operação já consolidada, com demanda contínua e recorrência ao longo do ano.
+
+━━━━━━━━━━━━━━━━━━━
+
+🚛 *VEÍCULO DA OPERAÇÃO*
+
+✔ Veículos até ${capacidadeKg} kg
+✔ ${bauOuCarroceria}
+
+━━━━━━━━━━━━━━━━━━━
+
+📦 *RESUMO DA OPERAÇÃO*
+
+✔ Produto: *${produto}*
+✔ Carregamento: *${localCarregamento}*
+✔ Entregas: *${regiaoEntrega}*, conforme roteirização operacional
+✔ Média de *${paradasMin} a ${paradasMax} paradas por saída*
+
+━━━━━━━━━━━━━━━━━━━
+
+⏰ *PROGRAMAÇÃO OPERACIONAL*
+
+📌 Saídas às *${horarioD0}* → entregas D+0
+📌 Saídas a partir das *${horarioD1}* → entregas D+1
+
+━━━━━━━━━━━━━━━━━━━
+
+💰 *VALORES DA OPERAÇÃO*
+
+✔ Repasse por saída: *${repasseSaida}*
+✔ Franquia inclusa: *${franquiaKmIda} km ida + ${franquiaKmVolta} km volta*
+✔ KM excedente: *${kmExcedentePrestador} por km adicional*
+
+📌 A quilometragem considera:
+➡ ida + volta
+
+*Exemplo:*
+${franquiaKmIda} km ida + ${franquiaKmVolta} km volta = ${totalKmIncluso} km inclusos
+
+Caso ultrapasse:
+➡ o excedente será pago separadamente.
+
+━━━━━━━━━━━━━━━━━━━
+
+🎯 *PERFIL ALINHADO À OPERAÇÃO*
+
+Buscamos parceiros com:
+
+✔ Compromisso com horários e rotas
+✔ Organização nas entregas
+✔ Boa comunicação com a operação
+✔ Interesse em atuação contínua e recorrente
+✔ Perfil operacional e responsabilidade diária
+
+━━━━━━━━━━━━━━━━━━━
+
+💳 *FORMA DE PAGAMENTO*
+
+📅 Inicialmente:
+➡ ${formaPagamentoInicial}
+
+📈 Conforme estabilidade operacional:
+➡ ${formaPagamentoFutura}
+
+━━━━━━━━━━━━━━━━━━━
+
+📦 *IMPORTANTE*
+
+Essa operação é direcionada para parceiros que valorizam:
+
+✔ Constância operacional
+✔ Volume contínuo
+✔ Organização
+✔ Previsibilidade
+✔ Relacionamento de longo prazo
+
+Operação estruturada, recorrente e com acompanhamento operacional durante toda a execução.
+
+━━━━━━━━━━━━━━━━━━━
+
+📲 Se estiver dentro do perfil, pode chamar para alinharmos início e disponibilidade operacional.`
+}
+
 export function PaginaNovaOperacao() {
   const { criar } = useOperacoes()
   const { navegar } = useRecrutamentoUI()
+  const { prestadores } = useRecrutamentoStore()
   const [passo, setPasso] = useState(1)
   const [saving, setSaving] = useState(false)
+  const [ultimoCampo, setUltimoCampo] = useState<CampoEditado>(null)
+  const [copiado, setCopiado] = useState(false)
+
+  const isFirstRender = useRef(true)
+
   const [form, setForm] = useState<Partial<Operacao>>({
     nome: '',
     cliente: '',
@@ -59,6 +175,11 @@ export function PaginaNovaOperacao() {
       margem: 0,
       valorKmExcedente: 0,
       franquiaKm: 0,
+      franquiaKmIda: 0,
+      franquiaKmVolta: 0,
+      kmExcedenteCliente: 0,
+      kmExcedentePrestador: 0,
+      percentualKmPrestador: 0,
       formaPagamento: '',
       prazoPagamento: 30,
       dataPagamento: '',
@@ -74,7 +195,89 @@ export function PaginaNovaOperacao() {
       emAnalise: 0,
       recusados: 0,
     },
+    produto: '',
+    paradasMin: 5,
+    paradasMax: 18,
+    horarioD1: '',
+    formaPagamentoFutura: '',
   })
+
+  const updateFin = useCallback((campo: CampoEditado, patch: Partial<typeof form.financeiro>) => {
+    setUltimoCampo(campo)
+    setForm(prev => ({ ...prev, financeiro: { ...prev.financeiro!, ...patch } }))
+  }, [])
+
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return }
+
+    const f = form.financeiro!
+    const vc = f.valorCliente || 0
+    const vp = f.valorPrestador || 0
+    const imp = f.percentualImposto || 0
+    const seg = f.percentualSeguro || 0
+    const percPrest = f.percentualPrestador || 0
+    const margemTransp = f.margemTransportadora || 0
+
+    if (vc <= 0) return
+
+    if (ultimoCampo === 'valorCliente' || ultimoCampo === 'valorPrestador') {
+      if (vp > 0) {
+        const novoPerc = (vp / vc) * 100
+        setForm(prev => ({
+          ...prev,
+          financeiro: { ...prev.financeiro!, percentualPrestador: parseFloat(novoPerc.toFixed(2)) },
+        }))
+      }
+    }
+
+    if (ultimoCampo === 'percentualPrestador') {
+      if (percPrest > 0) {
+        const novoVp = vc * (percPrest / 100)
+        setForm(prev => ({
+          ...prev,
+          financeiro: { ...prev.financeiro!, valorPrestador: parseFloat(novoVp.toFixed(2)) },
+        }))
+      }
+    }
+
+    if (ultimoCampo === 'margemTransportadora') {
+      if (margemTransp > 0) {
+        const valorImposto = vc * (imp / 100)
+        const valorSeguro = vc * (seg / 100)
+        const receitaLiquida = vc - valorImposto
+        const restante = receitaLiquida * (1 - margemTransp / 100)
+        const novoVp = restante - valorSeguro
+        setForm(prev => ({
+          ...prev,
+          financeiro: { ...prev.financeiro!, valorPrestador: parseFloat(Math.max(0, novoVp).toFixed(2)), percentualPrestador: parseFloat((Math.max(0, novoVp) / vc * 100).toFixed(2)) },
+        }))
+      }
+    }
+
+    if (ultimoCampo === 'kmExcedenteCliente' || ultimoCampo === 'kmExcedentePrestador') {
+      const kmeC = f.kmExcedenteCliente || 0
+      const kmeP = f.kmExcedentePrestador || 0
+      if (kmeC > 0 && kmeP > 0) {
+        const novoPercKM = (kmeP / kmeC) * 100
+        setForm(prev => ({
+          ...prev,
+          financeiro: { ...prev.financeiro!, percentualKmPrestador: parseFloat(novoPercKM.toFixed(2)) },
+        }))
+      }
+    }
+
+    if (ultimoCampo === 'percentualKmPrestador') {
+      const kmeC = f.kmExcedenteCliente || 0
+      const percKM = f.percentualKmPrestador || 0
+      if (kmeC > 0 && percKM > 0) {
+        const novoKmeP = kmeC * (percKM / 100)
+        setForm(prev => ({
+          ...prev,
+          financeiro: { ...prev.financeiro!, kmExcedentePrestador: parseFloat(novoKmeP.toFixed(2)) },
+        }))
+      }
+    }
+  }, [form.financeiro?.valorCliente, form.financeiro?.valorPrestador, form.financeiro?.percentualPrestador, form.financeiro?.margemTransportadora, form.financeiro?.kmExcedenteCliente, form.financeiro?.kmExcedentePrestador, form.financeiro?.percentualKmPrestador])
 
   const calcularFinanceiro = () => {
     const f = form.financeiro!
@@ -105,7 +308,8 @@ export function PaginaNovaOperacao() {
       await criar(form)
       toast.success('Operação criada! Match inteligente será processado.')
       navegar('operacoes')
-    } catch {
+    } catch (err) {
+      console.error('[NovaOperacao] Erro ao criar:', err)
       toast.error('Erro ao criar operação')
     } finally {
       setSaving(false)
@@ -113,6 +317,29 @@ export function PaginaNovaOperacao() {
   }
 
   const fin = calcularFinanceiro()
+
+  const mensagemVaga = useMemo(() => gerarMensagemVaga(form), [form])
+
+  const handleCopyMensagem = async () => {
+    try {
+      await navigator.clipboard.writeText(mensagemVaga)
+      setCopiado(true)
+      toast.success('Mensagem da vaga copiada!')
+      setTimeout(() => setCopiado(false), 2000)
+    } catch {
+      toast.error('Erro ao copiar')
+    }
+  }
+
+  const prestadoresCompativeis = useMemo(() => {
+    if (!form.tipoVeiculo) return []
+    const t = form.tipoVeiculo.toLowerCase()
+    return (prestadores || []).filter(p => {
+      if (p.status === 'bloqueado') return false
+      const vt = (p.tipoVeiculo || '').toLowerCase()
+      return vt.includes(t) || t.includes(vt) || vt === t
+    })
+  }, [prestadores, form.tipoVeiculo])
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -241,23 +468,10 @@ export function PaginaNovaOperacao() {
                   <Label>Temperatura Controlada</Label>
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={form.temperatura !== ''}
-                        onChange={e => setForm({...form, temperatura: e.target.checked ? '0' : ''})}
-                        className="rounded border-border"
-                      />
+                      <input type="checkbox" checked={form.temperatura !== ''} onChange={e => setForm({...form, temperatura: e.target.checked ? '0' : ''})} className="rounded border-border" />
                       <span className="text-xs text-muted-foreground">Controlada</span>
                     </label>
-                    {form.temperatura !== '' && (
-                      <Input
-                        type="text"
-                        value={form.temperatura}
-                        onChange={e => setForm({...form, temperatura: e.target.value})}
-                        placeholder="Ex: -5°C a 8°C"
-                        className="flex-1 h-8 text-xs"
-                      />
-                    )}
+                    {form.temperatura !== '' && <Input type="text" value={form.temperatura} onChange={e => setForm({...form, temperatura: e.target.value})} placeholder="Ex: -5°C a 8°C" className="flex-1 h-8 text-xs" />}
                   </div>
                 </div>
                 <div>
@@ -280,15 +494,17 @@ export function PaginaNovaOperacao() {
                   <Label>Local Descarregamento</Label>
                   <Input value={form.localDescarregamento} onChange={e => setForm({...form, localDescarregamento: e.target.value})} />
                 </div>
+                <div>
+                  <Label>Produto</Label>
+                  <Input value={(form as any).produto || ''} onChange={e => setForm({...form, produto: e.target.value} as any)} placeholder="Ex: Carga Seca / Eletrodomésticos" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label>Mín. Paradas</Label><Input type="number" min={1} value={(form as any).paradasMin ?? 5} onChange={e => setForm({...form, paradasMin: parseInt(e.target.value) || 5} as any)} /></div>
+                  <div><Label>Máx. Paradas</Label><Input type="number" min={1} value={(form as any).paradasMax ?? 18} onChange={e => setForm({...form, paradasMax: parseInt(e.target.value) || 18} as any)} /></div>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Horário Carregamento</Label>
-                    <Input type="time" value={form.horarioCarregamento} onChange={e => setForm({...form, horarioCarregamento: e.target.value})} />
-                  </div>
-                  <div>
-                    <Label>Horário Descarregamento</Label>
-                    <Input type="time" value={form.horarioDescarregamento} onChange={e => setForm({...form, horarioDescarregamento: e.target.value})} />
-                  </div>
+                  <div><Label>Horário Saída D+0</Label><Input type="time" value={form.horarioCarregamento} onChange={e => setForm({...form, horarioCarregamento: e.target.value})} /></div>
+                  <div><Label>Horário Saída D+1</Label><Input type="time" value={(form as any).horarioD1 || ''} onChange={e => setForm({...form, horarioD1: e.target.value} as any)} /></div>
                 </div>
                 <div className="md:col-span-2">
                   <Label>Rota Origem → Destino</Label>
@@ -313,13 +529,11 @@ export function PaginaNovaOperacao() {
               <PremiumCardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>Quantidade de Veículos</Label>
-                  <Input type="number" min={1} value={form.meta?.vagasTotais || 1}
-                    onChange={e => setForm({...form, meta: {...form.meta!, vagasTotais: parseInt(e.target.value) || 1, vagasPendentes: parseInt(e.target.value) || 1}})} />
+                  <Input type="number" min={1} value={form.meta?.vagasTotais || 1} onChange={e => setForm({...form, meta: {...form.meta!, vagasTotais: parseInt(e.target.value) || 1, vagasPendentes: parseInt(e.target.value) || 1}})} />
                 </div>
                 <div>
                   <Label>Diárias por Veículo</Label>
-                  <Input type="number" min={1} value={form.meta?.diariasPorVaga || 1}
-                    onChange={e => setForm({...form, meta: {...form.meta!, diariasPorVaga: parseInt(e.target.value) || 1}})} />
+                  <Input type="number" min={1} value={form.meta?.diariasPorVaga || 1} onChange={e => setForm({...form, meta: {...form.meta!, diariasPorVaga: parseInt(e.target.value) || 1}})} />
                 </div>
               </PremiumCardContent>
             </PremiumCard>
@@ -353,17 +567,17 @@ export function PaginaNovaOperacao() {
                 <div>
                   <Label>Valor Cliente (R$)</Label>
                   <Input type="number" step="0.01" value={form.financeiro?.valorCliente || ''}
-                    onChange={e => setForm({...form, financeiro: {...form.financeiro!, valorCliente: parseFloat(e.target.value) || 0}})} />
+                    onChange={e => updateFin('valorCliente', { valorCliente: parseFloat(e.target.value) || 0 })} />
                 </div>
                 <div>
                   <Label>Valor Prestador (R$)</Label>
                   <Input type="number" step="0.01" value={form.financeiro?.valorPrestador || ''}
-                    onChange={e => setForm({...form, financeiro: {...form.financeiro!, valorPrestador: parseFloat(e.target.value) || 0}})} />
+                    onChange={e => updateFin('valorPrestador', { valorPrestador: parseFloat(e.target.value) || 0 })} />
                 </div>
                 <div>
                   <Label>% Prestador</Label>
                   <Input type="number" step="0.01" value={form.financeiro?.percentualPrestador || ''}
-                    onChange={e => setForm({...form, financeiro: {...form.financeiro!, percentualPrestador: parseFloat(e.target.value) || 0}})} />
+                    onChange={e => updateFin('percentualPrestador', { percentualPrestador: parseFloat(e.target.value) || 0 })} />
                 </div>
                 <div>
                   <Label>Imposto (%)</Label>
@@ -378,21 +592,40 @@ export function PaginaNovaOperacao() {
                 <div>
                   <Label>Margem Transportadora (%)</Label>
                   <Input type="number" step="0.01" value={form.financeiro?.margemTransportadora || ''}
-                    onChange={e => setForm({...form, financeiro: {...form.financeiro!, margemTransportadora: parseFloat(e.target.value) || 0}})} />
+                    onChange={e => updateFin('margemTransportadora', { margemTransportadora: parseFloat(e.target.value) || 0 })} />
                 </div>
                 <div>
-                  <Label>Franquia KM</Label>
-                  <Input type="number" value={form.financeiro?.franquiaKm || ''}
-                    onChange={e => setForm({...form, financeiro: {...form.financeiro!, franquiaKm: parseInt(e.target.value) || 0}})} />
+                  <Label>Franquia KM Ida</Label>
+                  <Input type="number" value={form.financeiro?.franquiaKmIda || ''}
+                    onChange={e => setForm({...form, financeiro: {...form.financeiro!, franquiaKmIda: parseInt(e.target.value) || 0}})} />
                 </div>
                 <div>
-                  <Label>KM Excedente (R$)</Label>
-                  <Input type="number" step="0.01" value={form.financeiro?.valorKmExcedente || ''}
-                    onChange={e => setForm({...form, financeiro: {...form.financeiro!, valorKmExcedente: parseFloat(e.target.value) || 0}})} />
+                  <Label>Franquia KM Volta</Label>
+                  <Input type="number" value={form.financeiro?.franquiaKmVolta || ''}
+                    onChange={e => setForm({...form, financeiro: {...form.financeiro!, franquiaKmVolta: parseInt(e.target.value) || 0}})} />
+                </div>
+                <div>
+                  <Label>KM Excedente Cliente (R$)</Label>
+                  <Input type="number" step="0.01" value={form.financeiro?.kmExcedenteCliente || ''}
+                    onChange={e => updateFin('kmExcedenteCliente', { kmExcedenteCliente: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div>
+                  <Label>KM Excedente Prestador (R$)</Label>
+                  <Input type="number" step="0.01" value={form.financeiro?.kmExcedentePrestador || ''}
+                    onChange={e => updateFin('kmExcedentePrestador', { kmExcedentePrestador: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div>
+                  <Label>% KM Prestador</Label>
+                  <Input type="number" step="0.01" value={form.financeiro?.percentualKmPrestador || ''}
+                    onChange={e => updateFin('percentualKmPrestador', { percentualKmPrestador: parseFloat(e.target.value) || 0 })} />
                 </div>
                 <div>
                   <Label>Forma Pagamento</Label>
                   <Input value={form.financeiro?.formaPagamento || ''} onChange={e => setForm({...form, financeiro: {...form.financeiro!, formaPagamento: e.target.value}})} placeholder="Ex: Quinzenal" />
+                </div>
+                <div>
+                  <Label>Pagamento Futuro</Label>
+                  <Input value={(form as any).formaPagamentoFutura || ''} onChange={e => setForm({...form, formaPagamentoFutura: e.target.value} as any)} placeholder="Ex: Semanal (após estabilidade)" />
                 </div>
                 <div>
                   <Label>Prazo (dias)</Label>
@@ -409,68 +642,88 @@ export function PaginaNovaOperacao() {
 
             <PremiumCard borderAccent="emerald-500/30">
               <PremiumCardHeader>
-                <PremiumCardTitle className="flex items-center gap-2">
-                  <DollarSign className="w-4 h-4 text-emerald-400" />
-                  Simulador Financeiro
-                </PremiumCardTitle>
+                <PremiumCardTitle className="flex items-center gap-2"><DollarSign className="w-4 h-4 text-emerald-400" />Simulador Financeiro</PremiumCardTitle>
                 <PremiumBadge variant="success" dot size="sm">Estimativa</PremiumBadge>
               </PremiumCardHeader>
               <PremiumCardContent>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                  <div className="p-3 rounded-lg bg-muted/30">
-                    <p className="text-[10px] text-muted-foreground">Receita Líquida</p>
-                    <p className="text-sm font-bold text-foreground">{formatCurrency(fin.receitaLiquida)}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-muted/30">
-                    <p className="text-[10px] text-muted-foreground">Custo Total</p>
-                    <p className="text-sm font-bold text-foreground">{formatCurrency(fin.custoTotal)}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-muted/30">
-                    <p className="text-[10px] text-muted-foreground">Lucro Unitário</p>
-                    <p className="text-sm font-bold text-emerald-400">{formatCurrency(fin.lucroUnitario)}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-muted/30">
-                    <p className="text-[10px] text-muted-foreground">Margem</p>
-                    <p className="text-sm font-bold" style={{ color: fin.margem >= 15 ? '#34d399' : fin.margem >= 5 ? '#fbbf24' : '#f87171' }}>
-                      {fin.margem.toFixed(1)}%
-                    </p>
-                  </div>
+                  <div className="p-3 rounded-lg bg-muted/30"><p className="text-[10px] text-muted-foreground">Receita Líquida</p><p className="text-sm font-bold text-foreground">{formatCurrency(fin.receitaLiquida)}</p></div>
+                  <div className="p-3 rounded-lg bg-muted/30"><p className="text-[10px] text-muted-foreground">Custo Total</p><p className="text-sm font-bold text-foreground">{formatCurrency(fin.custoTotal)}</p></div>
+                  <div className="p-3 rounded-lg bg-muted/30"><p className="text-[10px] text-muted-foreground">Lucro Unitário</p><p className="text-sm font-bold text-emerald-400">{formatCurrency(fin.lucroUnitario)}</p></div>
+                  <div className="p-3 rounded-lg bg-muted/30"><p className="text-[10px] text-muted-foreground">Margem</p><p className="text-sm font-bold" style={{ color: fin.margem >= 15 ? '#34d399' : fin.margem >= 5 ? '#fbbf24' : '#f87171' }}>{fin.margem.toFixed(1)}%</p></div>
                 </div>
                 <div className="p-4 rounded-lg bg-muted/20 border border-border/40">
                   <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">Lucro Total Estimado</p>
-                      <p className="text-xs text-muted-foreground">
-                        {(form.meta?.vagasTotais || 1)} veículos × {(form.meta?.diariasPorVaga || 1)} diárias
-                      </p>
-                    </div>
+                    <div><p className="text-sm font-semibold text-foreground">Lucro Total Estimado</p><p className="text-xs text-muted-foreground">{(form.meta?.vagasTotais || 1)} veículos × {(form.meta?.diariasPorVaga || 1)} diárias</p></div>
                     <p className="text-2xl font-bold text-emerald-400">{formatCurrency(fin.lucroTotal)}</p>
                   </div>
                 </div>
                 {fin.margem < 5 && (
-                  <div className="flex items-center gap-2 p-3 mt-3 rounded-lg bg-amber-500/10 text-amber-400 text-xs">
-                    <AlertTriangle className="w-4 h-4 shrink-0" />
-                    Margem muito baixa. Considere ajustar os valores.
-                  </div>
+                  <div className="flex items-center gap-2 p-3 mt-3 rounded-lg bg-amber-500/10 text-amber-400 text-xs"><AlertTriangle className="w-4 h-4 shrink-0" />Margem muito baixa. Considere ajustar os valores.</div>
                 )}
               </PremiumCardContent>
             </PremiumCard>
+
+            <PremiumCard borderAccent="violet-500/30">
+              <PremiumCardHeader>
+                <PremiumCardTitle className="flex items-center gap-2"><MessageSquare className="w-4 h-4 text-violet-400" />Mensagem da Vaga</PremiumCardTitle>
+                <PremiumBadge variant="info" dot size="sm">Pré-visualização</PremiumBadge>
+              </PremiumCardHeader>
+              <PremiumCardContent>
+                <div className="p-4 rounded-lg bg-muted/20 border border-border/40 whitespace-pre-wrap text-xs text-foreground leading-relaxed font-mono max-h-96 overflow-y-auto">
+                  {mensagemVaga}
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={handleCopyMensagem}>
+                    {copiado ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiado ? 'Copiado!' : 'Copiar mensagem'}
+                  </Button>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/10" onClick={() => {
+                    const msg = encodeURIComponent(mensagemVaga)
+                    window.open(`https://wa.me/?text=${msg}`, '_blank')
+                  }}>
+                    <Send className="w-3.5 h-3.5" />
+                    Abrir WhatsApp
+                  </Button>
+                </div>
+              </PremiumCardContent>
+            </PremiumCard>
+
+            {form.tipoVeiculo && (
+              <PremiumCard borderAccent="blue-500/30">
+                <PremiumCardHeader>
+                  <PremiumCardTitle className="flex items-center gap-2"><Users className="w-4 h-4 text-blue-400" />Prestadores Compatíveis</PremiumCardTitle>
+                  <PremiumBadge variant="info" dot size="sm">{prestadoresCompativeis.length} encontrados</PremiumBadge>
+                </PremiumCardHeader>
+                <PremiumCardContent>
+                  {prestadoresCompativeis.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-4 text-center">Nenhum prestador compatível com {form.tipoVeiculo} encontrado.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {prestadoresCompativeis.map(p => (
+                        <div key={p.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/20 border border-border/30">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-foreground">{p.nome}</p>
+                            <p className="text-[10px] text-muted-foreground">{p.tipoVeiculo} · {p.placaVeiculo || 'S/ placa'} · {p.endereco?.cidade || ''}/{p.endereco?.uf || ''}</p>
+                          </div>
+                          <PremiumBadge variant={p.status === 'agregado' ? 'success' : 'default'} size="sm">{p.status}</PremiumBadge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </PremiumCardContent>
+              </PremiumCard>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
 
       <div className="flex items-center justify-between pt-4 border-t border-border/50">
-        <Button variant="outline" onClick={() => setPasso(p => Math.max(1, p - 1))} disabled={passo === 1}>
-          <ArrowLeft className="w-4 h-4 mr-1.5" /> Anterior
-        </Button>
+        <Button variant="outline" onClick={() => setPasso(p => Math.max(1, p - 1))} disabled={passo === 1}><ArrowLeft className="w-4 h-4 mr-1.5" /> Anterior</Button>
         {passo < 4 ? (
-          <Button onClick={() => setPasso(p => Math.min(4, p + 1))}>
-            Próximo <ArrowRight className="w-4 h-4 ml-1.5" />
-          </Button>
+          <Button onClick={() => setPasso(p => Math.min(4, p + 1))}>Próximo <ArrowRight className="w-4 h-4 ml-1.5" /></Button>
         ) : (
-          <Button onClick={handleSalvar} disabled={saving} className="bg-emerald-600 hover:bg-emerald-500">
-            {saving ? 'Salvando...' : <><Send className="w-4 h-4 mr-1.5" /> Criar Operação</>}
-          </Button>
+          <Button onClick={handleSalvar} disabled={saving} className="bg-emerald-600 hover:bg-emerald-500">{saving ? 'Salvando...' : <><Send className="w-4 h-4 mr-1.5" /> Criar Operação</>}</Button>
         )}
       </div>
     </div>

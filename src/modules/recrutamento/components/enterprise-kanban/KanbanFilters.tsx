@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { Filter, X, RotateCcw, SlidersHorizontal } from 'lucide-react'
-import type { KanbanFilter, Prioridade, StatusDocumental, ValidadeCNH, TagType } from './enterpriseKanbanTypes'
+import type { KanbanFilter, Prioridade, StatusDocumental, StatusOperacional, DisponibilidadeTipo, ValidadeCNH, TagType } from './enterpriseKanbanTypes'
 import { cn } from '../../utils/cn'
 
 interface KanbanFiltersProps {
@@ -24,6 +24,19 @@ const STATUS_DOC_OPTIONS: { value: StatusDocumental; label: string }[] = [
   { value: 'parcial', label: 'Parcial' },
   { value: 'pendente', label: 'Pendente' },
   { value: 'vencido', label: 'Vencido' },
+]
+
+const OP_OPTIONS: { value: StatusOperacional; label: string; color: string }[] = [
+  { value: 'apto', label: 'Apto', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+  { value: 'pendente', label: 'Pendente', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
+  { value: 'bloqueado', label: 'Bloqueado', color: 'bg-red-500/20 text-red-400 border-red-500/30' },
+  { value: 'indisponivel', label: 'Indisponível', color: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30' },
+]
+
+const DISP_OPTIONS: { value: DisponibilidadeTipo; label: string; color: string }[] = [
+  { value: 'imediata', label: 'Imediata', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+  { value: 'parcial', label: 'Parcial', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
+  { value: 'indisponivel', label: 'Indisponível', color: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30' },
 ]
 
 const CNH_OPTIONS: { value: ValidadeCNH; label: string }[] = [
@@ -167,6 +180,36 @@ export function KanbanFilters({ filters, onFilterChange, onReset, show, onToggle
                       label={opt.label}
                       active={filters.statusDocumental.includes(opt.value)}
                       onClick={() => toggleArrayFilter('statusDocumental', opt.value)}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Status Operacional</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {OP_OPTIONS.map((opt) => (
+                    <FilterChip
+                      key={opt.value}
+                      label={opt.label}
+                      active={filters.statusOperacional.includes(opt.value)}
+                      onClick={() => toggleArrayFilter('statusOperacional', opt.value)}
+                      color={filters.statusOperacional.includes(opt.value) ? opt.color : undefined}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Disponibilidade</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {DISP_OPTIONS.map((opt) => (
+                    <FilterChip
+                      key={opt.value}
+                      label={opt.label}
+                      active={filters.disponibilidade.includes(opt.value)}
+                      onClick={() => toggleArrayFilter('disponibilidade', opt.value)}
+                      color={filters.disponibilidade.includes(opt.value) ? opt.color : undefined}
                     />
                   ))}
                 </div>

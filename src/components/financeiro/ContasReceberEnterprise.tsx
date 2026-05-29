@@ -19,6 +19,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { escalaParaItemFaturamento, isAlocacaoFaturavel, type ItemFaturamentoEscala } from "@/services/escala/escalaFinanceiroAdapter";
+import { mapearBancoParaLocal } from "@/services/escala/escalaMapper";
 import { 
   formatCurrency, formatDate, formatDateForInput, formatDocument,
   CATEGORIAS_RECEITA, FORMAS_PAGAMENTO, STATUS_RECEBIVEL, mockCentrosResultado, mockPlanoContas, mockContasBancarias
@@ -110,6 +112,9 @@ export default function ContasReceberEnterprise() {
   const [showBaixa, setShowBaixa] = useState(false);
   const [showRenegociar, setShowRenegociar] = useState(false);
   const [recebivelSelecionado, setRecebivelSelecionado] = useState<Recebivel | null>(null);
+  const [escalaFaturamento, setEscalaFaturamento] = useState<ItemFaturamentoEscala[]>([]);
+  const [escalaFaturamentoLoading, setEscalaFaturamentoLoading] = useState(false);
+  const [gerandoRecebivelId, setGerandoRecebivelId] = useState<string | null>(null);
   const [aba, setAba] = useState("lista");
 
   const [filtros, setFiltros] = useState({
@@ -145,6 +150,11 @@ export default function ContasReceberEnterprise() {
     fetchRecebiveis();
     fetchClientes();
   }, []);
+
+  useEffect(() => {
+    fetchEscalaFaturamento();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtros.dataInicio, filtros.dataFim]);
 
   const fetchRecebiveis = async () => {
     try {
@@ -184,6 +194,82 @@ export default function ContasReceberEnterprise() {
       setClientes((data as Cliente[]) || []);
     } catch (error) {
       console.error("Erro ao buscar clientes:", error);
+    }
+  };
+
+  const fetchEscalaFaturamento = async () => {
+    setEscalaFaturamentoLoading(true);
+    try {
+      let query = supabase
+        .from("alocacoes_escala")
+        .select("*");
+      if (filtros.dataInicio) query = query.gte("data_escala", filtros.dataInicio);
+      if (filtros.dataFim) query = query.lte("data_escala", filtros.dataFim);
+      const { data, error } = await query.order("data_escala", { ascending: false });
+      if (error) throw error;
+      const items = (data || [])
+        .map(mapearBancoParaLocal)
+        .filter(isAlocacaoFaturavel)
+        .map(escalaParaItemFaturamento);
+      setEscalaFaturamento(items);
+    } catch (e) {
+      console.warn("[ContasReceberEnterprise] Erro ao buscar faturamento da Escala:", e);
+      setEscalaFaturamento([]);
+    } finally {
+      setEscalaFaturamentoLoading(false);
+    }
+  };
+
+  const handleGerarRecebivel = async (item: ItemFaturamentoEscala) => {
+    if (gerandoRecebivelId) return;
+
+    if (!item.clienteId) {
+      toast.warning("Recebível não pode ser gerado: alocação sem cliente vinculado.");
+      return;
+    }
+    if (!item.valorFrete || item.valorFrete <= 0) {
+      toast.warning("Recebível não pode ser gerado: valor do frete é zero ou inválido.");
+      return;
+    }
+
+    setGerandoRecebivelId(item.alocacaoId);
+    try {
+      let query = supabase.from("financeiro_receber").select("id");
+      query = query.eq("cliente_id", item.clienteId).eq("valor_bruto", item.valorFrete);
+      if (item.os) query = query.eq("os_vinculadas", item.os);
+      const { data: existente } = await query.maybeSingle();
+
+      if (existente) {
+        toast.warning("Recebível já existe para este cliente + OS + valor.");
+        return;
+      }
+
+      const dataVencimento = item.data
+        ? new Date(new Date(item.data).getTime() + 30 * 86400000).toISOString().split("T")[0]
+        : new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0];
+
+      const { error } = await supabase.from("financeiro_receber").insert({
+        cliente_id: item.clienteId,
+        cliente_nome: item.clienteNome,
+        fatura: `ESC-${item.os || Date.now()}`,
+        os_vinculadas: item.os,
+        valor_bruto: item.valorFrete,
+        valor_liquido: item.valorFrete,
+        data_emissao: item.data ? item.data.split("T")[0] : new Date().toISOString().split("T")[0],
+        data_vencimento: dataVencimento,
+        status: "pendente",
+        observacoes: `Gerado da Escala Operacional | origem: escala_operacional | alocação: ${item.alocacaoId}`,
+      });
+
+      if (error) throw error;
+
+      toast.success(`Recebível gerado: ${item.os || item.clienteNome}`);
+      await fetchRecebiveis();
+    } catch (e: any) {
+      console.error("[ContasReceberEnterprise] Erro ao gerar recebível da Escala:", e);
+      toast.error(`Erro ao gerar recebível: ${e.message}`);
+    } finally {
+      setGerandoRecebivelId(null);
     }
   };
 
@@ -960,6 +1046,78 @@ try {
               )}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Package className="w-5 h-5 text-indigo-500 shrink-0" />
+            <div>
+              <CardTitle className="text-lg">Faturamento Potencial da Escala</CardTitle>
+              <CardDescription>
+                {escalaFaturamentoLoading ? "Carregando..." : "Dados preparados da escala — ainda não lançados como recebível"}
+              </CardDescription>
+            </div>
+            <Badge variant="outline" className="ml-auto text-xs text-indigo-600 border-indigo-200 bg-indigo-50 shrink-0">
+              Origem: Escala Operacional
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {escalaFaturamentoLoading ? (
+            <div className="text-center py-4 text-muted-foreground">Carregando dados da Escala...</div>
+          ) : escalaFaturamento.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Nenhum faturamento pendente da Escala Operacional
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">OS</TableHead>
+                    <TableHead className="text-xs">Cliente</TableHead>
+                    <TableHead className="text-xs">Data</TableHead>
+                    <TableHead className="text-xs text-right">Valor Frete</TableHead>
+                    <TableHead className="text-xs">Status Escala</TableHead>
+                    <TableHead className="text-xs text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {escalaFaturamento.map(item => (
+                    <TableRow key={item.alocacaoId}>
+                      <TableCell className="font-mono text-xs">{item.os || "-"}</TableCell>
+                      <TableCell className="text-xs">{item.clienteNome || "-"}</TableCell>
+                      <TableCell className="text-xs">{item.data ? new Date(item.data).toLocaleDateString("pt-BR") : "-"}</TableCell>
+                      <TableCell className="text-xs text-right font-medium">{item.valorFrete.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">{item.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 text-xs"
+                          disabled={gerandoRecebivelId === item.alocacaoId}
+                          onClick={() => handleGerarRecebivel(item)}
+                        >
+                          {gerandoRecebivelId === item.alocacaoId ? "Gerando..." : "Gerar Recebível"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="text-right text-sm text-muted-foreground">
+                Total potencial:{" "}
+                <span className="font-bold text-indigo-600">
+                  {escalaFaturamento.reduce((acc, i) => acc + i.valorFrete, 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </span>
+                <span className="ml-2 text-xs">(não incluso nos recebíveis acima)</span>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

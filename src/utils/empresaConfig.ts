@@ -1,8 +1,17 @@
 export const empresaConfig = {
   nome: "Conexão Express Transportes LTDA",
-  cnpj: "12.345.678/0001-90",
-  endereco: "Av. Paulista, 1000 - Bela Vista, São Paulo - SP",
-  telefone: "(11) 4000-1234",
+  razaoSocial: "Conexão Express Transportes LTDA",
+  nomeFantasia: "Conexão Express",
+  cnpj: "31.227.975/0001-80",
+  inscricaoEstadual: "123.456.789.000",
+  endereco: "Av. Paulista, 1000 - Bela Vista",
+  cidade: "São Paulo",
+  uf: "SP",
+  cep: "01310-100",
+  telefone: "(11) 4225-1600",
   email: "financeiro@conexaoexpress.com.br",
-  logoPath: "/logo-empresa.png"
+  site: "www.conexaoexpress.com.br",
+  logoPath: "/logos/logo-conexao-colorido.png",
+  logoLightPath: "/logos/logo-conexao-branco.png",
+  slogan: "Conectando cargas com excelência logística",
 };

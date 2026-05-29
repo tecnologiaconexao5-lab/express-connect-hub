@@ -49,11 +49,14 @@ export interface SaudeOperacional {
   tendencia: "subindo" | "estavel" | "caindo";
 }
 
-export async function buscarRotas(clienteNome?: string): Promise<Rota[]> {
+export async function buscarRotas(clienteId?: string, clienteNome?: string): Promise<Rota[]> {
+  if (!clienteId) return getFallbackRotas();
+
   try {
     const { data, error } = await supabase
       .from("ordens_servico")
       .select("id, cidade_destino, veiculo_tipo, status")
+      .eq("cliente_id", clienteId)
       .order("created_at", { ascending: false })
       .limit(100);
 
@@ -88,7 +91,9 @@ export async function buscarRotas(clienteNome?: string): Promise<Rota[]> {
   }
 }
 
-export async function buscarEscala(clienteNome?: string): Promise<VeiculoEscala[]> {
+export async function buscarEscala(clienteId?: string, clienteNome?: string): Promise<VeiculoEscala[]> {
+  if (!clienteId) return getFallbackEscala();
+
   try {
     const { data, error } = await supabase
       .from("veiculos")
@@ -122,11 +127,13 @@ export async function buscarEscala(clienteNome?: string): Promise<VeiculoEscala[
   }
 }
 
-export async function buscarInsights(clienteNome?: string): Promise<InsightIA[]> {
+export async function buscarInsights(clienteId?: string, clienteNome?: string): Promise<InsightIA[]> {
+  if (!clienteId) return getFallbackInsights();
+
   try {
     const [entregasData, ocorrenciasData] = await Promise.all([
-      supabase.from("ordens_servico").select("status, sla, created_at").limit(50),
-      supabase.from("ocorrencias").select("tipo, created_at").limit(20),
+      supabase.from("ordens_servico").select("status, sla, created_at").eq("cliente_id", clienteId).limit(50),
+      supabase.from("ocorrencias").select("tipo, created_at").eq("cliente_id", clienteId).limit(20),
     ]);
 
     const atrasadas = entregasData.data?.filter(e => e.status === "atrasada").length || 0;
@@ -193,11 +200,14 @@ export async function buscarInsights(clienteNome?: string): Promise<InsightIA[]>
   }
 }
 
-export async function buscarMapaOperacional() {
+export async function buscarMapaOperacional(clienteId?: string) {
+  if (!clienteId) return null;
+
   try {
     const { data, error } = await supabase
       .from("ordens_servico")
       .select("id, status, cidade_destino, latitude, longitude")
+      .eq("cliente_id", clienteId)
       .in("status", ["em_rota", "saiu_para_rota"])
       .limit(50);
 
@@ -213,11 +223,13 @@ export async function buscarMapaOperacional() {
   }
 }
 
-export async function buscarSaudeOperacional(): Promise<SaudeOperacional> {
+export async function buscarSaudeOperacional(clienteId?: string): Promise<SaudeOperacional> {
+  if (!clienteId) return getFallbackSaude();
+
   try {
     const [entregasData, ocorrenciasData] = await Promise.all([
-      supabase.from("ordens_servico").select("status, sla").limit(100),
-      supabase.from("ocorrencias").select("id").limit(50),
+      supabase.from("ordens_servico").select("status, sla").eq("cliente_id", clienteId).limit(100),
+      supabase.from("ocorrencias").select("id").eq("cliente_id", clienteId).limit(50),
     ]);
 
     const entregas = entregasData.data || [];

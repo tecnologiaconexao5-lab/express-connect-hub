@@ -143,7 +143,7 @@ export function KanbanColumn({
 
         {hasMore && (
           <button
-            onClick={() => {}}
+            onClick={onLoadMore}
             className="w-full py-2 text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors border border-dashed border-border/20 rounded-lg hover:border-border/40"
           >
             + {candidates.length - visibleCandidates.length} mais

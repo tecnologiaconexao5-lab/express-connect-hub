@@ -43,6 +43,8 @@ export function useEnterpriseKanban() {
     if (filters.scoreMax < 100) filtered = filtered.filter(c => c.score <= filters.scoreMax)
     if (filters.prioridade.length) filtered = filtered.filter(c => filters.prioridade.includes(c.prioridade))
     if (filters.statusDocumental.length) filtered = filtered.filter(c => filters.statusDocumental.includes(c.statusDocumental))
+    if (filters.statusOperacional.length) filtered = filtered.filter(c => filters.statusOperacional.includes(c.statusOperacional))
+    if (filters.disponibilidade.length) filtered = filtered.filter(c => filters.disponibilidade.includes(c.disponibilidadeTipo))
     if (filters.validadeCNH.length) filtered = filtered.filter(c => filters.validadeCNH.includes(c.validadeCNH))
     if (filters.tags.length) filtered = filtered.filter(c => c.tags.some(t => filters.tags.includes(t)))
     if (filters.cidade) filtered = filtered.filter(c => c.cidade.toLowerCase().includes(filters.cidade.toLowerCase()))
@@ -70,6 +72,8 @@ export function useEnterpriseKanban() {
       scoreMax: 100,
       prioridade: [],
       statusDocumental: [],
+      statusOperacional: [],
+      disponibilidade: [],
       validadeCNH: [],
       tags: [],
       cidade: '',
@@ -79,9 +83,14 @@ export function useEnterpriseKanban() {
 
   const handleMoveCandidate = useCallback(async (id: string, stage: PipelineStage) => {
     store.moveCandidate(id, stage)
-    await enterpriseKanbanService.mover(id, stage)
-    const counts = await enterpriseKanbanService.getStageCounts()
-    return counts
+    try {
+      await enterpriseKanbanService.mover(id, stage)
+      const counts = await enterpriseKanbanService.getStageCounts()
+      return counts
+    } catch {
+      await load()
+      return undefined
+    }
   }, [])
 
   const handleAddObservation = useCallback(async (id: string, obs: string) => {
@@ -105,6 +114,8 @@ export function useEnterpriseKanban() {
     store.filters.scoreMax < 100 ||
     store.filters.prioridade.length > 0 ||
     store.filters.statusDocumental.length > 0 ||
+    store.filters.statusOperacional.length > 0 ||
+    store.filters.disponibilidade.length > 0 ||
     store.filters.validadeCNH.length > 0 ||
     store.filters.tags.length > 0 ||
     store.filters.cidade !== '' ||

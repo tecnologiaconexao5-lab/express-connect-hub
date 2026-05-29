@@ -2,6 +2,7 @@ import { useCallback, useRef, useEffect, useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Search, ChevronLeft, ChevronRight, Users, TrendingUp, Award, AlertCircle, Plus } from 'lucide-react'
 import { useEnterpriseKanban } from './useEnterpriseKanban'
+import { useKanbanRealtime } from '../../hooks/useKanbanRealtime'
 import { KanbanColumn } from './KanbanColumn'
 import { KanbanFilters } from './KanbanFilters'
 import { DetalhesCandidatoPipelineSheet } from './DetalhesCandidatoPipelineSheet'
@@ -42,6 +43,8 @@ export function EnterpriseKanbanBoard() {
   const [stageCounts, setStageCounts] = useState<Record<string, number>>({})
   const [totalByStage, setTotalByStage] = useState<Record<string, number>>({})
   const [addOpen, setAddOpen] = useState(false)
+
+  useKanbanRealtime(reload)
 
   useEffect(() => {
     enterpriseKanbanService.getStageCounts().then((counts) => {
@@ -214,6 +217,7 @@ export function EnterpriseKanbanBoard() {
                   draggingId={draggingId}
                   pageSize={pageSize}
                   page={page}
+                  onLoadMore={nextPage}
                   onCardClick={handleCardClick}
                 />
               ))}

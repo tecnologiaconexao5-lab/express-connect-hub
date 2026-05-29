@@ -1,43 +1,26 @@
 import { useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRecrutamentoStore } from '../store/recrutamentoStore'
 
-type TabelaRealtime = 'operacoes' | 'prestadores' | 'recrutamento_whatsapp_conversas'
+const TABLE = 'recrutamento_prestadores'
 
-export function useRecrutamentoRealtime(tabelas?: TabelaRealtime[]) {
-  const { setOperacoes, setPrestadores } = useRecrutamentoStore()
-  const subscriptions = useRef<{ unsubscribe: () => void }[]>([])
+export function usePrestadoresRealtime(onReload: () => void) {
+  const onReloadRef = useRef(onReload)
+  onReloadRef.current = onReload
 
   useEffect(() => {
-    const tables = tabelas ?? ['operacoes', 'prestadores']
-    const subs = tables.map((tabela) => {
-      return supabase
-        .channel(`recrutamento_${tabela}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: tabela },
-          () => {
-            if (tabela === 'operacoes') {
-              import('../services/operacoesService').then(({ operacoesService }) =>
-                operacoesService.listar().then(setOperacoes)
-              )
-            }
-            if (tabela === 'prestadores') {
-              import('../services/prestadoresService').then(({ prestadoresService }) =>
-                prestadoresService.listar().then(setPrestadores)
-              )
-            }
-          }
-        )
-        .subscribe()
-    })
-
-    subscriptions.current = subs
+    const channel = supabase
+      .channel('prestadores-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: TABLE },
+        () => {
+          onReloadRef.current?.()
+        }
+      )
+      .subscribe()
 
     return () => {
-      subs.forEach((s) => s.unsubscribe())
+      supabase.removeChannel(channel)
     }
-  }, [tabelas?.join(',')])
-
-  return { subscriptions: subscriptions.current }
+  }, [])
 }

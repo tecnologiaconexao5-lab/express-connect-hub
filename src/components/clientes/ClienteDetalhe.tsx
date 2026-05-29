@@ -91,6 +91,7 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
   const [modalEnderecoOpen, setModalEnderecoOpen] = useState(false);
   const [novoEndereco, setNovoEndereco] = useState<{tipo_endereco: string; cep: string; logradouro: string; numero: string; complemento: string; bairro: string; cidade: string; uf: string}>({tipo_endereco: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "", cidade: "", uf: ""});
   const [cepLoading, setCepLoading] = useState(false);
+  const [listaTabelasValores, setListaTabelasValores] = useState<{id: string; nome: string; tipo_veiculo: string}[]>([]);
 
   const handleCEPBlur = async () => {
     const cepDigitado = novoEndereco.cep.replace(/\D/g, '');
@@ -179,7 +180,22 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
       fetchEnderecos();
       fetchContratos();
     }
+    fetchTabelasValores();
   }, [clienteId]);
+
+  const fetchTabelasValores = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("tabelas_valores")
+        .select("id, nome, tipo_veiculo")
+        .order("nome", { ascending: true });
+      if (!error && data) {
+        setListaTabelasValores(data.map((item: any) => ({ id: item.id, nome: item.nome, tipo_veiculo: item.tipo_veiculo })));
+      }
+    } catch (e) {
+      console.warn("Erro ao carregar tabelas de valores:", e);
+    }
+  };
 
   const fetchCliente = async () => {
     setIsLoading(true);
@@ -451,11 +467,12 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
 
       {/* Abas */}
       <Tabs defaultValue="gerais" className="w-full">
-        <TabsList className="grid grid-cols-2 md:grid-cols-5 bg-muted/60 mb-6 h-auto p-1">
+        <TabsList className="grid grid-cols-2 md:grid-cols-6 bg-muted/60 mb-6 h-auto p-1">
           <TabsTrigger value="gerais" className="py-2.5">Dados Gerais</TabsTrigger>
           <TabsTrigger value="enderecos" className="py-2.5">Endereços</TabsTrigger>
           <TabsTrigger value="estrutura" className="py-2.5">Estrutura</TabsTrigger>
           <TabsTrigger value="comercial" className="py-2.5">Comercial</TabsTrigger>
+          <TabsTrigger value="fiscal" className="py-2.5">Fiscal</TabsTrigger>
           <TabsTrigger value="contratos" className="py-2.5">Contratos</TabsTrigger>
         </TabsList>
 
@@ -670,25 +687,241 @@ const ClienteDetalhe = ({ clienteId, onBack }: Props) => {
         <TabsContent value="comercial">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base text-primary">Condição Comercial e Tabelas</CardTitle>
-              <CardDescription>Defina as preferências de faturamento e exigências da operação.</CardDescription>
+              <CardTitle className="text-base text-primary flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  Condição Comercial e Tabelas
+              </CardTitle>
+              <CardDescription>Defina as preferências de faturamento, exigências operacionais e vincule a tabela de valores.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div><Label>Tipo de Cobrança Padrão</Label><Input placeholder="Ex: Quinzenal" /></div>
-                <div><Label>Vencimento Padrão (dias)</Label><Input type="number" placeholder="Ex: 15" /></div>
-                <div><Label>Agrupamento de Faturamento</Label><Input placeholder="Ex: Por CT-e" /></div>
+                <div>
+                  <Label>Tipo de Cobrança Padrão</Label>
+                  <Select value={c.tipoCobranca || ""} onValueChange={v => handleChange("tipoCobranca", v)}>
+                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="quinzenal">Quinzenal</SelectItem>
+                      <SelectItem value="mensal">Mensal</SelectItem>
+                      <SelectItem value="por_cte">Por CT-e</SelectItem>
+                      <SelectItem value="por_os">Por OS</SelectItem>
+                      <SelectItem value="avulso">Avulso</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Vencimento Padrão (dias)</Label>
+                  <Input type="number" value={c.vencimentoPadrao ?? ""} onChange={e => handleChange("vencimentoPadrao", Number(e.target.value))} placeholder="Ex: 15" />
+                </div>
+                <div>
+                  <Label>Agrupamento de Faturamento</Label>
+                  <Select value={c.agrupamentoFaturamento || ""} onValueChange={v => handleChange("agrupamentoFaturamento", v)}>
+                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="por_cte">Por CT-e</SelectItem>
+                      <SelectItem value="por_os">Por OS</SelectItem>
+                      <SelectItem value="por_periodo">Por Período</SelectItem>
+                      <SelectItem value="por_romaneio">Por Romaneio</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              
-              <h4 className="font-semibold text-sm pt-4">Exigências Operacionais</h4>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 p-4 border rounded-lg">
-                <div className="flex items-center gap-2"><Switch /><Label className="text-xs">CT-e obrigatório</Label></div>
-                <div className="flex items-center gap-2"><Switch /><Label className="text-xs">XML obrigatório</Label></div>
-                <div className="flex items-center gap-2"><Switch /><Label className="text-xs">Comprovante obrigatório</Label></div>
-                <div className="flex items-center gap-2"><Switch /><Label className="text-xs">Canhoto obrigatório</Label></div>
-                <div className="flex items-center gap-2"><Switch /><Label className="text-xs">Assinatura legível</Label></div>
-                <div className="flex items-center gap-2"><Switch /><Label className="text-xs">Protocolo obrigatório</Label></div>
-                <div className="flex items-center gap-2"><Switch /><Label className="text-xs">Geolocalização</Label></div>
+
+              <div className="border-t pt-4">
+                <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  Exigências Operacionais
+                </h4>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg border">
+                  <div className="flex items-center gap-2">
+                    <Switch checked={!!c.cteObrigatorio} onCheckedChange={v => handleChange("cteObrigatorio", v)} />
+                    <Label className="text-xs">CT-e obrigatório</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={!!c.xmlObrigatorio} onCheckedChange={v => handleChange("xmlObrigatorio", v)} />
+                    <Label className="text-xs">XML obrigatório</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={!!c.comprovanteObrigatorio} onCheckedChange={v => handleChange("comprovanteObrigatorio", v)} />
+                    <Label className="text-xs">Comprovante obrigatório</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={!!c.canhotoObrigatorio} onCheckedChange={v => handleChange("canhotoObrigatorio", v)} />
+                    <Label className="text-xs">Canhoto obrigatório</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={!!c.assinaturaLegivel} onCheckedChange={v => handleChange("assinaturaLegivel", v)} />
+                    <Label className="text-xs">Assinatura legível</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={!!c.protocoloObrigatorio} onCheckedChange={v => handleChange("protocoloObrigatorio", v)} />
+                    <Label className="text-xs">Protocolo obrigatório</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={!!c.geolocalizacao} onCheckedChange={v => handleChange("geolocalizacao", v)} />
+                    <Label className="text-xs">Geolocalização</Label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  Tabela de Valores Vinculada
+                </h4>
+                <div className="p-4 bg-blue-50/50 rounded-lg border border-blue-100">
+                  <Label className="text-xs mb-2 block">Tabela de Valores Padrão</Label>
+                  <Select value={c.tabelaValoresPadraoId || "__none__"} onValueChange={v => handleChange("tabelaValoresPadraoId", v === "__none__" ? "" : v)}>
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Selecione a tabela de valores padrão deste cliente..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Nenhuma (definir por veículo na tabela comercial)</SelectItem>
+                      {listaTabelasValores.filter(t => t.id !== c.tabelaValoresPadraoId || !c.tabelaValoresPadraoId).map(tv => (
+                        <SelectItem key={tv.id} value={tv.id}>
+                          {tv.nome} ({tv.tipo_veiculo || "geral"})
+                        </SelectItem>
+                      ))}
+                      {c.tabelaValoresPadraoId && listaTabelasValores.filter(t => t.id === c.tabelaValoresPadraoId).map(tv => (
+                        <SelectItem key={tv.id} value={tv.id}>
+                          {tv.nome} ({tv.tipo_veiculo || "geral"})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    A tabela de valores completa por veículo é configurada na aba "Comercial › Tabela de Valores".
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="fiscal">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base text-primary flex items-center gap-2">
+                <FileText className="w-4 h-4 text-primary" />
+                Configuração Fiscal
+              </CardTitle>
+              <CardDescription>Defina as regras fiscais, tributos e preferências de emissão para este cliente.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Tomador Padrão</Label>
+                  <Select value={c.tomador || ""} onValueChange={v => handleChange("tomador", v)}>
+                    <SelectTrigger><SelectValue placeholder="Tipo de tomador" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="proprio">Próprio (remetente)</SelectItem>
+                      <SelectItem value="terceiro">Terceiro (por conta de)</SelectItem>
+                      <SelectItem value="destinatario">Destinatário</SelectItem>
+                      <SelectItem value="outros">Outros</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>CNAE</Label>
+                  <Input value={c.cnae || ""} onChange={e => handleChange("cnae", e.target.value)} placeholder="Ex: 4930-2/01" />
+                </div>
+                <div>
+                  <Label>CFOP Padrão</Label>
+                  <Select value={c.cfopPadrao || ""} onValueChange={v => handleChange("cfopPadrao", v)}>
+                    <SelectTrigger><SelectValue placeholder="Selecione o CFOP" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5101">5101 - Venda produção estabelecimento</SelectItem>
+                      <SelectItem value="5102">5102 - Venda mercadoria adquirida</SelectItem>
+                      <SelectItem value="5351">5351 - Transporte interestadual</SelectItem>
+                      <SelectItem value="5352">5352 - Transporte intermunicipal</SelectItem>
+                      <SelectItem value="5353">5353 - Transporte municipal</SelectItem>
+                      <SelectItem value="5354">5354 - Transporte redespacho</SelectItem>
+                      <SelectItem value="5355">5355 - Transporte sub-contratação</SelectItem>
+                      <SelectItem value="5932">5932 - Prestação serviço comunicação</SelectItem>
+                      <SelectItem value="6949">6949 - Outras saídas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Regime Tributário</Label>
+                  <Select value={c.regimeTributario || ""} onValueChange={v => handleChange("regimeTributario", v)}>
+                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="simples">Simples Nacional</SelectItem>
+                      <SelectItem value="lucro_presumido">Lucro Presumido</SelectItem>
+                      <SelectItem value="lucro_real">Lucro Real</SelectItem>
+                      <SelectItem value="mei">MEI</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Alíquota ISS (%)</Label>
+                  <Input type="number" value={c.aliquotaIss ?? ""} onChange={e => handleChange("aliquotaIss", Number(e.target.value))} placeholder="Ex: 2.0" step="0.1" />
+                </div>
+                <div>
+                  <Label>Município Padrão (IBGE)</Label>
+                  <Input value={c.municipioPadrao || ""} onChange={e => handleChange("municipioPadrao", e.target.value)} placeholder="Ex: 3550308 - São Paulo" />
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  Retenções e Impostos
+                </h4>
+                <div className="space-y-4 p-4 bg-muted/30 rounded-lg border">
+                  <div>
+                    <Label>Regras de Retenção</Label>
+                    <Select value={c.retencoes || ""} onValueChange={v => handleChange("retencoes", v)}>
+                      <SelectTrigger><SelectValue placeholder="Tipo de retenção" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="nenhuma">Nenhuma</SelectItem>
+                        <SelectItem value="iss_retido">ISS Retido na Fonte</SelectItem>
+                        <SelectItem value="pis_cofins_csll">PIS/COFINS/CSLL Retido</SelectItem>
+                        <SelectItem value="inss">INSS Retido</SelectItem>
+                        <SelectItem value="completa">Retenção Completa</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={!!c.incentivoFiscal} onCheckedChange={v => handleChange("incentivoFiscal", v)} />
+                    <Label className="text-sm">Possui incentivo fiscal</Label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  Envio de Documentos
+                </h4>
+                <div className="p-4 bg-muted/30 rounded-lg border">
+                  <div className="flex items-center gap-2">
+                    <Switch checked={!!c.envioXml} onCheckedChange={v => handleChange("envioXml", v)} />
+                    <Label className="text-sm">Envio automático de XML/NFe por e-mail</Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2 ml-8">
+                    Quando ativado, o sistema enviará os XMLs de CT-e e NF-e automaticamente para o e-mail do cliente.
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="font-semibold text-sm mb-3">Observações Fiscais</h4>
+                <Textarea
+                  value={c.observacoesFiscais || ""}
+                  onChange={e => handleChange("observacoesFiscais", e.target.value)}
+                  rows={3}
+                  placeholder="Informações adicionais para emissão fiscal, CFRC, observações no CT-e..."
+                />
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-xs text-amber-800 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block mb-1">Integração Fiscal</strong>
+                  <p>Os campos fiscais estão preparados para integração futura com o módulo Focus NFe. 
+                  No momento, os dados são apenas informativos e não realizam emissão automática.</p>
+                </div>
               </div>
             </CardContent>
           </Card>

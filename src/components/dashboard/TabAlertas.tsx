@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, AlertCircle, Info, ExternalLink, Check, X, History, Filter, User, Calendar, MessageSquare, LucideIcon } from "lucide-react";
+import { AlertTriangle, AlertCircle, Info, ExternalLink, Check, History, Filter, User, Calendar, MessageSquare, LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { supabase } from "@/lib/supabase";
 import { getUser } from "@/lib/auth";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -31,13 +32,13 @@ interface HistoryAlert {
   status: "novo" | "visualizado" | "resolvido" | "ignorado";
 }
 
-const alertasCriticosInicial: AlertItem[] = [
+const FALLBACK_CRITICOS: AlertItem[] = [
   { id: "ac1", texto: "OS-4818 com ocorrência aberta há 4h", detalhe: "Endereço não localizado — Shopee", tipo: "os", link: "/operacao?tab=os&status=Com Ocorrência" },
   { id: "ac2", texto: "Integração CT-e com erro desde 08:00", detalhe: "Timeout na SEFAZ-SP", tipo: "integracao", link: "/monitor-api" },
   { id: "ac3", texto: "Prestador RápidoFrete bloqueado com 3 OS ativas", detalhe: "Documentação vencida", tipo: "documento", link: "/cadastros/prestadores" },
 ];
 
-const alertasAtencaoInicial: AlertItem[] = [
+const FALLBACK_ATENCAO: AlertItem[] = [
   { id: "aa1", texto: "2 orçamentos vencem hoje", detalhe: "Magazine Luiza (ORC-421), Renner (ORC-418)", tipo: "orcamento", link: "/comercial" },
   { id: "aa2", texto: "5 documentos vencem em 7 dias", detalhe: "CNH de 3 parceiros, CRLV de 2 veículos", tipo: "documento", link: "/cadastros/prestadores" },
   { id: "aa3", texto: "OS-4814 sem parceiro há mais de 2h", detalhe: "Renner — RS→SC", tipo: "os", link: "/operacao?tab=os&status=Aguardando Parceiro" },
@@ -46,13 +47,13 @@ const alertasAtencaoInicial: AlertItem[] = [
   { id: "aa6", texto: "Veículo ABC-1234 com doc vencendo", detalhe: "CRLV vence em 5 dias", tipo: "documento", link: "/frota" },
 ];
 
-const alertasInformativosInicial: AlertItem[] = [
+const FALLBACK_INFO: AlertItem[] = [
   { id: "ai1", texto: "12 OS sem comprovante de entrega", detalhe: "Últimas 48h", tipo: "os", link: "/operacao?tab=pod" },
   { id: "ai2", texto: "Prestador Sul Express com pendência documental", detalhe: "Seguro RCTR-C vencido", tipo: "documento", link: "/cadastros/prestadores" },
   { id: "ai3", texto: "3 clientes sem tabela de valores ativa", detalhe: "C&A, Riachuelo, Ponto", tipo: "orcamento", link: "/comercial" },
 ];
 
-const historicoInicial: HistoryAlert[] = [
+const FALLBACK_HISTORICO: HistoryAlert[] = [
   { id: "h1", data: new Date(2026, 2, 26, 14, 32), tipo: "OS sem prestador", descricao: "OS-2026-0142 sem prestador há 3 horas", responsavel: "João Silva", observacao: "Acionado prestador alternativo", status: "resolvido" },
   { id: "h2", data: new Date(2026, 2, 26, 10, 15), tipo: "Documento vencendo", descricao: "CNH do prestador João Pedro vence em 5 dias", responsavel: "Maria Santos", observacao: "Notificado o prestador", status: "visualizado" },
   { id: "h3", data: new Date(2026, 2, 25, 16, 45), tipo: "Orçamento vencendo", descricao: "ORC-419 Magazine Luiga vence amanhã", responsavel: "Carlos Oliveira", observacao: "Cliente pediu prazo até sexta", status: "ignorado" },
@@ -95,18 +96,85 @@ const AlertBlock = ({ title, icon: Icon, items, borderColor, bgColor, iconColor,
   </Card>
 );
 
+const toAlertItem = (row: any): AlertItem => ({
+  id: row.id,
+  texto: row.titulo || "—",
+  detalhe: row.descricao || "",
+  tipo: (["os", "documento", "orcamento", "contrato", "integracao", "outros"] as const).includes(row.tipo)
+    ? row.tipo : "outros",
+  link: row.payload?.link,
+});
+
+const toHistoryAlert = (row: any): HistoryAlert => ({
+  id: row.id,
+  data: new Date(row.created_at),
+  tipo: row.tipo || "Manual",
+  descricao: row.titulo || "",
+  responsavel: row.operador_responsavel || "—",
+  observacao: row.observacao_resolucao || "-",
+  status: (["novo", "visualizado", "resolvido", "ignorado"] as const).includes(row.status)
+    ? row.status : "novo",
+});
+
 const TabAlertas = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"alertas" | "historico">("alertas");
-  const [alertasCriticos, setAlertasCriticos] = useState(alertasCriticosInicial);
-  const [alertasAtencao, setAlertasAtencao] = useState(alertasAtencaoInicial);
-  const [alertasInformativos, setAlertasInformativos] = useState(alertasInformativosInicial);
-  const [historico, setHistorico] = useState(historicoInicial);
+  const [alertasCriticos, setAlertasCriticos] = useState<AlertItem[]>([]);
+  const [alertasAtencao, setAlertasAtencao] = useState<AlertItem[]>([]);
+  const [alertasInformativos, setAlertasInformativos] = useState<AlertItem[]>([]);
+  const [historico, setHistorico] = useState<HistoryAlert[]>([]);
   const [filtroTipo, setFiltroTipo] = useState("todos");
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [isNewAlertOpen, setIsNewAlertOpen] = useState(false);
   const [novoAlerta, setNovoAlerta] = useState({ descricao: "", observacao: "" });
   const user = getUser();
+  const channelsRef = useRef<ReturnType<typeof supabase.channel>[]>([]);
+
+  const fetchAlertas = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("escalonamentos_humanos")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+
+      if (data) {
+        const abertos = data.filter((t: any) => t.status === "aberto" && t.origem !== "manual");
+        const historicoData = data.filter((t: any) => t.status !== "aberto" || t.origem === "manual");
+
+        setAlertasCriticos(abertos.filter((t: any) => t.prioridade === "critica").map(toAlertItem));
+        setAlertasAtencao(abertos.filter((t: any) => t.prioridade === "alta").map(toAlertItem));
+        setAlertasInformativos(
+          abertos.filter((t: any) => !t.prioridade || t.prioridade === "media" || t.prioridade === "baixa").map(toAlertItem)
+        );
+        setHistorico(historicoData.map(toHistoryAlert));
+      }
+    } catch {
+      setAlertasCriticos(FALLBACK_CRITICOS);
+      setAlertasAtencao(FALLBACK_ATENCAO);
+      setAlertasInformativos(FALLBACK_INFO);
+      setHistorico(FALLBACK_HISTORICO);
+    }
+  };
+
+  useEffect(() => {
+    fetchAlertas();
+
+    const channel = supabase
+      .channel("tab-alertas-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "escalonamentos_humanos" }, () => {
+        fetchAlertas();
+      })
+      .subscribe();
+
+    channelsRef.current = [channel];
+
+    return () => {
+      channelsRef.current.forEach((ch) => ch.unsubscribe());
+    };
+  }, []);
 
   const handleAlertClick = (item: AlertItem) => {
     if (item.link) {
@@ -114,33 +182,66 @@ const TabAlertas = () => {
     }
   };
 
-  const handleMarcarResolvido = (id: string) => {
-    setHistorico(prev => prev.map(h => 
-      h.id === id 
-        ? { ...h, status: "resolvido" as const, responsavel: user?.name || "Usuário", observacao: `${h.observacao} - Marcado como resolvido` }
-        : h
-    ));
+  const handleMarcarResolvido = async (id: string) => {
+    try {
+      await supabase
+        .from("escalonamentos_humanos")
+        .update({
+          status: "resolvido",
+          resolvido_em: new Date().toISOString(),
+          observacao_resolucao: "Marcado como resolvido pelo usuário",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+      fetchAlertas();
+    } catch {
+      setHistorico((prev) =>
+        prev.map((h) =>
+          h.id === id
+            ? { ...h, status: "resolvido" as const, responsavel: user?.name || "Usuário", observacao: `${h.observacao} - Marcado como resolvido` }
+            : h
+        )
+      );
+    }
   };
 
-  const handleCriarAlerta = () => {
+  const handleCriarAlerta = async () => {
     if (!novoAlerta.descricao) return;
-    
-    const novo: HistoryAlert = {
-      id: `h${Date.now()}`,
-      data: new Date(),
-      tipo: "Manual",
-      descricao: novoAlerta.descricao,
-      responsavel: user?.name || "Usuário",
-      observacao: novoAlerta.observacao || "-",
-      status: "novo"
-    };
-    
-    setHistorico([novo, ...historico]);
-    setNovoAlerta({ descricao: "", observacao: "" });
-    setIsNewAlertOpen(false);
+
+    try {
+      await supabase.from("escalonamentos_humanos").insert([
+        {
+          origem: "manual",
+          modulo: "dashboard",
+          tipo: "Manual",
+          titulo: novoAlerta.descricao,
+          descricao: novoAlerta.observacao || "-",
+          prioridade: "media",
+          status: "novo",
+          operador_responsavel: user?.name || "Usuário",
+          payload: {},
+        },
+      ]);
+      setNovoAlerta({ descricao: "", observacao: "" });
+      setIsNewAlertOpen(false);
+      fetchAlertas();
+    } catch {
+      const novo: HistoryAlert = {
+        id: `h${Date.now()}`,
+        data: new Date(),
+        tipo: "Manual",
+        descricao: novoAlerta.descricao,
+        responsavel: user?.name || "Usuário",
+        observacao: novoAlerta.observacao || "-",
+        status: "novo",
+      };
+      setHistorico([novo, ...historico]);
+      setNovoAlerta({ descricao: "", observacao: "" });
+      setIsNewAlertOpen(false);
+    }
   };
 
-  const historicoFiltrado = historico.filter(h => {
+  const historicoFiltrado = historico.filter((h) => {
     if (filtroTipo !== "todos" && h.tipo !== filtroTipo) return false;
     if (filtroStatus !== "todos" && h.status !== filtroStatus) return false;
     return true;

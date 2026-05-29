@@ -25,6 +25,32 @@ export interface Cliente {
   exigeSla: boolean;
   exigePortal: boolean;
   aceitaApi: boolean;
+
+  // Comercial
+  tipoCobranca?: string;
+  vencimentoPadrao?: number;
+  agrupamentoFaturamento?: string;
+  cteObrigatorio?: boolean;
+  xmlObrigatorio?: boolean;
+  comprovanteObrigatorio?: boolean;
+  canhotoObrigatorio?: boolean;
+  assinaturaLegivel?: boolean;
+  protocoloObrigatorio?: boolean;
+  geolocalizacao?: boolean;
+  tabelaValoresPadraoId?: string;
+
+  // Fiscal
+  tomador?: string;
+  cnae?: string;
+  cfopPadrao?: string;
+  retencoes?: string;
+  envioXml?: boolean;
+  observacoesFiscais?: string;
+  municipioPadrao?: string;
+  regimeTributario?: string;
+  aliquotaIss?: number;
+  incentivoFiscal?: boolean;
+
   enderecos?: EnderecoCliente[];
   tabelas?: TabelaCliente[];
   contratos?: ContratoCliente[];

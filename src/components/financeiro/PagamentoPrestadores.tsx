@@ -1,17 +1,29 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { DollarSign, Calendar, Users, Truck, FileCheck, FileX, RefreshCw, Download, Plus, Search, Filter, Eye, Edit, Check, X, Clock, CreditCard, Landmark, Package } from "lucide-react";
+import { DollarSign, Calendar, Users, Truck, FileCheck, FileX, RefreshCw, Download, Plus, Search, Filter, Eye, Edit, Check, X, Clock, CreditCard, Landmark, Package, AlertTriangle, ChevronDown, ChevronUp, Printer } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { escalaParaItemRepasse, isAlocacaoFaturavel, type ItemRepasseEscala } from "@/services/escala/escalaFinanceiroAdapter";
+import { mapearBancoParaLocal } from "@/services/escala/escalaMapper";
+import { calcularRepassePrestador } from "@/helpers/calculoRepassePrestador";
+import { registrarAuditoria } from "@/services/financeiro/auditoriaPrestadorService";
+import { getStatusComprovanteInfo, FILTRO_COMPROVANTE_OPCOES, type StatusComprovante } from "@/helpers/statusComprovante";
+import { calcularStatusFinanceiro, getStatusFinanceiroInfo, getMotivoBloqueio, podeAprovar, type StatusFinanceiroPrestador, type DadosStatusFinanceiro } from "@/helpers/statusFinanceiroPrestador";
+import { getFechamentoStatusInfo, extrairDivergencias } from "@/helpers/fechamentoHelper";
+import { gerarLinhasRelatorio, exportarCSV, imprimirRelatorio } from "@/helpers/relatorioPrestadorHelper";
+import { getPagamentoStatusInfo, getTimelineSteps, detectarTipoPagamento, getTipoPagamentoBadge } from "@/helpers/pagamentoHelper";
+import { calcularKPIPrestador, gerarAlertas, calcularDistribuicaoStatus } from "@/helpers/dashboardPrestadorHelper";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 
 interface Prestador {
   id: string;
@@ -74,10 +86,21 @@ interface Pagamento {
   valor_descontos: number;
   valor_adiantamentos: number;
   valor_liquido: number;
+  valor_pedagio?: number;
   status: string;
+  status_conferencia?: string;
+  status_aprovacao?: string;
+  status_pagamento?: string;
+  tipo_pagamento?: string;
   periodo_inicio: string;
   periodo_fim: string;
   data_programada_pagamento?: string;
+  data_competencia?: string;
+  data_pagamento?: string;
+  observacao?: string;
+  origem_lancamento?: string;
+  elegivel_lote?: boolean;
+  lote_id?: string;
 }
 
 interface DadosBancarios {
@@ -135,6 +158,17 @@ interface PagamentoManual {
   arquivo?: string;
 }
 
+interface ContaFinanceira {
+  id: string;
+  nome: string;
+  tipo: string;
+  banco: string;
+  agencia: string;
+  numero_conta: string;
+  ativa: boolean;
+  saldo: number;
+}
+
 const STATUS_COLORS = {
   pendente: "bg-yellow-100 text-yellow-800",
   confirmado: "bg-blue-100 text-blue-800",
@@ -173,14 +207,23 @@ export default function PagamentoPrestadores() {
   const [filtroPeriodo, setFiltroPeriodo] = useState("semana");
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
+  const [filtroComprovante, setFiltroComprovante] = useState<string>("todos");
 
   const [selectedPrestador, setSelectedPrestador] = useState<Prestador | null>(null);
   const [showDetalhe, setShowDetalhe] = useState(false);
   const [showFechamento, setShowFechamento] = useState(false);
   const [showNovoPagamento, setShowNovoPagamento] = useState(false);
+  const [fechamentoExpandido, setFechamentoExpandido] = useState<Record<string, boolean>>({});
+  const [showJustificativa, setShowJustificativa] = useState(false);
+  const [justificativaAlvo, setJustificativaAlvo] = useState<{ id: string; updates: any; prestadorId?: string; prestadorNome?: string } | null>(null);
+  const [justificativaTexto, setJustificativaTexto] = useState("");
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [ossDoPrestador, setOssDoPrestador] = useState<OS[]>([]);
   const [pagamentosManuais, setPagamentosManuais] = useState<PagamentoManual[]>([]);
+  const [escalaRepasse, setEscalaRepasse] = useState<ItemRepasseEscala[]>([]);
+  const [escalaRepasseLoading, setEscalaRepasseLoading] = useState(false);
+  const [contasFinanceiras, setContasFinanceiras] = useState<ContaFinanceira[]>([]);
+  const [gerandoRepasseId, setGerandoRepasseId] = useState<string | null>(null);
 
   const [novoPagamento, setNovoPagamento] = useState({
     prestadorId: "",
@@ -213,6 +256,8 @@ export default function PagamentoPrestadores() {
     fetchPagamentos();
     fetchClientes();
     fetchPagamentosManuais();
+    fetchEscalaRepasse();
+    fetchContasFinanceiras();
   }, [dataInicio, dataFim]);
 
   useEffect(() => {
@@ -246,7 +291,6 @@ export default function PagamentoPrestadores() {
       const { data, error } = await supabase
         .from("clientes")
         .select("id, nome_fantasia, razao_social, cnpj")
-        .eq("status", "ativo")
         .order("nome_fantasia");
 
       if (error && error.code !== "42P01") throw error;
@@ -256,12 +300,28 @@ export default function PagamentoPrestadores() {
     }
   };
 
+  const fetchContasFinanceiras = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("contas_financeiras")
+        .select("id, nome, tipo, banco, agencia, numero_conta, ativa, saldo")
+        .eq("ativa", true)
+        .order("nome");
+
+      if (error && error.code !== "42P01") throw error;
+      setContasFinanceiras(data || []);
+    } catch (e: any) {
+      console.error("Erro ao buscar contas financeiras:", e);
+      setContasFinanceiras([]);
+    }
+  };
+
   const fetchOssDoPrestador = async (prestadorId: string) => {
     if (!prestadorId) return;
     try {
       const { data, error } = await supabase
         .from("ordens_servico")
-        .select("id, numero, prestador, custo_prestador, pedagio, adicionais, descuentos, status, data")
+        .select("id, numero, prestador, custo_prestador, pedagio, adicionais, descontos, status, data")
         .eq("prestador_id", prestadorId)
         .in("status", ["finalizada", "concluida"])
         .order("data", { ascending: false })
@@ -328,16 +388,20 @@ export default function PagamentoPrestadores() {
       const extrato: ExtratoContaCorrente[] = [];
 
       (osData || []).forEach(os => {
-        const totalCred = (os.custo_prestador || 0) + (os.pedagio || 0) + (os.adicionais || 0);
-        const totalDeb = (os.descontos || 0);
-        saldoAcumulado += totalCred - totalDeb;
+        const resultado = calcularRepassePrestador({
+          custo_prestador: os.custo_prestador,
+          pedagio: os.pedagio,
+          adicionais: os.adicionais,
+          descontos: os.descontos,
+        });
+        saldoAcumulado += resultado.totalLiquido;
         extrato.push({
           id: os.id,
           data: os.data || '',
           origem: 'OS Finalizada',
           descricao: `OS ${os.numero}`,
-          credito: totalCred,
-          debito: totalDeb,
+          credito: resultado.totalCredito,
+          debito: resultado.totalDebito,
           saldo: saldoAcumulado,
           status: os.status
         });
@@ -374,15 +438,77 @@ export default function PagamentoPrestadores() {
     }
   };
 
-  const handleAtualizarStatus = async (id: string, updates: any) => {
+  const handleAtualizarStatus = async (id: string, updates: any, prestadorId?: string, prestadorNome?: string, motivo?: string) => {
     try {
+      const { data: antes } = await supabase.from('pagamentos_prestadores').select('*').eq('id', id).maybeSingle();
+      if (!antes) { toast.error("Registro não encontrado"); return; }
+
+      if (updates.status_aprovacao === 'aprovado') {
+        const statusFinanceiro = calcularStatusFinanceiro({
+          statusConferencia: antes.status_conferencia,
+          statusAprovacao: antes.status_aprovacao,
+          valorLiquido: antes.valor_liquido,
+        });
+        if (!podeAprovar(statusFinanceiro)) {
+          setJustificativaAlvo({ id, updates, prestadorId: prestadorId || antes.prestador_id, prestadorNome: prestadorNome || antes.prestador_nome });
+          setJustificativaTexto("");
+          setShowJustificativa(true);
+
+          registrarAuditoria({
+            acao: 'reprovar_pagamento',
+            entidade_tipo: 'pagamento_prestador',
+            entidade_id: id,
+            prestador_id: prestadorId || antes.prestador_id,
+            prestador_nome: prestadorNome || antes.prestador_nome,
+            valor_anterior: antes.valor_liquido,
+            detalhes: { status_anterior: antes.status_pagamento, motivo_bloqueio: getMotivoBloqueio(statusFinanceiro), bloqueio_automatico: true },
+          });
+          return;
+        }
+      }
+
       const { error } = await supabase.from('pagamentos_prestadores').update(updates).eq('id', id);
       if (error) throw error;
       toast.success('Status atualizado!');
       fetchPagamentosManuais();
+
+      const acao = updates.status_conferencia === 'conferido' ? 'marcar_conferido'
+        : updates.status_aprovacao === 'aprovado' ? 'aprovar_pagamento'
+        : updates.status_aprovacao === 'rejeitado' ? 'reprovar_pagamento'
+        : updates.status_pagamento === 'em_lote' ? 'marcar_em_lote'
+        : updates.status_pagamento === 'cancelado' ? 'cancelar_pagamento'
+        : 'atualizar_status';
+
+      registrarAuditoria({
+        acao,
+        entidade_tipo: 'pagamento_prestador',
+        entidade_id: id,
+        prestador_id: prestadorId || antes?.prestador_id,
+        prestador_nome: prestadorNome || antes?.prestador_nome,
+        valor_anterior: antes?.valor_liquido,
+        valor_novo: updates.valor_liquido ?? antes?.valor_liquido,
+        detalhes: { status_anterior: antes?.status_pagamento, status_novo: updates.status ?? updates.status_pagamento, motivo },
+      });
     } catch (e: any) {
       toast.error('Erro: ' + e.message);
     }
+  };
+
+  const handleLiberarComJustificativa = async () => {
+    if (!justificativaAlvo || !justificativaTexto.trim()) {
+      toast.error("Informe a justificativa para liberar");
+      return;
+    }
+    setShowJustificativa(false);
+    await handleAtualizarStatus(
+      justificativaAlvo.id,
+      { ...justificativaAlvo.updates, liberado_com_justificativa: true },
+      justificativaAlvo.prestadorId,
+      justificativaAlvo.prestadorNome,
+      `Liberação manual: ${justificativaTexto.trim()}`
+    );
+    setJustificativaAlvo(null);
+    setJustificativaTexto("");
   };
 
   const verificarElegibilidadeLote = (prestadorId: string): boolean => {
@@ -410,6 +536,111 @@ export default function PagamentoPrestadores() {
       setOss(data || []);
     } catch (e: any) {
       console.error("Erro ao buscar OS:", e);
+    }
+  };
+
+  const fetchEscalaRepasse = async () => {
+    setEscalaRepasseLoading(true);
+    try {
+      let query = supabase
+        .from("alocacoes_escala")
+        .select("*");
+      if (dataInicio) query = query.gte("data_escala", dataInicio);
+      if (dataFim) query = query.lte("data_escala", dataFim);
+      const { data, error } = await query.order("data_escala", { ascending: false });
+      if (error) throw error;
+      const items = (data || [])
+        .map(mapearBancoParaLocal)
+        .filter(isAlocacaoFaturavel)
+        .map(escalaParaItemRepasse);
+      setEscalaRepasse(items);
+    } catch (e) {
+      console.warn("[PagamentoPrestadores] Erro ao buscar repasses da Escala:", e);
+      setEscalaRepasse([]);
+    } finally {
+      setEscalaRepasseLoading(false);
+    }
+  };
+
+  const handleGerarRepasse = async (item: ItemRepasseEscala) => {
+    if (gerandoRepasseId) return;
+
+    if (!item.prestadorId) {
+      toast.warning("Repasse não pode ser gerado: alocação sem prestador vinculado.");
+      return;
+    }
+    if (!item.valorTotal || item.valorTotal <= 0) {
+      toast.warning("Repasse não pode ser gerado: valor total é zero ou inválido.");
+      return;
+    }
+    if (item.comprovanteStatus === "pendente") {
+      toast.warning("Alocação sem comprovante. O repasse será criado, mas a aprovação ficará bloqueada.");
+    }
+
+    setGerandoRepasseId(item.alocacaoId);
+    try {
+      let query = supabase.from("pagamentos_prestadores").select("id");
+      query = query.eq("prestador_id", item.prestadorId).eq("valor_liquido", item.valorTotal).eq("origem_lancamento", "escala_operacional");
+      if (item.os) query = query.eq("os_numero", item.os);
+      const { data: existente } = await query.maybeSingle();
+
+      if (existente) {
+        toast.warning("Repasse já existe para este prestador + OS + valor.");
+        return;
+      }
+
+      const competencia = item.data
+        ? item.data.split("T")[0]
+        : new Date().toISOString().split("T")[0];
+
+      const { error } = await supabase.from("pagamentos_prestadores").insert({
+        prestador_id: item.prestadorId,
+        prestador_nome: item.prestadorNome,
+        os_numero: item.os,
+        tipo_lancamento: "Repasse Escala",
+        natureza: "credito",
+        valor: item.valorTotal,
+        valor_servicos: item.valorBase,
+        valor_adicionais: item.valorAdicionais,
+        valor_descontos: item.valorDescontos,
+        valor_liquido: item.valorTotal,
+        data_competencia: competencia,
+        periodo_inicio: competencia,
+        periodo_fim: competencia,
+        status_conferencia: "em_aberto",
+        status_pagamento: "pendente",
+        origem_lancamento: "escala_operacional",
+        observacao: `Gerado da Escala Operacional | alocação: ${item.alocacaoId} | entregas: ${item.quantidadeEntregas}`,
+        quantidade_os: 1,
+      });
+
+      if (error) throw error;
+
+      toast.success(`Repasse gerado: ${item.prestadorNome} — ${item.os || "sem OS"}`);
+
+      registrarAuditoria({
+        acao: 'gerar_repasse',
+        entidade_tipo: 'repasse_escala',
+        prestador_id: item.prestadorId,
+        prestador_nome: item.prestadorNome,
+        valor_novo: item.valorTotal,
+        detalhes: {
+          alocacao_id: item.alocacaoId,
+          os: item.os,
+          valor_base: item.valorBase,
+          adicionais: item.valorAdicionais,
+          descontos: item.valorDescontos,
+          quantidade_entregas: item.quantidadeEntregas,
+        },
+      });
+
+      await fetchPagamentos();
+      await fetchPagamentosManuais();
+    } catch (e: any) {
+      console.error("[PagamentoPrestadores] Erro ao gerar repasse da Escala:", e);
+      toast.error(`Erro ao gerar repasse: ${e.message}`);
+    } finally {
+      setGerandoRepasseId(null);
     }
   };
 
@@ -450,7 +681,16 @@ export default function PagamentoPrestadores() {
         descontos: (osList || []).reduce((sum, os) => sum + (os.descontos || 0), 0),
         liquido: 0
       };
-      totals.liquido = totals.servicos + totals.pedagio + totals.adicionais + ajustados.reembolso + ajustados.bonus - totals.descontos - ajustados.desconto;
+      const resultado = calcularRepassePrestador({
+        custo_prestador: totals.servicos,
+        pedagio: totals.pedagio,
+        adicionais: totals.adicionais,
+        descontos: totals.descontos,
+        reembolso: ajustados.reembolso,
+        bonus: ajustados.bonus,
+        descontoManual: ajustados.desconto,
+      });
+      totals.liquido = resultado.totalLiquido;
       totais[prestador] = totals;
     });
 
@@ -543,6 +783,23 @@ export default function PagamentoPrestadores() {
       }
 
       toast.success(`Fechamento gerado para ${selectedPrestador.nome_completo}`);
+
+      registrarAuditoria({
+        acao: 'gerar_fechamento',
+        entidade_tipo: 'fechamento',
+        entidade_id: pagamentoId,
+        prestador_id: selectedPrestador.id,
+        prestador_nome: selectedPrestador.nome_completo,
+        valor_novo: total.liquido,
+        detalhes: {
+          periodo_inicio: dataInicio,
+          periodo_fim: dataFim,
+          qtd_os: total.quantidade,
+          valor_servicos: total.servicos,
+          valor_descontos: total.descontos,
+        },
+      });
+
       setShowFechamento(false);
       setShowDetalhe(false);
       fetchPagamentos();
@@ -564,6 +821,27 @@ export default function PagamentoPrestadores() {
 
   const handleConfirmarPagamento = async (pagamentoId: string) => {
     try {
+      const { data: antes } = await supabase.from('pagamentos_prestadores').select('*').eq('id', pagamentoId).maybeSingle();
+      if (!antes) { toast.error("Registro não encontrado"); return; }
+
+      const sf = calcularStatusFinanceiro({
+        statusConferencia: antes.status_conferencia,
+        statusAprovacao: antes.status_aprovacao,
+        valorLiquido: antes.valor_liquido,
+      });
+      if (!podeAprovar(sf)) {
+        setJustificativaAlvo({ id: pagamentoId, updates: { status: "pago", data_pagamento: new Date().toISOString().split("T")[0] }, prestadorId: antes.prestador_id, prestadorNome: antes.prestador_nome });
+        setJustificativaTexto("");
+        setShowJustificativa(true);
+        registrarAuditoria({
+          acao: 'reprovar_pagamento', entidade_tipo: 'fechamento', entidade_id: pagamentoId,
+          prestador_id: antes.prestador_id, prestador_nome: antes.prestador_nome,
+          valor_anterior: antes.valor_liquido,
+          detalhes: { status_anterior: antes.status, motivo_bloqueio: getMotivoBloqueio(sf), bloqueio_automatico: true },
+        });
+        return;
+      }
+
       const { error } = await supabase
         .from("pagamentos_prestadores")
         .update({ status: "pago", data_pagamento: new Date().toISOString().split("T")[0] })
@@ -572,14 +850,29 @@ export default function PagamentoPrestadores() {
       if (error) throw error;
       toast.success("Pagamento confirmado!");
       fetchPagamentos();
+
+      registrarAuditoria({
+        acao: 'marcar_pago',
+        entidade_tipo: 'fechamento',
+        entidade_id: pagamentoId,
+        prestador_id: antes?.prestador_id,
+        prestador_nome: antes?.prestador_nome,
+        valor_anterior: antes?.valor_liquido,
+        valor_novo: antes?.valor_liquido,
+        detalhes: { status_anterior: antes?.status, status_novo: 'pago' },
+      });
     } catch (e: any) {
       toast.error(`Erro: ${e.message}`);
     }
   };
 
   const handleSalvarNovoPagamento = async () => {
-    if (!novoPagamento.prestadorId || !novoPagamento.valor || novoPagamento.valor <= 0) {
-      toast.error("Preencha o prestador e o valor");
+    if (!novoPagamento.prestadorId) {
+      toast.error("Selecione um prestador");
+      return;
+    }
+    if (!novoPagamento.valor || novoPagamento.valor <= 0) {
+      toast.error("Informe um valor maior que zero");
       return;
     }
 
@@ -590,6 +883,8 @@ export default function PagamentoPrestadores() {
     }
 
     const elegivel = verificarElegibilidadeLote(novoPagamento.prestadorId);
+
+    const contaSelecionada = contasFinanceiras.find(c => c.id === novoPagamento.contaPagamento);
 
     try {
       const { error } = await supabase
@@ -608,7 +903,7 @@ export default function PagamentoPrestadores() {
           data_competencia: novoPagamento.dataCompetencia,
           data_prevista_pagamento: novoPagamento.dataPrevistaPagamento,
           forma_pagamento: novoPagamento.formaPagamento,
-          conta_pagamento: novoPagamento.contaPagamento || null,
+          conta_pagamento: contaSelecionada ? contaSelecionada.nome : (novoPagamento.contaPagamento || null),
           observacao: novoPagamento.observacao,
           status_conferencia: "em_aberto",
           status_pagamento: "pendente",
@@ -628,6 +923,23 @@ export default function PagamentoPrestadores() {
 
       if (error) throw error;
       toast.success("Pagamento salvo com sucesso!");
+
+      registrarAuditoria({
+        acao: 'criar_pagamento',
+        entidade_tipo: 'pagamento_prestador',
+        prestador_id: novoPagamento.prestadorId,
+        prestador_nome: prestadorSelecionado.nome_completo,
+        valor_novo: novoPagamento.natureza === "credito" ? novoPagamento.valor : -novoPagamento.valor,
+        detalhes: {
+          tipo_lancamento: novoPagamento.tipoLancamento,
+          natureza: novoPagamento.natureza,
+          forma_pagamento: novoPagamento.formaPagamento,
+          observacao: novoPagamento.observacao,
+          cliente_id: novoPagamento.clienteId,
+          os_id: novoPagamento.osId,
+        },
+      });
+
       setShowNovoPagamento(false);
       setNovoPagamento({
         prestadorId: "",
@@ -644,14 +956,37 @@ export default function PagamentoPrestadores() {
         arquivo: ""
       });
       fetchPagamentosManuais();
+      fetchPagamentos();
     } catch (e: any) {
-      console.error("Erro ao salvar:", e);
-      toast.error(`Erro: ${e.message}`);
+      const mensagem = e?.message || e?.details || "Erro desconhecido ao salvar pagamento";
+      console.error("[PagamentoPrestadores] Erro ao salvar pagamento manual:", mensagem, e);
+      toast.error(`Erro ao salvar: ${mensagem}`);
     }
   };
 
   const handleMarcarPago = async (pagamentoId: string) => {
     try {
+      const { data: antes } = await supabase.from('pagamentos_prestadores').select('*').eq('id', pagamentoId).maybeSingle();
+      if (!antes) { toast.error("Registro não encontrado"); return; }
+
+      const sf = calcularStatusFinanceiro({
+        statusConferencia: antes.status_conferencia,
+        statusAprovacao: antes.status_aprovacao,
+        valorLiquido: antes.valor_liquido,
+      });
+      if (!podeAprovar(sf)) {
+        setJustificativaAlvo({ id: pagamentoId, updates: { status: "pago", data_pagamento: new Date().toISOString().split("T")[0] }, prestadorId: antes.prestador_id, prestadorNome: antes.prestador_nome });
+        setJustificativaTexto("");
+        setShowJustificativa(true);
+        registrarAuditoria({
+          acao: 'reprovar_pagamento', entidade_tipo: 'pagamento_prestador', entidade_id: pagamentoId,
+          prestador_id: antes.prestador_id, prestador_nome: antes.prestador_nome,
+          valor_anterior: antes.valor_liquido,
+          detalhes: { status_anterior: antes.status_pagamento, motivo_bloqueio: getMotivoBloqueio(sf), bloqueio_automatico: true },
+        });
+        return;
+      }
+
       const { error } = await supabase
         .from("pagamentos_prestadores")
         .update({ status: "pago", data_pagamento: new Date().toISOString().split("T")[0] })
@@ -660,6 +995,17 @@ export default function PagamentoPrestadores() {
       if (error) throw error;
       toast.success("Marcado como pago!");
       fetchPagamentos();
+
+      registrarAuditoria({
+        acao: 'marcar_pago',
+        entidade_tipo: 'pagamento_prestador',
+        entidade_id: pagamentoId,
+        prestador_id: antes?.prestador_id,
+        prestador_nome: antes?.prestador_nome,
+        valor_anterior: antes?.valor_liquido,
+        valor_novo: antes?.valor_liquido,
+        detalhes: { status_anterior: antes?.status_pagamento, status_novo: 'pago' },
+      });
     } catch (e: any) {
       toast.error(`Erro: ${e.message}`);
     }
@@ -672,6 +1018,26 @@ export default function PagamentoPrestadores() {
   const totalOS = useMemo(() => {
     return oss.length;
   }, [oss]);
+
+  const ossNumeros = useMemo(() => new Set((oss || []).map(o => o.numero)), [oss]);
+
+  const escalaRepasseDedup = useMemo(() => {
+    return (escalaRepasse || []).filter(item => !ossNumeros.has(item.os));
+  }, [escalaRepasse, ossNumeros]);
+
+  const escalaAgrupada = useMemo(() => {
+    const grupos: { [key: string]: ItemRepasseEscala[] } = {};
+    (escalaRepasseDedup || []).forEach(item => {
+      const key = item.prestadorNome || "sem_prestador";
+      if (!grupos[key]) grupos[key] = [];
+      grupos[key].push(item);
+    });
+    return grupos;
+  }, [escalaRepasseDedup]);
+
+  const totalEscalaRepasse = useMemo(() => {
+    return (escalaRepasseDedup || []).reduce((acc, item) => acc + item.valorTotal, 0);
+  }, [escalaRepasseDedup]);
 
   return (
     <div className="space-y-4">
@@ -691,11 +1057,115 @@ export default function PagamentoPrestadores() {
 
       <Tabs value={aba} onValueChange={setAba}>
         <TabsList>
+          <TabsTrigger value="dashboard">Dashboard Operacional</TabsTrigger>
           <TabsTrigger value="listagem">Fechamentos e Pagamentos</TabsTrigger>
+          <TabsTrigger value="relatorio">Relatório Financeiro</TabsTrigger>
           <TabsTrigger value="conta-corrente">Conta Corrente</TabsTrigger>
         </TabsList>
+        <TabsContent value="dashboard" className="space-y-4">
+          {(() => {
+            const kpis = calcularKPIPrestador(pagamentos as any, pagamentosManuais as any, escalaRepasse);
+            const alertas = gerarAlertas(kpis, kpis.divergencias, escalaRepasseDedup.length);
+            const distribuicao = calcularDistribuicaoStatus(pagamentos as any, pagamentosManuais as any);
+            const CORES = { pendente: "#F59E0B", pago: "#10B981", cancelado: "#EF4444", divergente: "#8B5CF6", agendado: "#3B82F6", em_lote: "#6366F1" };
+
+            const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+            const totalGeral = kpis.totalAPagar + kpis.totalPago;
+
+            return (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <Card className="bg-emerald-50/40 border-emerald-100">
+                    <CardContent className="p-4">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Total Pago</p>
+                      <p className="text-xl font-extrabold text-emerald-700 mt-1">{fmt(kpis.totalPago)}</p>
+                      <p className="text-xs text-emerald-500 mt-0.5">{kpis.qtdPagos} registro(s)</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-amber-50/40 border-amber-100">
+                    <CardContent className="p-4">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Total a Pagar</p>
+                      <p className="text-xl font-extrabold text-amber-700 mt-1">{fmt(kpis.totalAPagar)}</p>
+                      <p className="text-xs text-amber-500 mt-0.5">{kpis.qtdPendentes} pendente(s)</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-red-50/40 border-red-100">
+                    <CardContent className="p-4">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Divergências</p>
+                      <p className="text-xl font-extrabold text-red-700 mt-1">{kpis.divergencias}</p>
+                      <p className="text-xs text-red-500 mt-0.5">{kpis.qtdDivergentes} registro(s)</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-blue-50/40 border-blue-100">
+                    <CardContent className="p-4">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Bloqueados</p>
+                      <p className="text-xl font-extrabold text-blue-700 mt-1">{kpis.bloqueados}</p>
+                      <p className="text-xs text-blue-500 mt-0.5">{kpis.qtdPeriodo} no período</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <Card className="lg:col-span-2">
+                    <CardHeader className="pb-3"><CardTitle className="text-sm">Distribuição por Status</CardTitle></CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={distribuicao}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                          <XAxis dataKey="status" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <Tooltip formatter={(v: number) => fmt(v)} />
+                          <Bar dataKey="valor" radius={[4, 4, 0, 0]}>
+                            {distribuicao.map((d, i) => (
+                              <Cell key={i} fill={(CORES as any)[d.status] || "#94A3B8"} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-3"><CardTitle className="text-sm">Proporção</CardTitle></CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <PieChart>
+                          <Pie data={distribuicao} dataKey="quantidade" nameKey="status" cx="50%" cy="50%" outerRadius={70} innerRadius={40}>
+                            {distribuicao.map((d, i) => (
+                              <Cell key={i} fill={(CORES as any)[d.status] || "#94A3B8"} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {alertas.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-3"><CardTitle className="text-sm text-amber-700 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> Alertas Financeiros</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {alertas.map(a => (
+                          <div key={a.tipo} className={`rounded-lg border p-3 ${a.gravidade === "alta" ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-xs font-bold uppercase text-muted-foreground">{a.label}</p>
+                              <Badge variant="outline" className={`text-[10px] ${a.gravidade === "alta" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{a.quantidade}</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">{a.descricao}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            );
+          })()}
+        </TabsContent>
         <TabsContent value="listagem" className="space-y-4">
-      <Card>
+          <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1">
@@ -796,9 +1266,11 @@ export default function PagamentoPrestadores() {
                 <TableHead>Prestador</TableHead>
                 <TableHead>Cliente / OS</TableHead>
                 <TableHead>Tipo Lançamento</TableHead>
+                <TableHead>Origem</TableHead>
                 <TableHead>Crédito</TableHead>
                 <TableHead>Débito</TableHead>
                 <TableHead>Valor Líquido</TableHead>
+                <TableHead>Status Fin.</TableHead>
                 <TableHead>Forma Pagto</TableHead>
                 <TableHead>Status Conf.</TableHead>
                 <TableHead>Status Pagto</TableHead>
@@ -808,11 +1280,11 @@ export default function PagamentoPrestadores() {
             </TableHeader>
             <TableBody>
               {pagamentosManuais.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
-                    Nenhum pagamento manual criado
-                  </TableCell>
-                </TableRow>
+                  <TableRow>
+                    <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
+                      Nenhum pagamento manual criado
+                    </TableCell>
+                  </TableRow>
               ) : (
                 pagamentosManuais.map(p => (
                   <TableRow key={p.id}>
@@ -824,6 +1296,20 @@ export default function PagamentoPrestadores() {
                       {!p.cliente_nome && !p.os_numero && "-"}
                     </TableCell>
                     <TableCell><Badge variant="outline">{p.tipo_lancamento}</Badge></TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={
+                        p.origem_lancamento === 'manual' ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                        p.origem_lancamento === 'os_finalizada' ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                        p.origem_lancamento === 'fechamento' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        p.origem_lancamento === 'escala_operacional' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        'bg-slate-50 text-slate-600'
+                      }>
+                        {p.origem_lancamento === 'manual' ? 'Manual' :
+                         p.origem_lancamento === 'os_finalizada' ? 'OS' :
+                         p.origem_lancamento === 'fechamento' ? 'Fechamento' :
+                         p.origem_lancamento === 'escala_operacional' ? 'Escala' : p.origem_lancamento}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="text-green-600 font-medium">
                       {p.natureza === 'credito' ? p.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : '-'}
                     </TableCell>
@@ -832,6 +1318,17 @@ export default function PagamentoPrestadores() {
                     </TableCell>
                     <TableCell className="font-bold text-orange-600">
                       {(p.natureza === 'credito' ? p.valor : -p.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const sf = calcularStatusFinanceiro({
+                          statusConferencia: p.status_conferencia,
+                          statusAprovacao: p.status_aprovacao,
+                          valorLiquido: p.natureza === 'credito' ? p.valor : -p.valor,
+                        });
+                        const info = getStatusFinanceiroInfo(sf);
+                        return <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${info.bg} ${info.cor} ${info.borda}`}>{info.label}</Badge>;
+                      })()}
                     </TableCell>
                     <TableCell>{p.forma_pagamento || "-"}</TableCell>
                     <TableCell>
@@ -907,46 +1404,344 @@ export default function PagamentoPrestadores() {
       {pagamentos.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Fechamentos Anteriores</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg">Fechamentos Anteriores</CardTitle>
+              <Badge variant="outline" className="text-xs">{pagamentos.length} registro{pagamentos.length !== 1 ? "s" : ""}</Badge>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8"></TableHead>
                   <TableHead>Período</TableHead>
                   <TableHead>Prestador</TableHead>
-                  <TableHead>Qtd OS</TableHead>
-                  <TableHead>Valor Líquido</TableHead>
+                  <TableHead className="text-right">Qtd OS</TableHead>
+                  <TableHead className="text-right">Serviços</TableHead>
+                  <TableHead className="text-right">Descontos</TableHead>
+                  <TableHead className="text-right">Valor Líquido</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Divergências</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(pagamentos || []).map(p => (
-                  <TableRow key={p.id}>
-                    <TableCell>{p.periodo_inicio} a {p.periodo_fim}</TableCell>
-                    <TableCell>{p.prestador_nome}</TableCell>
-                    <TableCell>{p.quantidade_os}</TableCell>
-                    <TableCell className="font-medium">{p.valor_liquido.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</TableCell>
-                    <TableCell>
-                      <Badge className={STATUS_COLORS[p.status]}>{STATUS_LABELS[p.status]}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {p.status === "pendente" && (
-                        <Button size="sm" onClick={() => handleConfirmarPagamento(p.id)}>
-                          <Check className="w-4 h-4 mr-1" /> Confirmar
+                {(pagamentos || []).map(p => {
+                  const exp = fechamentoExpandido[p.id] || false;
+                  const divergencias = extrairDivergencias(p as any);
+                  const sfInfo = getFechamentoStatusInfo(p.status);
+                  return (
+                    <TableRow key={p.id}>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setFechamentoExpandido(prev => ({ ...prev, [p.id]: !exp }))}>
+                          {exp ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                         </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">{p.periodo_inicio?.slice(0,10)} a {p.periodo_fim?.slice(0,10)}</TableCell>
+                      <TableCell className="font-medium text-sm">{p.prestador_nome}</TableCell>
+                      <TableCell className="text-right">{p.quantidade_os || 0}</TableCell>
+                      <TableCell className="text-right font-mono text-sm">{(p.valor_servicos || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</TableCell>
+                      <TableCell className="text-right font-mono text-sm text-red-600">{(p.valor_descontos || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</TableCell>
+                      <TableCell className="text-right font-mono font-bold text-sm text-orange-600">{(p.valor_liquido || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${sfInfo.bg} ${sfInfo.cor}`}>{sfInfo.label}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {divergencias.length > 0 ? (
+                          <div className="flex gap-1">
+                            {divergencias.map(d => (
+                              <Badge key={d.tipo} variant="outline" className="text-[10px] px-1.5 py-0 bg-red-50 text-red-700 border-red-200" title={d.descricao}>
+                                {d.label}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {p.status === "pendente" && (
+                            <Button size="sm" className="h-7 text-xs" onClick={() => handleConfirmarPagamento(p.id)}>
+                              <Check className="w-3 h-3 mr-1" /> Confirmar
+                            </Button>
+                          )}
+                          {exp && (
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleGerarFechamento()}>
+                              <RefreshCw className="w-3 h-3 mr-1" /> Recalcular
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
       )}
 
+      {pagamentos.some(p => fechamentoExpandido[p.id]) && (
+        <div className="space-y-3">
+          {pagamentos.filter(p => fechamentoExpandido[p.id]).map(p => {
+            const sfInfo = getFechamentoStatusInfo(p.status);
+            const memoria: string[] = [];
+            memoria.push(`Valor serviços: ${(p.valor_servicos || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+            if (p.valor_reembolsos) memoria.push(`+ Reembolsos: ${(p.valor_reembolsos || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+            if (p.valor_bonus) memoria.push(`+ Bônus: ${(p.valor_bonus || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+            if (p.valor_descontos) memoria.push(`- Descontos: ${(p.valor_descontos || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+            if (p.valor_adiantamentos) memoria.push(`- Adiantamentos: ${(p.valor_adiantamentos || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+            memoria.push(`= Valor líquido: ${(p.valor_liquido || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+
+            const pgtoStatus = p.status === "pago" ? "pago" : p.status === "cancelado" ? "cancelado" : p.status_pagamento || p.status || "pendente";
+            const tipoPgto = detectarTipoPagamento(p as any);
+            const tipoPgtoBadge = getTipoPagamentoBadge(tipoPgto);
+            const timeline = getTimelineSteps(pgtoStatus);
+
+            return (
+              <Card key={p.id} className="border-l-4 border-l-indigo-300">
+                <CardContent className="p-4 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-indigo-800">Memória de Cálculo</h4>
+                      <div className="bg-slate-50 rounded-lg p-3 text-xs font-mono space-y-1">
+                        {memoria.map((linha, i) => (
+                          <p key={i} className={linha.startsWith("=") ? "font-bold text-indigo-700 border-t border-slate-200 pt-1 mt-1" : ""}>{linha}</p>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-indigo-800">Dados do Fechamento</h4>
+                      <div className="bg-slate-50 rounded-lg p-3 text-xs space-y-1.5">
+                        <div className="flex justify-between"><span className="text-muted-foreground">Período</span><span>{p.periodo_inicio?.slice(0,10)} a {p.periodo_fim?.slice(0,10)}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">OS no período</span><span>{p.quantidade_os || 0}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span><Badge variant="outline" className={`text-[10px] ${sfInfo.bg} ${sfInfo.cor}`}>{sfInfo.label}</Badge></span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Pagamento</span><span><Badge variant="outline" className={`text-[10px] ${tipoPgtoBadge.bg} ${tipoPgtoBadge.cor}`}>{tipoPgtoBadge.label}</Badge></span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Conferência</span><span>{p.status_conferencia || "—"}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Aprovação</span><span>{p.status_aprovacao || "—"}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Forma Pagto</span><span>{p.origem_lancamento === "fechamento" && p.status === "pago" ? "Fechamento" : p.status_pagamento === "pago" ? "Pago" : "—"}</span></div>
+                        {p.data_pagamento && <div className="flex justify-between"><span className="text-muted-foreground">Data Pagto</span><span>{new Date(p.data_pagamento).toLocaleDateString("pt-BR")}</span></div>}
+                        {p.observacao && <div className="flex justify-between"><span className="text-muted-foreground">Observação</span><span className="text-right max-w-[200px] truncate">{p.observacao}</span></div>}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-indigo-800 mb-2">Timeline de Pagamento</h4>
+                    <div className="flex items-center gap-0 bg-slate-50 rounded-lg p-3">
+                      {timeline.map((step, i) => (
+                        <div key={step.status} className="flex items-center flex-1">
+                          <div className={`flex items-center gap-1.5 ${step.concluido ? "text-emerald-600" : step.ativo ? "text-indigo-600 font-semibold" : "text-slate-400"}`}>
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2 ${step.concluido ? "bg-emerald-100 border-emerald-400" : step.ativo ? "bg-indigo-100 border-indigo-400" : "bg-slate-100 border-slate-300"}`}>
+                              {step.concluido ? <Check className="w-3 h-3" /> : i + 1}
+                            </div>
+                            <span className="text-[10px] whitespace-nowrap">{step.label}</span>
+                          </div>
+                          {i < timeline.length - 1 && (
+                            <div className={`flex-1 h-0.5 mx-2 ${step.concluido ? "bg-emerald-300" : "bg-slate-200"}`} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Package className="w-5 h-5 text-indigo-500 shrink-0" />
+            <div>
+              <CardTitle className="text-lg">Repasses da Escala Operacional</CardTitle>
+              <CardDescription>
+                {escalaRepasseLoading ? "Carregando..." : "Dados preparados da escala — ainda não processados como pagamento"}
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <Select value={filtroComprovante} onValueChange={setFiltroComprovante}>
+                <SelectTrigger className="h-7 text-xs w-44">
+                  <SelectValue placeholder="Comprovante" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FILTRO_COMPROVANTE_OPCOES.map(o => (
+                    <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Badge variant="outline" className="text-xs text-indigo-600 border-indigo-200 bg-indigo-50 shrink-0">
+                Origem: Escala Operacional
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {escalaRepasseLoading ? (
+            <div className="text-center py-4 text-muted-foreground">Carregando dados da Escala...</div>
+          ) : Object.keys(escalaAgrupada).length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Nenhum repasse pendente da Escala Operacional
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {Object.entries(escalaAgrupada).map(([prestador, items]) => {
+                const itemsFiltrados = filtroComprovante === "todos"
+                  ? items
+                  : items.filter(i => i.comprovanteStatus === filtroComprovante);
+                if (itemsFiltrados.length === 0) return null;
+                const subtotal = itemsFiltrados.reduce((s, i) => s + i.valorTotal, 0);
+                return (
+                  <div key={prestador} className="border rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-semibold text-sm">{prestador}</h4>
+                      <span className="text-sm font-bold text-indigo-600">
+                        {itemsFiltrados.length} aloc{itemsFiltrados.length === 1 ? "ação" : "ações"} —{" "}
+                        {subtotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </span>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">OS</TableHead>
+                          <TableHead className="text-xs">Data</TableHead>
+                          <TableHead className="text-xs">Comprovante</TableHead>
+                          <TableHead className="text-xs text-right">Valor Base</TableHead>
+                          <TableHead className="text-xs text-right">Adicionais</TableHead>
+                          <TableHead className="text-xs text-right">Descontos</TableHead>
+                          <TableHead className="text-xs text-right">Total</TableHead>
+                          <TableHead className="text-xs text-right">Entregas</TableHead>
+                          <TableHead className="text-xs text-right">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {itemsFiltrados.map(item => {
+                          const compInfo = getStatusComprovanteInfo(item.comprovanteStatus);
+                          return (
+                          <TableRow key={item.alocacaoId} className={item.comprovanteStatus === "pendente" ? "opacity-70" : ""}>
+                            <TableCell className="font-mono text-xs">{item.os || "-"}</TableCell>
+                            <TableCell className="text-xs">{item.data ? new Date(item.data).toLocaleDateString("pt-BR") : "-"}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${compInfo.className}`}>
+                                {compInfo.label}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-right">{item.valorBase.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</TableCell>
+                            <TableCell className="text-xs text-right text-green-600">{item.valorAdicionais > 0 ? item.valorAdicionais.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "-"}</TableCell>
+                            <TableCell className="text-xs text-right text-red-600">{item.valorDescontos > 0 ? item.valorDescontos.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "-"}</TableCell>
+                            <TableCell className="text-xs text-right font-bold">{item.valorTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</TableCell>
+                            <TableCell className="text-xs text-right">{item.quantidadeEntregas || "-"}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 text-xs"
+                                disabled={gerandoRepasseId === item.alocacaoId}
+                                onClick={() => handleGerarRepasse(item)}
+                              >
+                                {gerandoRepasseId === item.alocacaoId ? "Gerando..." : "Gerar Repasse"}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                );
+              })}
+              <div className="text-right text-sm text-muted-foreground">
+                Total em repasses da Escala:{" "}
+                <span className="font-bold text-indigo-600">
+                  {totalEscalaRepasse.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </span>
+                <span className="ml-2 text-xs">(não incluso nos fechamentos acima)</span>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
               </TabsContent>
+        <TabsContent value="relatorio" className="space-y-4">
+          {(() => {
+            const linhas = gerarLinhasRelatorio(pagamentos as any, pagamentosManuais as any);
+            const totalServicos = linhas.reduce((s, l) => s + l.valorServicos, 0);
+            const totalLiquido = linhas.reduce((s, l) => s + l.valorLiquido, 0);
+            const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+            return (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold">Relatório Financeiro de Prestadores</h3>
+                    <p className="text-sm text-muted-foreground">{linhas.length} registro(s) — Total líquido: {fmt(totalLiquido)}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={imprimirRelatorio}>
+                      <Printer className="w-4 h-4 mr-2" /> Imprimir
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => exportarCSV(linhas)}>
+                      <Download className="w-4 h-4 mr-2" /> Exportar CSV
+                    </Button>
+                  </div>
+                </div>
+                <Card>
+                  <CardContent className="p-0 overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Prestador</TableHead>
+                          <TableHead className="text-xs">Período</TableHead>
+                          <TableHead className="text-xs text-right">OS</TableHead>
+                          <TableHead className="text-xs text-right">Serviços</TableHead>
+                          <TableHead className="text-xs text-right">Adicionais</TableHead>
+                          <TableHead className="text-xs text-right">Descontos</TableHead>
+                          <TableHead className="text-xs text-right">Pedágio</TableHead>
+                          <TableHead className="text-xs text-right">Líquido</TableHead>
+                          <TableHead className="text-xs">Status</TableHead>
+                          <TableHead className="text-xs">Origem</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {linhas.length === 0 ? (
+                          <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Nenhum registro encontrado</TableCell></TableRow>
+                        ) : (
+                          linhas.map((l, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="font-medium text-xs">{l.prestadorNome}</TableCell>
+                              <TableCell className="text-xs whitespace-nowrap">{l.periodoInicio || "—"} a {l.periodoFim || "—"}</TableCell>
+                              <TableCell className="text-xs text-right">{l.quantidadeOs}</TableCell>
+                              <TableCell className="text-xs text-right font-mono">{fmt(l.valorServicos)}</TableCell>
+                              <TableCell className="text-xs text-right font-mono text-green-600">{l.valorAdicionais > 0 ? fmt(l.valorAdicionais) : "—"}</TableCell>
+                              <TableCell className="text-xs text-right font-mono text-red-600">{l.valorDescontos > 0 ? fmt(l.valorDescontos) : "—"}</TableCell>
+                              <TableCell className="text-xs text-right font-mono">{l.valorPedagio > 0 ? fmt(l.valorPedagio) : "—"}</TableCell>
+                              <TableCell className="text-xs text-right font-mono font-bold">{fmt(l.valorLiquido)}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={`text-[10px] ${getPagamentoStatusInfo(l.statusPagamento).bg} ${getPagamentoStatusInfo(l.statusPagamento).cor}`}>
+                                  {getPagamentoStatusInfo(l.statusPagamento).label}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs">{l.origem || "—"}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <Card className="bg-slate-50/50"><CardContent className="p-3"><p className="text-[10px] font-semibold text-muted-foreground uppercase">Total Serviços</p><p className="text-sm font-bold">{fmt(totalServicos)}</p></CardContent></Card>
+                  <Card className="bg-slate-50/50"><CardContent className="p-3"><p className="text-[10px] font-semibold text-muted-foreground uppercase">Total Descontos</p><p className="text-sm font-bold text-red-600">{fmt(linhas.reduce((s, l) => s + l.valorDescontos, 0))}</p></CardContent></Card>
+                  <Card className="bg-slate-50/50"><CardContent className="p-3"><p className="text-[10px] font-semibold text-muted-foreground uppercase">Total Adicionais</p><p className="text-sm font-bold text-green-600">{fmt(linhas.reduce((s, l) => s + l.valorAdicionais, 0))}</p></CardContent></Card>
+                  <Card className="bg-indigo-50/50 border-indigo-100"><CardContent className="p-3"><p className="text-[10px] font-semibold text-muted-foreground uppercase">Total Líquido</p><p className="text-sm font-bold text-indigo-700">{fmt(totalLiquido)}</p></CardContent></Card>
+                </div>
+              </>
+            );
+          })()}
+        </TabsContent>
         <TabsContent value="conta-corrente" className="space-y-4">
           <Card>
             <CardHeader>
@@ -1140,23 +1935,37 @@ export default function PagamentoPrestadores() {
                   <Select value={novoPagamento.clienteId} onValueChange={v => setNovoPagamento(p => ({ ...p, clienteId: v }))}>
                     <SelectTrigger><SelectValue placeholder="Selecione um cliente" /></SelectTrigger>
                     <SelectContent>
-                      
-                      {clientes.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.nome_fantasia}</SelectItem>
-                      ))}
+                      {clientes.length === 0 ? (
+                        <div className="p-3 text-sm text-slate-500 font-medium text-center">
+                          Nenhum cliente encontrado
+                        </div>
+                      ) : (
+                        clientes.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.nome_fantasia || c.razao_social}</SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="space-y-2">
                   <Label>OS Vinculada (Opcional)</Label>
-                  <Select value={novoPagamento.osId} onValueChange={v => setNovoPagamento(p => ({ ...p, osId: v }))}>
-                    <SelectTrigger><SelectValue placeholder="Selecione uma OS" /></SelectTrigger>
+                  <Select value={novoPagamento.osId || ""} onValueChange={v => setNovoPagamento(p => ({ ...p, osId: v }))}>
+                    <SelectTrigger><SelectValue placeholder={!novoPagamento.prestadorId ? "Selecione um prestador primeiro" : "Nenhuma OS disponível"} /></SelectTrigger>
                     <SelectContent>
-                      
-                      {ossDoPrestador.map(os => (
-                        <SelectItem key={os.id} value={os.id}>{os.numero} ({new Date(os.data || '').toLocaleDateString('pt-BR')})</SelectItem>
-                      ))}
+                      {!novoPagamento.prestadorId ? (
+                        <div className="p-3 text-sm text-slate-500 font-medium text-center">
+                          Selecione um prestador para ver as OS disponíveis
+                        </div>
+                      ) : ossDoPrestador.length === 0 ? (
+                        <div className="p-3 text-sm text-slate-500 font-medium text-center">
+                          Nenhuma OS finalizada para este prestador
+                        </div>
+                      ) : (
+                        ossDoPrestador.map(os => (
+                          <SelectItem key={os.id} value={os.id}>{os.numero} ({new Date(os.data || '').toLocaleDateString('pt-BR')})</SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1232,11 +2041,22 @@ export default function PagamentoPrestadores() {
 
                 <div className="space-y-2 col-span-2">
                   <Label>Conta de Pagamento (Empresa)</Label>
-                  <Input 
-                    value={novoPagamento.contaPagamento} 
-                    onChange={e => setNovoPagamento(p => ({ ...p, contaPagamento: e.target.value }))}
-                    placeholder="Ex: Conta Itaú, Caixa Físico"
-                  />
+                  <Select value={novoPagamento.contaPagamento} onValueChange={v => setNovoPagamento(p => ({ ...p, contaPagamento: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Selecione a conta" /></SelectTrigger>
+                    <SelectContent>
+                      {contasFinanceiras.length === 0 ? (
+                        <div className="p-3 text-sm text-red-500 font-medium text-center">
+                          Nenhuma conta cadastrada. Cadastre uma conta antes de lançar pagamento.
+                        </div>
+                      ) : (
+                        contasFinanceiras.map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.nome} ({c.banco} — {c.tipo})
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2 col-span-2">
@@ -1330,10 +2150,42 @@ export default function PagamentoPrestadores() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={showJustificativa} onOpenChange={setShowJustificativa}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <AlertTriangle className="w-5 h-5" /> Liberação com Justificativa
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+              <p className="font-semibold">Este pagamento não pode ser aprovado automaticamente.</p>
+              <p className="mt-1 text-xs text-amber-600">Informe o motivo da liberação manual. A auditoria registrará esta exceção.</p>
+            </div>
+            <Label>Justificativa *</Label>
+            <Textarea
+              value={justificativaTexto}
+              onChange={e => setJustificativaTexto(e.target.value)}
+              placeholder="Ex: Comprovante foi enviado por e-mail, anexar posteriormente..."
+              className="h-24 resize-none"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setShowJustificativa(false); setJustificativaAlvo(null); setJustificativaTexto(""); }}>
+              Cancelar
+            </Button>
+            <Button className="bg-amber-600 hover:bg-amber-700" onClick={handleLiberarComJustificativa} disabled={!justificativaTexto.trim()}>
+              <Check className="w-4 h-4 mr-2" /> Liberar com Justificativa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
+/** @deprecated A finalização de OS agora grava diretamente em pagamentos_prestadores via ordemServicoService. Esta função está mantida para compatibilidade, mas não é mais chamada pelo fluxo principal. */
 export async function gerarLancamentosPrestadorPorOS(os: any) {
   if (!os || os.status !== 'finalizada' || !os.prestador_id) return;
   
@@ -1345,19 +2197,22 @@ export async function gerarLancamentosPrestadorPorOS(os: any) {
     .maybeSingle();
     
   if (existente) return;
-  
-  const totalCred = (os.custo_prestador || 0) + (os.pedagio || 0) + (os.adicionais || 0);
-  const totalDeb = (os.descontos || 0);
-  const valorLiquido = totalCred - totalDeb;
+
+  const resultado = calcularRepassePrestador({
+    custo_prestador: os.custo_prestador,
+    pedagio: os.pedagio,
+    adicionais: os.adicionais,
+    descontos: os.descontos,
+  });
   
   const payload = {
     prestador_id: os.prestador_id,
     os_id: os.id,
     os_numero: os.numero,
     tipo_lancamento: 'Serviço OS',
-    natureza: valorLiquido >= 0 ? 'credito' : 'debito',
-    valor: Math.abs(valorLiquido),
-    valor_liquido: valorLiquido,
+    natureza: resultado.totalLiquido >= 0 ? 'credito' : 'debito',
+    valor: Math.abs(resultado.totalLiquido),
+    valor_liquido: resultado.totalLiquido,
     valor_servicos: os.custo_prestador || 0,
     valor_pedagio: os.pedagio || 0,
     valor_adicionais: os.adicionais || 0,
@@ -1373,4 +2228,18 @@ export async function gerarLancamentosPrestadorPorOS(os: any) {
   };
   
   await supabase.from('pagamentos_prestadores').insert([payload]);
+
+  registrarAuditoria({
+    acao: 'criar_pagamento',
+    entidade_tipo: 'pagamento_prestador',
+    entidade_id: os.os_id || os.id,
+    prestador_id: os.prestador_id,
+    prestador_nome: os.prestador || os.prestador_nome,
+    valor_novo: resultado.totalLiquido,
+    detalhes: {
+      os_id: os.id,
+      os_numero: os.numero,
+      origem: 'geracao_automatica_os',
+    },
+  });
 }

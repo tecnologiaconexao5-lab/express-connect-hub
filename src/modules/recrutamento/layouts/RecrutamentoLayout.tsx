@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Briefcase, Truck, MessageSquare, FileText,
-  Bot, Zap, Users, HeartHandshake, Columns3, Menu, Bell, UserCircle,
+  Bot, Zap, Users, HeartHandshake, Columns3, Menu, Bell, UserCircle, CheckCircle,
 } from 'lucide-react'
 import { useRecrutamentoUI } from '../hooks/useRecrutamentoUI'
 import { cn } from '../utils/cn'
@@ -24,6 +24,7 @@ const tabs: TabItem[] = [
   { id: 'ia', label: 'IA Operacional', icon: <Bot className="w-4 h-4" /> },
   { id: 'automacoes', label: 'Automações', icon: <Zap className="w-4 h-4" /> },
   { id: 'portal', label: 'Portal do Prestador', icon: <Users className="w-4 h-4" /> },
+  { id: 'operacionais', label: 'Operacionais', icon: <CheckCircle className="w-4 h-4" /> },
 ]
 
 interface RecrutamentoLayoutProps {

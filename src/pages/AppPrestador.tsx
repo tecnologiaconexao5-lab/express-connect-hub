@@ -8,11 +8,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import useEscala from "@/hooks/useEscala";
+import { escalaParaItemAppPrestador, isAlocacaoVisivelParaPrestador } from "@/services/escala/escalaAppPrestadorAdapter";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtData = (d: string) => new Date(d).toLocaleDateString("pt-BR");
@@ -42,48 +45,122 @@ export default function AppPrestador() {
   const [iniciouRota, setIniciouRota] = useState(false);
   const allChecked = checks.seguro && checks.gerenciadora && checks.rastreio;
 
+  const [prestadorSelecionadoId, setPrestadorSelecionadoId] = useState("");
+  const [prestadoresList, setPrestadoresList] = useState<{ id: string; nome_completo: string }[]>([]);
+
+  const { alocacoes: alocacoesEscala, carregarAlocacoes, loading: loadingEscala, aceitarAlocacao: aceitarAlocacaoHook, recusarAlocacao: recusarAlocacaoHook, iniciarRota: iniciarRotaHook, finalizarAlocacao: finalizarAlocacaoHook } = useEscala();
+
   useEffect(() => {
-    loadViagens();
+    supabase
+      .from("prestadores")
+      .select("id, nome_completo")
+      .eq("status", "ativo")
+      .order("nome_completo")
+      .then(({ data }) => {
+        if (data) setPrestadoresList(data);
+      });
   }, []);
 
-  async function loadViagens() {
-    setLoading(true);
-    try {
-      const { data } = await supabase
-        .from("ordens_servico")
-        .select("id, numero, status, cliente, valor_cliente, custo_prestador, created_at")
-        .order("created_at", { ascending: false })
-        .limit(20);
-      if (data) {
-        const mapped: Viagem[] = data.map((os: any) => ({
-          id: os.id,
-          numero: os.numero || `OS-${os.id.slice(0, 8)}`,
-          status: os.status || "rascunho",
-          cliente: os.cliente || "Cliente",
-          origem: "São Paulo/SP",
-          destino: os.cliente || "Destino",
-          valor: os.custo_prestador || 0,
-          data: os.created_at,
-        }));
-        setViagens(mapped);
+  useEffect(() => {
+    carregarAlocacoes(prestadorSelecionadoId || undefined);
+    loadViagens(prestadorSelecionadoId || undefined);
+  }, [prestadorSelecionadoId]);
+
+  useEffect(() => {
+    if (!alocacoesEscala.length) return;
+    const escalaItems: Viagem[] = alocacoesEscala
+      .filter(isAlocacaoVisivelParaPrestador)
+      .map((aloc) => {
+        const item = escalaParaItemAppPrestador(aloc);
+        return {
+          id: item.id,
+          numero: item.numero,
+          status: item.status,
+          cliente: item.cliente,
+          origem: item.origem || "Origem não informada",
+          destino: item.destino || "Destino não informado",
+          valor: item.valorPrevisto,
+          data: item.data,
+          prestador: item.prestadorId,
+        };
+      });
+    setViagens((prev) => {
+      const escalaIds = new Set(escalaItems.map((v) => v.id));
+      const osItems = prev.filter((v) => !escalaIds.has(v.id));
+      return [...escalaItems, ...osItems];
+    });
+  }, [alocacoesEscala]);
+
+  async function loadViagens(prestadorId?: string) {
+      setLoading(true);
+      try {
+        let query = supabase
+          .from("ordens_servico")
+          .select("id, numero, status, cliente, valor_cliente, custo_prestador, created_at")
+          .order("created_at", { ascending: false })
+          .limit(20);
+        if (prestadorId) {
+          query = query.eq("prestador_id", prestadorId);
+        }
+        const { data } = await query;
+        if (data) {
+          const mapped: Viagem[] = data.map((os: any) => ({
+            id: os.id,
+            numero: os.numero || `OS-${os.id.slice(0, 8)}`,
+            status: os.status || "rascunho",
+            cliente: os.cliente || "Cliente",
+            origem: "São Paulo/SP",
+            destino: os.cliente || "Destino",
+            valor: os.custo_prestador || 0,
+            data: os.created_at,
+          }));
+          setViagens((prev) => {
+            const escalaIds = new Set(prev.filter((v) => v.prestador).map((v) => v.id));
+            return [...prev.filter((v) => v.prestador), ...mapped.filter((v) => !escalaIds.has(v.id))];
+          });
+        }
+      } catch {
+        // Keep existing items on OS load error
       }
-    } catch {
-      setViagens([]);
+      setLoading(false);
     }
-    setLoading(false);
-  }
 
   const handleAceitarViagem = (id: string) => {
-    setStatusViagem(p => ({ ...p, [id]: "aceita" }));
+    const viagem = viagens.find((v) => v.id === id);
+    const prestadorId = viagem?.prestador || prestadorSelecionadoId;
+    if (prestadorId) {
+      aceitarAlocacaoHook(id, prestadorId);
+    } else {
+      setStatusViagem((p) => ({ ...p, [id]: "aceita" }));
+    }
     toast.success("Viagem aceita! Prepare-se para a coleta.");
   };
   const handleRecusarViagem = (id: string) => {
-    setStatusViagem(p => ({ ...p, [id]: "recusada" }));
+    const viagem = viagens.find((v) => v.id === id);
+    const prestadorId = viagem?.prestador || prestadorSelecionadoId;
+    if (prestadorId) {
+      recusarAlocacaoHook(id, prestadorId);
+    } else {
+      setStatusViagem((p) => ({ ...p, [id]: "recusada" }));
+    }
     toast.info("Viagem recusada.");
   };
-  const handleIniciarViagem = (id: string) => {
-    setStatusViagem(p => ({ ...p, [id]: "em_andamento" }));
-    toast.success("Viagem iniciada! Boa rota.");
+  const handleIniciarViagem = async (id: string) => {
+    const viagem = viagens.find((v) => v.id === id);
+    const prestadorId = viagem?.prestador;
+    if (prestadorId) {
+      const resultado = await iniciarRotaHook(id, prestadorId);
+      if (resultado.sucesso) {
+        setStatusViagem(p => ({ ...p, [id]: "em_rota" }));
+        toast.success("Viagem iniciada! Boa rota.");
+      } else {
+        setStatusViagem(p => ({ ...p, [id]: "em_andamento" }));
+        toast.success("Viagem iniciada (offline)! Boa rota.");
+      }
+    } else {
+      setStatusViagem(p => ({ ...p, [id]: "em_andamento" }));
+      toast.success("Viagem iniciada! Boa rota.");
+    }
   };
   const handleFinalizarViagem = (id: string) => {
     setComprovante({ viagemId: id, obs: "" });
@@ -91,8 +168,28 @@ export default function AppPrestador() {
 
   const handleEnviarComprovante = async () => {
     if (!comprovante) return;
-    toast.success("Comprovante enviado com sucesso!");
-    setStatusViagem(p => ({ ...p, [comprovante.viagemId]: "finalizada" }));
+    const viagem = viagens.find((v) => v.id === comprovante.viagemId);
+    const prestadorId = viagem?.prestador;
+    if (prestadorId) {
+      const resultado = await finalizarAlocacaoHook(
+        comprovante.viagemId,
+        {
+          comprovante_url: fotoUpload || undefined,
+          observacoes: comprovante.obs || undefined,
+        },
+        prestadorId
+      );
+      if (resultado.sucesso) {
+        setStatusViagem(p => ({ ...p, [comprovante.viagemId]: "concluido" }));
+        toast.success("Viagem finalizada com sucesso!");
+      } else {
+        setStatusViagem(p => ({ ...p, [comprovante.viagemId]: "finalizada" }));
+        toast.success("Viagem finalizada (offline)!");
+      }
+    } else {
+      setStatusViagem(p => ({ ...p, [comprovante.viagemId]: "finalizada" }));
+      toast.success("Comprovante enviado com sucesso!");
+    }
     setComprovante(null);
     setFotoUpload(null);
   };
@@ -107,12 +204,20 @@ export default function AppPrestador() {
   };
 
   const totalRecebido = viagens
-    .filter(v => (statusViagem[v.id] || v.status) === "finalizada")
+    .filter(v => {
+      const st = statusViagem[v.id] || v.status;
+      return st === "finalizada" || st === "concluido";
+    })
     .reduce((s, v) => s + v.valor, 0);
 
   const totalViagens = viagens.length;
-  const emAndamento = viagens.filter(v => (statusViagem[v.id] || v.status) === "em_andamento").length;
+  const emAndamento = viagens.filter(v => {
+    const st = statusViagem[v.id] || v.status;
+    return st === "em_andamento" || st === "em_rota";
+  }).length;
   const score = 4.8;
+
+  const isLoading = loadingEscala || loading;
 
   const StatusBadge = ({ status }: { status: string }) => {
     const map: Record<string, { label: string; cls: string }> = {
@@ -124,6 +229,12 @@ export default function AppPrestador() {
       aceita:       { label: "Aceita",         cls: "bg-indigo-100 text-indigo-700" },
       em_andamento: { label: "Em Andamento",   cls: "bg-amber-100 text-amber-700" },
       recusada:     { label: "Recusada",       cls: "bg-red-100 text-red-600" },
+      escalado:     { label: "Disponível",     cls: "bg-blue-100 text-blue-700" },
+      aceito:       { label: "Aceito",         cls: "bg-indigo-100 text-indigo-700" },
+      recusado:     { label: "Recusado",       cls: "bg-red-100 text-red-600" },
+      em_rota:      { label: "Em Rota",        cls: "bg-amber-100 text-amber-700" },
+      concluido:    { label: "Finalizado",     cls: "bg-green-100 text-green-700" },
+      cancelado:    { label: "Cancelado",      cls: "bg-gray-100 text-gray-600" },
     };
     const s = map[status] || { label: status, cls: "bg-gray-100 text-gray-600" };
     return <Badge className={`${s.cls} border-0 font-medium`}>{s.label}</Badge>;
@@ -142,12 +253,22 @@ export default function AppPrestador() {
             <p className="text-sm text-muted-foreground">Central operacional do parceiro</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <Select value={prestadorSelecionadoId} onValueChange={setPrestadorSelecionadoId}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="Selecione seu perfil..." />
+            </SelectTrigger>
+            <SelectContent>
+              {prestadoresList.map(p => (
+                <SelectItem key={p.id} value={p.id}>{p.nome_completo}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-100 text-green-700 text-xs font-semibold">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             Online
           </div>
-          <Button size="sm" variant="outline" onClick={loadViagens}>
+          <Button size="sm" variant="outline" onClick={() => { carregarAlocacoes(prestadorSelecionadoId || undefined); loadViagens(prestadorSelecionadoId || undefined); }}>
             <RefreshCw className="w-4 h-4 mr-1" /> Atualizar
           </Button>
         </div>
@@ -195,7 +316,7 @@ export default function AppPrestador() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {loading ? (
+              {isLoading ? (
                 <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground"/></div>
               ) : viagens.slice(0, 4).map(v => {
                 const st = statusViagem[v.id] || v.status;
@@ -223,7 +344,7 @@ export default function AppPrestador() {
 
         {/* VIAGENS */}
         <TabsContent value="viagens" className="space-y-3 mt-4">
-          {loading ? (
+          {isLoading ? (
             <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground"/></div>
           ) : viagens.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground border border-dashed rounded-xl">
@@ -251,7 +372,7 @@ export default function AppPrestador() {
                     <div className="flex items-center gap-1.5 text-muted-foreground"><Clock className="w-3.5 h-3.5"/>{fmtData(v.data)}</div>
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    {st === "rascunho" || st === "agendada" ? (
+                    {st === "rascunho" || st === "agendada" || st === "escalado" ? (
                       <>
                         <Button size="sm" className="bg-green-600 hover:bg-green-700 gap-1" onClick={() => handleAceitarViagem(v.id)}>
                           <ThumbsUp className="w-3.5 h-3.5"/> Aceitar
@@ -260,15 +381,15 @@ export default function AppPrestador() {
                           <ThumbsDown className="w-3.5 h-3.5"/> Recusar
                         </Button>
                       </>
-                    ) : st === "aceita" ? (
+                    ) : st === "aceita" || st === "aceito" ? (
                       <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 gap-1" onClick={() => handleIniciarViagem(v.id)}>
                         <Play className="w-3.5 h-3.5 fill-current"/> Iniciar Viagem
                       </Button>
-                    ) : st === "em_andamento" ? (
+                    ) : st === "em_andamento" || st === "em_rota" ? (
                       <Button size="sm" className="bg-orange-600 hover:bg-orange-700 gap-1" onClick={() => handleFinalizarViagem(v.id)}>
                         <Check className="w-3.5 h-3.5"/> Finalizar + Comprovante
                       </Button>
-                    ) : st === "finalizada" ? (
+                    ) : st === "finalizada" || st === "concluido" ? (
                       <span className="text-xs text-green-600 font-semibold flex items-center gap-1"><CheckCircle2 className="w-4 h-4"/>Finalizada</span>
                     ) : null}
                   </div>
@@ -333,7 +454,7 @@ export default function AppPrestador() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
               { label: "Repasses Recebidos", value: fmtFin(totalRecebido), color: "text-green-600" },
-              { label: "A Receber", value: fmtFin(viagens.filter(v => (statusViagem[v.id] || v.status) === "em_andamento").reduce((s, v) => s + v.valor, 0)), color: "text-amber-600" },
+              { label: "A Receber", value: fmtFin(viagens.filter(v => { const st = statusViagem[v.id] || v.status; return st === "em_andamento" || st === "em_rota"; }).reduce((s, v) => s + v.valor, 0)), color: "text-amber-600" },
               { label: "Total Operado", value: fmtFin(viagens.reduce((s, v) => s + v.valor, 0)), color: "text-indigo-600" },
             ].map((card, i) => (
               <Card key={i} className="border-none shadow-sm">

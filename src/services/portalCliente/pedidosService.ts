@@ -394,6 +394,7 @@ export async function buscarPedidosPortal(
   status?: string,
   limit: number = 50
 ): Promise<PedidoPortal[]> {
+  if (!clienteId) return [];
   try {
     const localList = JSON.parse(localStorage.getItem('portal_pedidos_locais') || '[]');
     
@@ -446,13 +447,16 @@ export async function buscarPedidosPortal(
 // BUSCAR PEDIDO POR ID
 // =====================================================
 export async function buscarPedidoPorId(
-  id: string
+  id: string,
+  clienteId?: string
 ): Promise<PedidoPortal | null> {
+  if (!clienteId) return null;
   try {
     const { data, error } = await supabase
       .from('portal_pedidos')
       .select('*')
       .eq('id', id)
+      .eq('cliente_id', clienteId)
       .single();
     
     if (error) throw error;
@@ -468,8 +472,10 @@ export async function buscarPedidoPorId(
 // =====================================================
 export async function atualizarPedidoPortal(
   id: string,
-  dados: Partial<PedidoFormData>
+  dados: Partial<PedidoFormData>,
+  clienteId?: string
 ): Promise<boolean> {
+  if (!clienteId) return false;
   try {
     const { error } = await supabase
       .from('portal_pedidos')
@@ -477,7 +483,8 @@ export async function atualizarPedidoPortal(
         ...dados,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('cliente_id', clienteId);
     
     if (error) throw error;
     return true;
@@ -491,8 +498,10 @@ export async function atualizarPedidoPortal(
 // CANCELAR PEDIDO
 // =====================================================
 export async function cancelarPedidoPortal(
-  id: string
+  id: string,
+  clienteId?: string
 ): Promise<boolean> {
+  if (!clienteId) return false;
   try {
     const { error } = await supabase
       .from('portal_pedidos')
@@ -500,7 +509,8 @@ export async function cancelarPedidoPortal(
         status: 'cancelado',
         updated_at: new Date().toISOString(),
       })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('cliente_id', clienteId);
     
     if (error) throw error;
     return true;

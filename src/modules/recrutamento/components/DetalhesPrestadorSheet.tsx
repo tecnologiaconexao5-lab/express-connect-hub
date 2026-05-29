@@ -38,6 +38,11 @@ const ORIGEM_OPTIONS: { value: OrigemCadastro; label: string }[] = [
   { value: 'indicacao', label: 'Indicação' },
   { value: 'site', label: 'Site' },
   { value: 'manual', label: 'Manual' },
+  { value: 'fretebras', label: 'Fretebras' },
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'anuncio', label: 'Anúncio' },
+  { value: 'outro', label: 'Outro' },
 ]
 
 const STATUS_OPTIONS: StatusPrestador[] = ['novo', 'em_analise', 'aprovado', 'reserva', 'agregado', 'bloqueado']
@@ -54,7 +59,7 @@ export function DetalhesPrestadorSheet({ prestadorId, open, onOpenChange, defaul
   const [form, setForm] = useState<Partial<Prestador> | null>(null)
   const [crmInteracoes, setCrmInteracoes] = useState<CrmInteracao[]>([])
 
-  useMemo(() => {
+  useEffect(() => {
     if (prestador && !editando) {
       setForm({ ...prestador })
     }
@@ -79,13 +84,14 @@ export function DetalhesPrestadorSheet({ prestadorId, open, onOpenChange, defaul
   if (!prestador || !form) return null
 
   const handleSave = async () => {
-    if (!form) return
+    if (!form || !prestador) return
     setSaving(true)
     try {
       await atualizar(prestador.id, form)
       toast.success('Prestador atualizado!')
       setEditando(false)
     } catch {
+      setForm({ ...prestador })
       toast.error('Erro ao salvar')
     } finally {
       setSaving(false)
@@ -187,8 +193,8 @@ export function DetalhesPrestadorSheet({ prestadorId, open, onOpenChange, defaul
                   </Select>
                 </Field>
                 <Field label="Telefone WhatsApp">
-                  <Input value={form.contatos?.find(c => c.tipo === 'whatsapp')?.valor || ''}
-                    onChange={e => setForm({ ...form, contatos: [{ tipo: 'whatsapp', valor: e.target.value, principal: true }] })}
+                  <Input value={form.contatos?.find(c => c.tipo === 'whatsapp' || c.tipo === 'telefone')?.valor || ''}
+                    onChange={e => setForm({ ...form, contatos: [...(form.contatos?.filter(c => c.tipo !== 'whatsapp' && c.tipo !== 'telefone') || []), { tipo: 'whatsapp' as const, valor: e.target.value, principal: true }] })}
                     className="h-8 text-xs" />
                 </Field>
                 <Field label="Email">
@@ -231,7 +237,14 @@ export function DetalhesPrestadorSheet({ prestadorId, open, onOpenChange, defaul
                 <InfoRow icon={<Hash className="w-4 h-4" />} label="CPF/CNPJ" value={prestador.cpfCnpj} />
                 <InfoRow icon={<Calendar className="w-4 h-4" />} label="Data Nascimento" value={prestador.dataNascimento ? formatDate(prestador.dataNascimento) : '---'} />
                 <InfoRow icon={<MapPin className="w-4 h-4" />} label="Localização" value={`${prestador.endereco.cidade}/${prestador.endereco.uf}`} />
-                <InfoRow icon={<Star className="w-4 h-4" />} label="Origem Cadastro" value={statusLabel[prestador.origemCadastro] || prestador.origemCadastro} />
+                <InfoRow icon={<Star className="w-4 h-4" />} label="Origem Cadastro" value={(() => {
+                  const labels: Record<string, string> = {
+                    whatsapp: 'WhatsApp', indicacao: 'Indicação', site: 'Site',
+                    manual: 'Manual', fretebras: 'Fretebras', facebook: 'Facebook',
+                    linkedin: 'LinkedIn', anuncio: 'Anúncio', outro: 'Outro',
+                  }
+                  return labels[prestador.origemCadastro] || prestador.origemCadastro
+                })()} />
                 <InfoRow icon={<Calendar className="w-4 h-4" />} label="Cadastro" value={formatDate(prestador.dataCadastro)} />
 
                 <SectionDivider title="Contato" />
@@ -447,7 +460,16 @@ export function DetalhesPrestadorSheet({ prestadorId, open, onOpenChange, defaul
                 <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/20 border border-border/30">
                   <StatusDot status={doc.status} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-foreground">{statusLabel[doc.tipo] || doc.tipo}</p>
+                    <p className="text-xs font-medium text-foreground">{(() => {
+                      const tipos: Record<string, string> = {
+                        cnh: 'CNH', cnpj: 'CNPJ', crlv: 'CRLV', antt: 'ANTT',
+                        seguro: 'Seguro', contrato_social: 'Contrato Social',
+                        comprovante_endereco: 'Comprovante', certificado_curso_mopp: 'MOPP',
+                        certidao_federal: 'Cert. Federal', certidao_estadual: 'Cert. Estadual',
+                        certidao_municipal: 'Cert. Municipal', certidao_trabalhista: 'Cert. Trabalhista',
+                      }
+                      return tipos[doc.tipo] || doc.tipo
+                    })()}</p>
                     <p className="text-[10px] text-muted-foreground">
                       {doc.dataValidade ? `Validade: ${formatDate(doc.dataValidade)}` : 'Sem validade'}
                     </p>

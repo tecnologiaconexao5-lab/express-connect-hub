@@ -28,15 +28,16 @@ interface UsePortalRealtimeOptions {
   onNotificacao?: (notificacao: NotificacaoUpdate) => void;
   onOcorrencia?: (ocorrencia: OcorrenciaUpdate) => void;
   enabled?: boolean;
+  clienteId?: string;
 }
 
 export function usePortalRealtime(options: UsePortalRealtimeOptions = {}) {
-  const { onEntregaUpdate, onNotificacao, onOcorrencia, enabled = true } = options;
+  const { onEntregaUpdate, onNotificacao, onOcorrencia, enabled = true, clienteId } = options;
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !clienteId) return;
 
     const subscriptions: any[] = [];
 
@@ -50,6 +51,7 @@ export function usePortalRealtime(options: UsePortalRealtimeOptions = {}) {
               event: "UPDATE",
               schema: "public",
               table: "ordens_servico",
+              filter: `cliente_id=eq.${clienteId}`,
             },
             (payload) => {
               const entrega = payload.new as EntregaUpdate;
@@ -71,6 +73,7 @@ export function usePortalRealtime(options: UsePortalRealtimeOptions = {}) {
               event: "INSERT",
               schema: "public",
               table: "notificacoes",
+              filter: `cliente_id=eq.${clienteId}`,
             },
             (payload) => {
               const notificacao = payload.new as NotificacaoUpdate;
@@ -90,6 +93,7 @@ export function usePortalRealtime(options: UsePortalRealtimeOptions = {}) {
               event: "INSERT",
               schema: "public",
               table: "ocorrencias",
+              filter: `cliente_id=eq.${clienteId}`,
             },
             (payload) => {
               const ocorrencia = payload.new as OcorrenciaUpdate;
@@ -112,7 +116,7 @@ export function usePortalRealtime(options: UsePortalRealtimeOptions = {}) {
         if (sub) supabase.removeChannel(sub);
       });
     };
-  }, [enabled, onEntregaUpdate, onNotificacao, onOcorrencia]);
+  }, [enabled, clienteId, onEntregaUpdate, onNotificacao, onOcorrencia]);
 
   return {
     isConnected,
@@ -123,14 +127,15 @@ export function usePortalRealtime(options: UsePortalRealtimeOptions = {}) {
 
 export function useEntregaRealtime(
   entregaId: string | null,
-  onUpdate?: (status: string, sla: number) => void
+  onUpdate?: (status: string, sla: number) => void,
+  clienteId?: string
 ) {
   const [status, setStatus] = useState<string>("");
   const [sla, setSla] = useState<number>(100);
   const [isLive, setIsLive] = useState(false);
 
   useEffect(() => {
-    if (!entregaId) return;
+    if (!entregaId || !clienteId) return;
 
     const channel = supabase
       .channel(`entrega-${entregaId}`)
@@ -140,7 +145,7 @@ export function useEntregaRealtime(
           event: "UPDATE",
           schema: "public",
           table: "ordens_servico",
-          filter: `id=eq.${entregaId}`,
+          filter: `id=eq.${entregaId},cliente_id=eq.${clienteId}`,
         },
         (payload) => {
           const novaEntrega = payload.new as any;
@@ -156,17 +161,20 @@ export function useEntregaRealtime(
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [entregaId, onUpdate]);
+  }, [entregaId, clienteId, onUpdate]);
 
   return { status, sla, isLive };
 }
 
 export function useNotificacoesRealtime(
-  onNew?: (notificacao: NotificacaoUpdate) => void
+  onNew?: (notificacao: NotificacaoUpdate) => void,
+  clienteId?: string
 ) {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
+    if (!clienteId) return;
+
     const channel = supabase
       .channel("portal-notificacoes-live")
       .on(
@@ -175,6 +183,7 @@ export function useNotificacoesRealtime(
           event: "INSERT",
           schema: "public",
           table: "notificacoes",
+          filter: `cliente_id=eq.${clienteId}`,
         },
         (payload) => {
           const nova = payload.new as NotificacaoUpdate;
@@ -187,7 +196,7 @@ export function useNotificacoesRealtime(
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [onNew]);
+  }, [clienteId, onNew]);
 
   const clearCount = useCallback(() => setCount(0), []);
 

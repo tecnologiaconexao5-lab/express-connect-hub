@@ -5,7 +5,7 @@ import {
   CheckCircle, XCircle, Clock, FileText, MessageSquare,
   UserCheck, Ban, Send, Plus, Eye, Star, ChevronDown, ChevronUp,
 } from 'lucide-react'
-import type { EnterpriseCandidate, PipelineStage, Prioridade, ValidadeCNH, StatusDocumental } from './enterpriseKanbanTypes'
+import type { EnterpriseCandidate, PipelineStage, Prioridade, ValidadeCNH, StatusDocumental, StatusOperacional, DisponibilidadeTipo } from './enterpriseKanbanTypes'
 import { cn } from '../../utils/cn'
 
 interface KanbanCardProps {
@@ -23,11 +23,25 @@ export const PRIORIDADE_CONFIG: Record<Prioridade, { label: string; color: strin
   urgente: { label: 'Urgente', color: 'text-rose-400', bg: 'bg-rose-500/10' },
 }
 
+const STATUS_OP_CONFIG: Record<StatusOperacional, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+  apto: { label: 'Apto', color: 'text-emerald-400', bg: 'bg-emerald-500/10', icon: <CheckCircle className="w-3 h-3" /> },
+  pendente: { label: 'Pendente', color: 'text-amber-400', bg: 'bg-amber-500/10', icon: <Clock className="w-3 h-3" /> },
+  bloqueado: { label: 'Bloqueado', color: 'text-red-400', bg: 'bg-red-500/10', icon: <XCircle className="w-3 h-3" /> },
+  indisponivel: { label: 'Indisponível', color: 'text-zinc-400', bg: 'bg-zinc-500/10', icon: <AlertTriangle className="w-3 h-3" /> },
+}
+
+const DISP_CONFIG: Record<DisponibilidadeTipo, { label: string; color: string; bg: string }> = {
+  imediata: { label: 'Imediata', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+  parcial: { label: 'Parcial', color: 'text-amber-400', bg: 'bg-amber-500/10' },
+  indisponivel: { label: 'Indisponível', color: 'text-zinc-400', bg: 'bg-zinc-500/10' },
+}
+
 const STATUS_DOC_CONFIG: Record<StatusDocumental, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
   completo: { label: 'Completo', color: 'text-emerald-400', bg: 'bg-emerald-500/10', icon: <CheckCircle className="w-3 h-3" /> },
   parcial: { label: 'Parcial', color: 'text-amber-400', bg: 'bg-amber-500/10', icon: <Clock className="w-3 h-3" /> },
   pendente: { label: 'Pendente', color: 'text-blue-400', bg: 'bg-blue-500/10', icon: <FileText className="w-3 h-3" /> },
   vencido: { label: 'Vencido', color: 'text-rose-400', bg: 'bg-rose-500/10', icon: <AlertTriangle className="w-3 h-3" /> },
+  bloqueado: { label: 'Bloqueado', color: 'text-red-400', bg: 'bg-red-500/10', icon: <XCircle className="w-3 h-3" /> },
 }
 
 const CNH_CONFIG: Record<ValidadeCNH, { label: string; color: string; bg: string }> = {
@@ -50,7 +64,7 @@ function ScoreBadge({ score }: { score: number }) {
 }
 
 function PriorityIndicator({ prioridade }: { prioridade: Prioridade }) {
-  const cfg = PRIORIDADE_CONFIG[prioridade]
+  const cfg = PRIORIDADE_CONFIG[prioridade] ?? { label: '—', color: 'text-zinc-400', bg: 'bg-zinc-500/10' }
   return (
     <span className={cn('flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider', cfg.color, cfg.bg)}>
       <span className={cn(
@@ -76,7 +90,8 @@ function TagBadge({ tag }: { tag: string }) {
     risco: { color: 'text-rose-400', bg: 'bg-rose-500/10' },
     prioritario: { color: 'text-orange-400', bg: 'bg-orange-500/10' },
   }
-  const cfg = config[tag] ?? { color: 'text-zinc-400', bg: 'bg-zinc-500/10' }
+  const DEFAULT_TAG = { color: 'text-zinc-400', bg: 'bg-zinc-500/10' }
+  const cfg = config[tag] ?? DEFAULT_TAG
 
   const labels: Record<string, string> = {
     experiente: 'Experiente',
@@ -133,7 +148,11 @@ export function KanbanCard({ candidate, onMove, possibleStages, isDragging, onCl
   const [expanded, setExpanded] = useState(false)
   const [obsExpanded, setObsExpanded] = useState(false)
   const [showActions, setShowActions] = useState(false)
-  const cnh = CNH_CONFIG[candidate.validadeCNH]
+  const DEFAULT_OP = { label: '—', color: 'text-zinc-400', bg: 'bg-zinc-500/10', icon: <AlertTriangle className="w-3 h-3" /> }
+  const DEFAULT_DISP = { label: '—', color: 'text-zinc-400', bg: 'bg-zinc-500/10' }
+  const cnh = CNH_CONFIG[candidate.validadeCNH] ?? { label: '—', color: 'text-zinc-400', bg: 'bg-zinc-500/10' }
+  const statusOp = STATUS_OP_CONFIG[candidate.statusOperacional] ?? DEFAULT_OP
+  const dispCfg = DISP_CONFIG[candidate.disponibilidadeTipo] ?? DEFAULT_DISP
 
   return (
     <motion.div
@@ -205,21 +224,32 @@ export function KanbanCard({ candidate, onMove, possibleStages, isDragging, onCl
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-1.5">
-          <div className={cn(
-            'flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-medium',
-            STATUS_DOC_CONFIG[candidate.statusDocumental].color,
-            STATUS_DOC_CONFIG[candidate.statusDocumental].bg,
-          )}>
-            {STATUS_DOC_CONFIG[candidate.statusDocumental].icon}
-            <span className="truncate">{STATUS_DOC_CONFIG[candidate.statusDocumental].label}</span>
+          <div className="grid grid-cols-4 gap-1.5">
+            <div className={cn(
+              'flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-medium',
+              STATUS_OP_CONFIG[candidate.statusOperacional].color,
+              STATUS_OP_CONFIG[candidate.statusOperacional].bg,
+            )}>
+              {STATUS_OP_CONFIG[candidate.statusOperacional].icon}
+              <span className="truncate">{STATUS_OP_CONFIG[candidate.statusOperacional].label}</span>
+            </div>
+            <div className={cn(
+              'flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-medium',
+              (STATUS_DOC_CONFIG[candidate.statusDocumental] ?? STATUS_DOC_CONFIG.pendente).color,
+              (STATUS_DOC_CONFIG[candidate.statusDocumental] ?? STATUS_DOC_CONFIG.pendente).bg,
+            )}>
+              {(STATUS_DOC_CONFIG[candidate.statusDocumental] ?? STATUS_DOC_CONFIG.pendente).icon}
+              <span className="truncate">{(STATUS_DOC_CONFIG[candidate.statusDocumental] ?? STATUS_DOC_CONFIG.pendente).label}</span>
+            </div>
+            <div className={cn('flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-medium', cnh.color, cnh.bg)}>
+              <Shield className="w-3 h-3" />
+              <span className="truncate">{cnh.label}</span>
+            </div>
+            <div className={cn('flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-medium', dispCfg.color, dispCfg.bg)}>
+              <Clock className="w-3 h-3" />
+              <span className="truncate">{dispCfg.label}</span>
+            </div>
           </div>
-          <div className={cn('flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-medium', cnh.color, cnh.bg)}>
-            <Shield className="w-3 h-3" />
-            <span className="truncate">{cnh.label}</span>
-          </div>
-          <ScoreBadge score={candidate.score} />
-        </div>
 
         <button
           onClick={() => setObsExpanded(!obsExpanded)}

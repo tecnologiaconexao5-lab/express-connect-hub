@@ -516,151 +516,7 @@ export default function PortalCliente() {
   const [showCarregamentoDetailModal, setShowCarregamentoDetailModal] = useState(false);
   const [selectedCarregamento, setSelectedCarregamento] = useState<any>(null);
   const [filaOrdem, setFilaOrdem] = useState("chegada");
-  const [carregamentos, setCarregamentos] = useState<any[]>(() => {
-    try {
-      const local = localStorage.getItem("portal_carregamentos_mock");
-      if (local) return JSON.parse(local);
-    } catch {}
-    return [
-      {
-        id: "carg-1",
-        placa: "ABC-1234",
-        motorista: "João Silva",
-        status: "em_conferencia",
-        status_label: "Em Conferência",
-        tipo_veiculo: "Fiorino",
-        tipo_prestador: "Agregado",
-        doca: "Doca 04",
-        romaneio: "ROM-2026-0089",
-        regiao: "Zona Sul",
-        horario_agendado: "07:00",
-        prioridade: "alta",
-        nf_chave: "35260501234567890123456789012345678901234567",
-        volumes_documentos: 45,
-        volumes_fisicos: 45,
-        divergencia: false,
-        divergencia_motivo: "",
-        refrigerado: false,
-        temperatura_alvo: null,
-        temperatura_atual: null,
-        lacre_ok: true,
-        lacre_numero: "LAC-88712",
-        embalagem_ok: true,
-        checklist_ok: true,
-        entrada_patio: "2026-05-19T07:15:00Z",
-        inicio_conferencia: "2026-05-19T07:30:00Z",
-        fim_conferencia: null,
-        liberacao: null,
-        documentos: [
-          { nome: "Nota Fiscal Eletrônica.pdf", tipo: "nfe" },
-          { nome: "Romaneio de Carga.pdf", tipo: "romaneio" }
-        ]
-      },
-      {
-        id: "carg-2",
-        placa: "XYZ-9876",
-        motorista: "Marcos Souza",
-        status: "liberado",
-        status_label: "Liberado para Rota",
-        tipo_veiculo: "HR Refrigerada",
-        tipo_prestador: "Frota",
-        doca: "Doca 12",
-        romaneio: "ROM-2026-0090",
-        regiao: "Zona Norte",
-        horario_agendado: "06:30",
-        prioridade: "urgente",
-        nf_chave: "35260598765432109876543210987654321098765432",
-        volumes_documentos: 180,
-        volumes_fisicos: 180,
-        divergencia: false,
-        divergencia_motivo: "",
-        refrigerado: true,
-        temperatura_alvo: 4,
-        temperatura_atual: 4.2,
-        lacre_ok: true,
-        lacre_numero: "LAC-99881",
-        embalagem_ok: true,
-        checklist_ok: true,
-        entrada_patio: "2026-05-19T06:00:00Z",
-        inicio_conferencia: "2026-05-19T06:15:00Z",
-        fim_conferencia: "2026-05-19T06:45:00Z",
-        liberacao: "2026-05-19T07:00:00Z",
-        documentos: [
-          { nome: "NF-e_Refrigerados.pdf", tipo: "nfe" },
-          { nome: "Laudo_Temperatura.pdf", tipo: "laudo" }
-        ]
-      },
-      {
-        id: "carg-3",
-        placa: "KJH-5544",
-        motorista: "Carlos Lima",
-        status: "divergencia",
-        status_label: "Divergência",
-        tipo_veiculo: "VUC",
-        tipo_prestador: "Terceirizado",
-        doca: "Doca 08",
-        romaneio: "ROM-2026-0091",
-        regiao: "Centro",
-        horario_agendado: "08:00",
-        prioridade: "normal",
-        nf_chave: "35260511111111111111111111111111111111111111",
-        volumes_documentos: 120,
-        volumes_fisicos: 118,
-        divergencia: true,
-        divergencia_motivo: "Falta de 2 volumes físicos vs nota fiscal",
-        refrigerado: false,
-        temperatura_alvo: null,
-        temperatura_atual: null,
-        lacre_ok: false,
-        lacre_numero: "LAC-11223 (Violado)",
-        embalagem_ok: false,
-        checklist_ok: false,
-        entrada_patio: "2026-05-19T08:00:00Z",
-        inicio_conferencia: "2026-05-19T08:15:00Z",
-        fim_conferencia: "2026-05-19T09:00:00Z",
-        liberacao: null,
-        documentos: [
-          { nome: "NFe_Divergente.pdf", tipo: "nfe" },
-          { nome: "Relatorio_Divergencia.pdf", tipo: "divergencia" }
-        ]
-      },
-      {
-        id: "carg-4",
-        placa: "MNO-7711",
-        motorista: "Roberto Alves",
-        status: "programado",
-        status_label: "Programado",
-        tipo_veiculo: "Truck",
-        tipo_prestador: "Agregado",
-        doca: "Doca 15",
-        romaneio: "ROM-2026-0092",
-        regiao: "Zona Oeste",
-        horario_agendado: "09:00",
-        prioridade: "baixa",
-        nf_chave: "35260522222222222222222222222222222222222222",
-        volumes_documentos: 350,
-        volumes_fisicos: 0,
-        divergencia: false,
-        divergencia_motivo: "",
-        refrigerado: false,
-        temperatura_alvo: null,
-        temperatura_atual: null,
-        lacre_ok: true,
-        lacre_numero: null,
-        embalagem_ok: true,
-        checklist_ok: true,
-        entrada_patio: null,
-        inicio_conferencia: null,
-        fim_conferencia: null,
-        liberacao: null,
-        documentos: []
-      }
-    ];
-  });
-
-  useEffect(() => {
-    localStorage.setItem("portal_carregamentos_mock", JSON.stringify(carregamentos));
-  }, [carregamentos]);
+  const [carregamentos, setCarregamentos] = useState<any[]>([]);
 
   const getSaudacao = () => {
     const hora = new Date().getHours();
@@ -1129,7 +985,7 @@ export default function PortalCliente() {
         }
       };
       
-      const novoPed = await criarPedidoPortal(payload, user?.id);
+      const novoPed = await criarPedidoPortal(payload, clienteData?.id);
       if (novoPed) {
         setCreatedOrderDetails(novoPed);
         setShowNovoPedidoModal(false);
@@ -1190,15 +1046,31 @@ export default function PortalCliente() {
       const clienteNome = user?.name || user?.email || "";
       const clienteFiltro = clienteNome ? clienteNome.replace(/@.+$/, "").trim() : "";
 
-      const [{ data: clienteInfo }, { data: entregasData }, { data: faturasData }, { data: ocorrenciasData }, metrics] = await Promise.all([
+      const [{ data: clienteInfo }] = await Promise.all([
         clienteFiltro ? supabase.from('clientes').select('*').ilike('nome_fantasia', `%${clienteFiltro}%`).limit(1).maybeSingle() : Promise.resolve({ data: null }),
-        supabase.from('ordens_servico').select('*').order('created_at', { ascending: false }).limit(50),
-        supabase.from('financeiro_receber').select('*').order('data_vencimento', { ascending: false }).limit(20),
-        supabase.from('ocorrencias').select('*').order('created_at', { ascending: false }).limit(20),
-        buscarDashboardMetrics(clienteNome),
       ]);
 
       setClienteData(clienteInfo);
+
+      if (!clienteInfo) {
+        setDashboardMetrics(null);
+        setInsights([]);
+        setEntregas([]);
+        setFaturas([]);
+        setOcorrencias([]);
+        setNotificacoes([]);
+        setAvaliacoes([]);
+        setComprovantesData([]);
+        return;
+      }
+
+      const [{ data: entregasData }, { data: faturasData }, { data: ocorrenciasData }, metrics] = await Promise.all([
+        supabase.from('ordens_servico').select('*').eq('cliente_id', clienteInfo.id).order('created_at', { ascending: false }).limit(50),
+        supabase.from('financeiro_receber').select('*').eq('cliente_id', clienteInfo.id).order('data_vencimento', { ascending: false }).limit(20),
+        supabase.from('ocorrencias').select('*').eq('cliente_id', clienteInfo.id).order('created_at', { ascending: false }).limit(20),
+        buscarDashboardMetrics(clienteInfo.id, clienteNome),
+      ]);
+
       setDashboardMetrics(metrics);
       setInsights(gerarInsights(metrics));
 
@@ -1258,218 +1130,9 @@ export default function PortalCliente() {
   }, [user]);
 
   useEffect(() => {
-    if (!initialLoading && entregas.length === 0) {
-      setEntregas(generateMockEntregas());
-      setFaturas(generateMockFaturas());
-      setNotificacoes(generateMockNotificacoes());
-      setOcorrencias(generateMockOcorrencias());
-      setAvaliacoes(generateMockAvaliacoes());
-      setPrestadoresDisponiveis(generateMockPrestadoresAvaliacao());
-    }
-  }, [initialLoading, entregas.length]);
-
-  const generateMockEntregas = (): Entrega[] => [
-    {
-      id: "1", numero: "OS-202610-1045", status: "em_rota", status_label: "Em Rota",
-      origem: {cep: "01234-567", rua: "Av. Paulista", numero: "1000", bairro: "Bela Vista", cidade: "São Paulo", uf: "SP"},
-      destino: {cep: "20000-000", rua: "Av. Brasil", numero: "500", bairro: "Centro", cidade: "Rio de Janeiro", uf: "RJ"},
-      previsao: diasAtrasStr(0, "16:00:00"), created_at: diasAtrasStr(0, "08:00:00"),
-      valor_frete: 1250.00, peso: 320, volumes: 3, mercadoria: "Peças automotivas",
-      cliente_nome: "DVL DISTRIBUIDORA",
-      destinatario: {nome: "João Silva Santos", documento: "123.456.789-00", telefone: "(11) 99999-9999"},
-      prestador: {nome: "Carlos Silva", telefone: "(11) 98888-7777", veiculo: "Mercedes Sprinter", placa: "ABC-1234"},
-      historico: [
-        {acao: "Pedido Recebido", status_novo: "programacao", created_at: diasAtrasStr(0, "08:00:00")},
-        {acao: "Coleta Realizada", status_novo: "coleta", created_at: diasAtrasStr(0, "09:00:00")},
-        {acao: "Saiu para Entrega", status_novo: "saiu_para_rota", created_at: diasAtrasStr(0, "10:00:00")},
-        {acao: "Em Rota", status_novo: "em_rota", created_at: diasAtrasStr(0, "11:30:00")},
-      ], sla: 95,
-    },
-    {
-      id: "2", numero: "OS-202610-1033", status: "programacao", status_label: "Programado",
-      origem: {cep: "13000-000", rua: "Rua Central", numero: "200", bairro: "Centro", cidade: "Campinas", uf: "SP"},
-      destino: {cep: "80000-000", rua: "Av. Vicente", numero: "100", bairro: "Batel", cidade: "Curitiba", uf: "PR"},
-      previsao: diasAtrasStr(-1, "10:00:00"), created_at: diasAtrasStr(0, "15:00:00"),
-      valor_frete: 980.00, peso: 180, volumes: 2, mercadoria: "Eletrônicos",
-      cliente_nome: "DVL DISTRIBUIDORA",
-      destinatario: {nome: "Maria Oliveira", documento: "987.654.321-00", telefone: "(41) 99999-8888"},
-      prestador: {nome: "Pedro Santos"},
-      historico: [{acao: "Pedido Recebido", status_novo: "programacao", created_at: diasAtrasStr(0, "15:00:00")}], sla: 100,
-    },
-    {
-      id: "3", numero: "OS-202610-1028", status: "entregue", status_label: "Entregue",
-      origem: {cep: "01234-567", rua: "Av. Paulista", numero: "500", bairro: "Jardim Paulista", cidade: "São Paulo", uf: "SP"},
-      destino: {cep: "30000-000", rua: "Av. Afonso Pena", numero: "1500", bairro: "Centro", cidade: "Belo Horizonte", uf: "MG"},
-      previsao: diasAtrasStr(1, "14:00:00"), created_at: diasAtrasStr(2, "09:00:00"),
-      valor_frete: 2100.00, peso: 450, volumes: 5, mercadoria: "Móveis corporativos",
-      cliente_nome: "DVL DISTRIBUIDORA",
-      destinatario: {nome: "Empresa XYZ Ltda", documento: "12.345.678/0001-90", telefone: "(31) 3333-4444"},
-      prestador: {nome: "Marcos Oliveira"},
-      historico: [
-        {acao: "Pedido Recebido", status_novo: "programacao", created_at: diasAtrasStr(2, "09:00:00")},
-        {acao: "Coleta Realizada", status_novo: "coleta", created_at: diasAtrasStr(2, "11:00:00")},
-        {acao: "Saiu para Entrega", status_novo: "saiu_para_rota", created_at: diasAtrasStr(1, "08:00:00")},
-        {acao: "Entregue", status_novo: "entregue", created_at: diasAtrasStr(1, "13:45:00")},
-      ],
-      pod: {foto_url: "", assinatura_url: "", receptor: "Carlos Manager", grau_parentesco: "Funcionário", created_at: diasAtrasStr(1, "13:45:00"), local: "Av. Afonso Pena, 1500"},
-      sla: 100,
-    },
-    {
-      id: "4", numero: "OS-202610-1015", status: "atrasada", status_label: "Atrasado",
-      origem: {cep: "01234-567", rua: "Av. Paulista", numero: "2000", bairro: "Jardim Paulista", cidade: "São Paulo", uf: "SP"},
-      destino: {cep: "40000-000", rua: "Av. Juracy", numero: "80", bairro: "Pituba", cidade: "Salvador", uf: "BA"},
-      previsao: diasAtrasStr(1, "12:00:00"), created_at: diasAtrasStr(3, "10:00:00"),
-      valor_frete: 3500.00, peso: 800, volumes: 8, mercadoria: "Equipamentos industriais",
-      cliente_nome: "DVL DISTRIBUIDORA",
-      destinatario: {nome: "Indústria ABC S/A", documento: "98.765.432/0001-00", telefone: "(71) 9999-0000"},
-      prestador: {nome: "Ricardo Costa"},
-      historico: [
-        {acao: "Pedido Recebido", status_novo: "programacao", created_at: diasAtrasStr(3, "10:00:00")},
-        {acao: "Coleta Realizada", status_novo: "coleta", created_at: diasAtrasStr(2, "09:00:00")},
-        {acao: "Atrasado", status_novo: "atrasada", created_at: diasAtrasStr(1, "12:00:00")},
-      ], sla: 65,
-    },
-    {
-      id: "5", numero: "OS-202609-9802", status: "entregue", status_label: "Entregue",
-      origem: {cep: "01234-567", rua: "Av. Brasil", numero: "3000", bairro: "Jardim Europa", cidade: "São Paulo", uf: "SP"},
-      destino: {cep: "50000-000", rua: "Av. Recife", numero: "200", bairro: "Boa Viagem", cidade: "Recife", uf: "PE"},
-      previsao: diasAtrasStr(3, "16:00:00"), created_at: diasAtrasStr(4, "08:00:00"),
-      valor_frete: 2800.00, peso: 620, volumes: 6, mercadoria: "Vestuário",
-      cliente_nome: "DVL DISTRIBUIDORA",
-      destinatario: {nome: "Loja Modelos Ltda", documento: "11.222.333/0001-44", telefone: "(81) 4444-5555"},
-      prestador: {nome: "Ana Paula"},
-      historico: [
-        {acao: "Pedido Recebido", status_novo: "programacao", created_at: diasAtrasStr(4, "08:00:00")},
-        {acao: "Coleta Realizada", status_novo: "coleta", created_at: diasAtrasStr(4, "10:00:00")},
-        {acao: "Entregue", status_novo: "entregue", created_at: diasAtrasStr(3, "15:30:00")},
-      ],
-      pod: {foto_url: "", assinatura_url: "", receptor: "Pedro Souza", grau_parentesco: "Porteiro", created_at: diasAtrasStr(3, "15:30:00"), local: "Av. Recife, 200"},
-      sla: 100,
-    },
-    {
-      id: "6", numero: "OS-202609-9803", status: "entregue", status_label: "Entregue",
-      origem: {cep: "01234-567", rua: "Rua das Flores", numero: "100", bairro: "Pinheiros", cidade: "São Paulo", uf: "SP"},
-      destino: {cep: "13000-000", rua: "Av. Getulio Vargas", numero: "15", bairro: "Taquaral", cidade: "Campinas", uf: "SP"},
-      previsao: diasAtrasStr(2, "17:00:00"), created_at: diasAtrasStr(3, "11:00:00"),
-      valor_frete: 750.00, peso: 120, volumes: 1, mercadoria: "Cosméticos",
-      cliente_nome: "DVL DISTRIBUIDORA",
-      destinatario: {nome: "Drogarias Campinas", documento: "22.333.444/0001-55", telefone: "(19) 3254-8888"},
-      prestador: {nome: "Carlos Silva"},
-      historico: [
-        {acao: "Pedido Recebido", status_novo: "programacao", created_at: diasAtrasStr(3, "11:00:00")},
-        {acao: "Entregue", status_novo: "entregue", created_at: diasAtrasStr(2, "16:45:00")},
-      ],
-      pod: {foto_url: "", assinatura_url: "", receptor: "Juliana Admin", grau_parentesco: "Gerente", created_at: diasAtrasStr(2, "16:45:00"), local: "Campinas/SP"},
-      sla: 100,
-    },
-    {
-      id: "7", numero: "OS-202609-9804", status: "problema", status_label: "Com Problema",
-      origem: {cep: "01234-567", rua: "Av. Paulista", numero: "1000", bairro: "Bela Vista", cidade: "São Paulo", uf: "SP"},
-      destino: {cep: "20000-000", rua: "Rua do Ouvidor", numero: "22", bairro: "Centro", cidade: "Rio de Janeiro", uf: "RJ"},
-      previsao: diasAtrasStr(1, "18:00:00"), created_at: diasAtrasStr(2, "14:00:00"),
-      valor_frete: 1580.00, peso: 240, volumes: 4, mercadoria: "Alimentos Não Perecíveis",
-      cliente_nome: "DVL DISTRIBUIDORA",
-      destinatario: {nome: "Supermercado Carioca", documento: "33.444.555/0001-66", telefone: "(21) 2244-6688"},
-      prestador: {nome: "Pedro Santos"},
-      historico: [
-        {acao: "Pedido Recebido", status_novo: "programacao", created_at: diasAtrasStr(2, "14:00:00")},
-        {acao: "Retido em Barreira Fiscal", status_novo: "problema", created_at: diasAtrasStr(1, "16:00:00")},
-      ],
-      sla: 0,
-    },
-    {
-      id: "8", numero: "OS-202609-9805", status: "entregue", status_label: "Entregue",
-      origem: {cep: "01234-567", rua: "Av. Paulista", numero: "1000", bairro: "Bela Vista", cidade: "São Paulo", uf: "SP"},
-      destino: {cep: "09000-000", rua: "Rua das Monções", numero: "12", bairro: "Jardim", cidade: "Santo André", uf: "SP"},
-      previsao: diasAtrasStr(4, "12:00:00"), created_at: diasAtrasStr(4, "08:00:00"),
-      valor_frete: 420.00, peso: 50, volumes: 2, mercadoria: "Documentos",
-      cliente_nome: "DVL DISTRIBUIDORA",
-      destinatario: {nome: "Escritório Contábil ABC", documento: "44.555.666/0001-77", telefone: "(11) 4433-2211"},
-      prestador: {nome: "Carlos Silva"},
-      historico: [
-        {acao: "Pedido Recebido", status_novo: "programacao", created_at: diasAtrasStr(4, "08:00:00")},
-        {acao: "Entregue", status_novo: "entregue", created_at: diasAtrasStr(4, "11:50:00")},
-      ],
-      pod: {foto_url: "", assinatura_url: "", receptor: "Marta Secretária", grau_parentesco: "Recepção", created_at: diasAtrasStr(4, "11:50:00"), local: "Santo André/SP"},
-      sla: 100,
-    },
-    {
-      id: "9", numero: "OS-202609-9806", status: "entregue", status_label: "Entregue",
-      origem: {cep: "01234-567", rua: "Av. Paulista", numero: "1000", bairro: "Bela Vista", cidade: "São Paulo", uf: "SP"},
-      destino: {cep: "12200-000", rua: "Av. Adhemar de Barros", numero: "45", bairro: "Vila Adyana", cidade: "São José dos Campos", uf: "SP"},
-      previsao: diasAtrasStr(5, "18:00:00"), created_at: diasAtrasStr(6, "09:00:00"),
-      valor_frete: 890.00, peso: 160, volumes: 3, mercadoria: "Acessórios Industriais",
-      cliente_nome: "DVL DISTRIBUIDORA",
-      destinatario: {nome: "Metalúrgica Vale", documento: "55.666.777/0001-88", telefone: "(12) 3921-5555"},
-      prestador: {nome: "Marcos Oliveira"},
-      historico: [
-        {acao: "Pedido Recebido", status_novo: "programacao", created_at: diasAtrasStr(6, "09:00:00")},
-        {acao: "Entregue", status_novo: "entregue", created_at: diasAtrasStr(5, "17:10:00")},
-      ],
-      pod: {foto_url: "", assinatura_url: "", receptor: "Guilherme Engenheiro", grau_parentesco: "Almoxarife", created_at: diasAtrasStr(5, "17:10:00"), local: "São José dos Campos/SP"},
-      sla: 100,
-    },
-    {
-      id: "10", numero: "OS-202609-9807", status: "coleta", status_label: "Em Coleta",
-      origem: {cep: "01234-567", rua: "Av. Paulista", numero: "1000", bairro: "Bela Vista", cidade: "São Paulo", uf: "SP"},
-      destino: {cep: "14080-000", rua: "Rua São Sebastião", numero: "500", bairro: "Centro", cidade: "Ribeirão Preto", uf: "SP"},
-      previsao: diasAtrasStr(0, "22:00:00"), created_at: diasAtrasStr(0, "11:00:00"),
-      valor_frete: 1950.00, peso: 380, volumes: 5, mercadoria: "Bebidas Destiladas",
-      cliente_nome: "DVL DISTRIBUIDORA",
-      destinatario: {nome: "Distribuidora de Bebidas RP", documento: "66.777.888/0001-99", telefone: "(16) 3636-9999"},
-      prestador: {nome: "Ricardo Costa"},
-      historico: [
-        {acao: "Pedido Recebido", status_novo: "programacao", created_at: diasAtrasStr(0, "11:00:00")},
-        {acao: "Coleta em Andamento", status_novo: "coleta", created_at: diasAtrasStr(0, "13:00:00")},
-      ],
-      sla: 100,
-    }
-  ];
-
-  const generateMockAlertas = (): Alerta[] => [
-    {id: "1", tipo: "atraso", titulo: "Risco de Atraso", descricao: "OS-202610-1015 com atraso", os_id: "4", severidade: "critico", created_at: "2026-04-12T10:00:00"},
-    {id: "2", tipo: "km", titulo: "KM Próximo do Limite", descricao: "Veículo operando próximo do limite", os_id: "1", severidade: "atencao", created_at: "2026-04-12T09:00:00"},
-  ];
-
-  const generateMockFaturas = (): Fatura[] => [
-    {id: "1", fatura: "FAT-0045", competencia: "04/2026", os_vinculadas: ["OS-202610-1045"], vencimento: "2026-05-10", valor: 14500.00, status: "a_vencer"},
-    {id: "2", fatura: "FAT-0044", competencia: "03/2026", os_vinculadas: ["OS-202609-9802"], vencimento: "2026-04-10", valor: 2800.00, status: "paga"},
-    {id: "3", fatura: "FAT-0043", competencia: "02/2026", os_vinculadas: [], vencimento: "2026-03-10", valor: 18500.00, status: "paga"},
-  ];
-
-  const generateMockNotificacoes = (): Notificacao[] => [
-    {id: "1", titulo: "Entrega realizada", mensagem: "OS-202610-1028 foi entregue com sucesso", tipo: "entrega", lida: false, created_at: "2026-04-10T13:45:00"},
-    {id: "2", titulo: "Em trânsito", mensagem: "OS-202610-1045 está a caminho", tipo: "entrega", lida: false, created_at: "2026-04-12T09:30:00"},
-    {id: "3", titulo: "Risco de atraso", mensagem: "OS-202610-1015 pode atrasar", tipo: "risco", lida: true, created_at: "2026-04-11T12:00:00"},
-  ];
-
-  const generateMockOcorrencias = (): OcorrenciaItem[] => [
-    {id: "1", tipo: "atraso", descricao: "Atraso por tráfego", status: "resolvida", prioridade: "media", created_at: "2026-04-11T12:00:00"},
-  ];
-
-  const generateMockAvaliacoes = (): Avaliacao[] => [
-    {id: "1", nota: 5, nota_pontualidade: 5, nota_comunicacao: 5, nota_conservacao: 4, nota_atendimento: 5, nps: 10, comentario: "Entrega super rápida! Prestador excelente.", os_id: "OS-202610-1028", prestador_id: "p1", prestador_nome: "Carlos Silva", veiculo: "Mercedes Sprinter", placa: "ABC-1234", entrega_origem: "São Paulo/SP", entrega_destino: "Rio de Janeiro/RJ", created_at: "2026-04-10T14:00:00"},
-    {id: "2", nota: 4, nota_pontualidade: 4, nota_comunicacao: 4, nota_conservacao: 4, nota_atendimento: 4, nps: 8, comentario: "Tudo certo, recomendo", os_id: "OS-202609-9802", prestador_id: "p2", prestador_nome: "Pedro Santos", veiculo: "Fiat Fiorino", placa: "XYZ-5678", entrega_origem: "Campinas/SP", entrega_destino: "Curitiba/PR", created_at: "2026-04-05T16:00:00"},
-    {id: "3", nota: 3, nota_pontualidade: 2, nota_comunicacao: 3, nota_conservacao: 4, nota_atendimento: 3, nps: 6, comentario: "Atrasou um pouco, mas entrega OK", os_id: "OS-202610-1045", prestador_id: "p3", prestador_nome: "Marcos Oliveira", veiculo: "Hyundai HR", placa: "DEF-9012", entrega_origem: "São Paulo/SP", entrega_destino: "Salvador/BA", created_at: "2026-04-12T09:00:00"},
-  ];
-
-  const generateMockPrestadoresAvaliacao = (): PrestadorAvaliacao[] => [
-    { id: "p1", nome: "Carlos Silva", veiculo: "Mercedes Sprinter", placa: "ABC-1234", entregas: 245, nota_media: 4.8 },
-    { id: "p2", nome: "Pedro Santos", veiculo: "Fiat Fiorino", placa: "XYZ-5678", entregas: 180, nota_media: 4.5 },
-    { id: "p3", nome: "Marcos Oliveira", veiculo: "Hyundai HR", placa: "DEF-9012", entregas: 120, nota_media: 3.9 },
-    { id: "p4", nome: "João Costa", veiculo: "Honda Biz", placa: "GHI-3456", entregas: 380, nota_media: 4.7 },
-  ];
-
-  const generateMockEnderecos = (): EnderecoFavorito[] => [
-    {id: "1", nome: "Matriz São Paulo", cep: "01234-567", rua: "Av. Paulista", numero: "1000", bairro: "Bela Vista", cidade: "São Paulo", uf: "SP"},
-    {id: "2", nome: "Filial Rio", cep: "20000-000", rua: "Av. Brasil", numero: "500", bairro: "Centro", cidade: "Rio de Janeiro", uf: "RJ"},
-  ];
-
-  const generateMockRoteirizacao = (): RoteirizacaoRota[] => [
-    {id: "1", regiao: "Zona Sul", veiculo: "Van", pedidos: ["OS-202610-1045", "OS-202610-1033"], peso_total: 500, km: 45, bairros: ["Jardim Paulista", "Pinheiros"]},
-    {id: "2", regiao: "Zona Norte", veiculo: "Fiorino", pedidos: ["OS-202610-1015"], peso_total: 800, km: 62, bairros: ["Santana"]},
-    {id: "3", regiao: "Interior", veiculo: "Caminhão 3/4", pedidos: ["OS-202609-9802"], peso_total: 620, km: 180, bairros: ["Campinas"]},
-  ];
+    // Dados reais carregados do Supabase via carregarDados().
+    // Sem fallback para mocks — se não houver OS no banco, mostra empty state.
+  }, [initialLoading, clienteData]);
 
   const onEntregaUpdate = useCallback((update: any) => {
     setEntregas(prev => prev.map(e => e.id === update.id ? { ...e, status: update.status, status_label: formatStatus(update.status) } : e));
@@ -1488,7 +1151,8 @@ export default function PortalCliente() {
     onEntregaUpdate,
     onNotificacao,
     onOcorrencia,
-    enabled: true
+    enabled: true,
+    clienteId: clienteData?.id,
   });
 
   useEffect(() => { 
@@ -1499,8 +1163,8 @@ export default function PortalCliente() {
     setComprovantesLoading(true);
     try {
       const [comp, prot] = await Promise.all([
-        buscarComprovantesPortal(100),
-        buscarProtocolosPortal(100),
+        buscarComprovantesPortal(clienteData?.id, 100),
+        buscarProtocolosPortal(clienteData?.id, 100),
       ]);
       setComprovantesData(comp);
       setProtocolosData(prot);
@@ -1549,11 +1213,7 @@ export default function PortalCliente() {
   };
 
   const handleVerRota = (id: string) => {
-    const rota = generateMockRoteirizacao().find(r => r.id === id);
-    if (rota) {
-      setSelectedRota(rota);
-      setShowRotaModal(true);
-    }
+    toast({ title: "Roteirização em desenvolvimento", description: "Funcionalidade estará disponível em breve." });
   };
 
   const handleVerVeiculo = (id: string) => {
@@ -2531,27 +2191,23 @@ Gerado em: ${new Date().toLocaleString("pt-BR")}`;
                   </div>
 
                   <PortalTrackingMap
-                    currentPosition={selectedEntrega?.prestador ? {
-                      lat: -23.5505 + Math.random() * 0.1,
-                      lng: -46.6333 + Math.random() * 0.1,
-                      label: "Posição atual",
+                    currentPosition={undefined}
+                    origin={selectedEntrega?.origem?.latitude && selectedEntrega?.origem?.longitude ? {
+                      lat: selectedEntrega.origem.latitude,
+                      lng: selectedEntrega.origem.longitude,
+                      label: selectedEntrega.origem.cidade || "Origem",
                     } : undefined}
-                    origin={selectedEntrega ? {
-                      lat: -23.5505,
-                      lng: -46.6333,
-                      label: "Origem",
-                    } : undefined}
-                    destination={selectedEntrega ? {
-                      lat: -23.9618,
-                      lng: -46.3322,
-                      label: "Destino",
+                    destination={selectedEntrega?.destino?.latitude && selectedEntrega?.destino?.longitude ? {
+                      lat: selectedEntrega.destino.latitude,
+                      lng: selectedEntrega.destino.longitude,
+                      label: selectedEntrega.destino.cidade || "Destino",
                     } : undefined}
                     driverName={selectedEntrega?.prestador?.nome}
                     vehicle={selectedEntrega?.prestador?.veiculo}
                     plate={selectedEntrega?.prestador?.placa}
                     status={selectedEntrega?.status || "programacao"}
                     eta={selectedEntrega?.previsao ? new Date(selectedEntrega.previsao).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : undefined}
-                    distance={selectedEntrega ? Math.floor(Math.random() * 50) + 10 : undefined}
+                    distance={selectedEntrega?.distancia_km || selectedEntrega?.distanciaKm || undefined}
                   />
 
                   {entregas.filter(e => e.status === "em_rota" || e.status === "saiu_para_rota").length > 0 && (

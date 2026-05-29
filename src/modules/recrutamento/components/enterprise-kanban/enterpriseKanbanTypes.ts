@@ -11,8 +11,60 @@ export type PipelineStage =
   | 'reprovado'
 
 export type Prioridade = 'baixa' | 'media' | 'alta' | 'urgente'
-export type StatusDocumental = 'completo' | 'parcial' | 'pendente' | 'vencido'
+export type StatusDocumental = 'completo' | 'parcial' | 'pendente' | 'vencido' | 'bloqueado'
+export type StatusOperacional = 'apto' | 'pendente' | 'bloqueado' | 'indisponivel'
+export type DisponibilidadeTipo = 'imediata' | 'parcial' | 'indisponivel'
+export type OnboardingStatus = 'pendente' | 'em_andamento' | 'concluido'
+
+export interface OnboardingItem {
+  nome: string
+  concluido: boolean
+  data?: string
+}
+
+export const ONBOARDING_ITENS = [
+  'documentação validada',
+  'veículo validado',
+  'treinamento realizado',
+  'contrato enviado',
+  'contrato aceito',
+  'teste operacional',
+] as const
+
+export interface DocumentoCandidato {
+  nome: string
+  status: 'ok' | 'pendente' | 'vencido'
+  dataValidade?: string
+  observacao?: string
+}
+
+export const DOCS_MINIMOS_OBRIGATORIOS = ['CNH', 'CRLV', 'Comprovante Residência', 'Foto Veículo'] as const
+export const DOCS_MINIMOS_OPCIONAIS = ['ANTT'] as const
 export type ValidadeCNH = 'valida' | 'vencendo' | 'vencida'
+
+export type HistoricoTipoEvento =
+  | 'criado'
+  | 'mudou_etapa'
+  | 'convertido'
+  | 'bloqueado'
+  | 'aprovado'
+  | 'observacao_adicionada'
+
+export interface HistoricoEvento {
+  tipo: HistoricoTipoEvento
+  descricao: string
+  data: string
+  stageAnterior?: string
+  stageNovo?: string
+}
+
+export interface ReservaContexto {
+  cliente?: string
+  operacao?: string
+  regiao?: string
+  observacao?: string
+  prioridade: 'baixa' | 'media' | 'alta'
+}
 
 export type TagType =
   | 'experiente'
@@ -23,6 +75,8 @@ export type TagType =
   | 'recomendado'
   | 'risco'
   | 'prioritario'
+  | 'preSelecionado'
+  | 'enviadoEscala'
 
 export interface EnterpriseCandidate {
   id: string
@@ -34,6 +88,8 @@ export interface EnterpriseCandidate {
   veiculo: string
   placa: string
   statusDocumental: StatusDocumental
+  statusOperacional: StatusOperacional
+  disponibilidadeTipo: DisponibilidadeTipo
   prioridade: Prioridade
   validadeCNH: ValidadeCNH
   dataValidadeCNH: string
@@ -44,7 +100,16 @@ export interface EnterpriseCandidate {
   stage: PipelineStage
   dataEntrada: string
   dataAtualizacao: string
-  documentos: { nome: string; status: 'ok' | 'pendente' | 'vencido' }[]
+  documentos: DocumentoCandidato[]
+  prestadorId?: string
+  historico: HistoricoEvento[]
+  regioesAtuacao: string[]
+  horariosDisponiveis: string
+  diasDisponiveis: string[]
+  onboardingStatus: OnboardingStatus
+  onboardingProgress: number
+  onboardingChecklist: OnboardingItem[]
+  reservaContexto?: ReservaContexto
 }
 
 export interface PipelineColumn {
@@ -61,6 +126,8 @@ export interface KanbanFilter {
   scoreMax: number
   prioridade: Prioridade[]
   statusDocumental: StatusDocumental[]
+  statusOperacional: StatusOperacional[]
+  disponibilidade: DisponibilidadeTipo[]
   validadeCNH: ValidadeCNH[]
   tags: TagType[]
   cidade: string

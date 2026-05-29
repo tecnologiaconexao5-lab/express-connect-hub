@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Search, Truck, MapPin, Phone, Star, Filter, Plus, ChevronRight, Users, Target, Shield, Award, Eye, Pen, Activity } from 'lucide-react'
+import { Search, Truck, MapPin, Phone, Star, Filter, Plus, ChevronRight, Users, Target, Shield, Award, Eye, Pen, Activity, Ban, Trash2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { toast } from 'sonner'
 import { PageHeader } from '../components/design-system/PageHeader'
 import { PremiumCard, PremiumCardHeader, PremiumCardTitle, PremiumCardContent, PremiumCardFooter } from '../components/design-system/PremiumCard'
 import { PremiumBadge } from '../components/design-system/PremiumBadge'
@@ -24,10 +25,15 @@ const ORIGEM_OPTIONS: { value: OrigemCadastro; label: string }[] = [
   { value: 'indicacao', label: 'Indicação' },
   { value: 'site', label: 'Site' },
   { value: 'manual', label: 'Manual' },
+  { value: 'fretebras', label: 'Fretebras' },
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'anuncio', label: 'Anúncio' },
+  { value: 'outro', label: 'Outro' },
 ]
 
 export function PaginaPrestadores() {
-  const { prestadores, loading, metricas, atualizarStatus, remover } = usePrestadores()
+  const { prestadores, loading, metricas, atualizarStatus, remover, divergencias, corrigirDivergencia } = usePrestadores()
   const { selectedPrestadorId, setSelectedPrestadorId } = useRecrutamentoStore()
   const { navegar } = useRecrutamentoUI()
   const [busca, setBusca] = useState('')
@@ -35,6 +41,27 @@ export function PaginaPrestadores() {
   const [origemFiltro, setOrigemFiltro] = useState<OrigemCadastro | 'todas'>('todas')
   const [targetTab, setTargetTab] = useState<'perfil' | 'veiculo' | 'historico' | 'score' | 'documentos' | 'crm' | 'operacoes'>('perfil')
   const [initialEdit, setInitialEdit] = useState(false)
+  const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set())
+
+  const handleSync = async (d: typeof divergencias[number]) => {
+    setSyncingIds(prev => new Set(prev).add(d.prestadorId))
+    try {
+      const result = await corrigirDivergencia(d)
+      if (result.success) {
+        toast.success(result.message)
+      } else {
+        toast.error(result.message)
+      }
+    } catch (err) {
+      toast.error('Erro ao re-sincronizar prestador')
+    } finally {
+      setSyncingIds(prev => {
+        const next = new Set(prev)
+        next.delete(d.prestadorId)
+        return next
+      })
+    }
+  }
 
   const handleOpenSheet = (id: string, tab: typeof targetTab, edit = false) => {
     setTargetTab(tab)
@@ -61,7 +88,10 @@ export function PaginaPrestadores() {
         title="Prestadores"
         description="Banco operacional de agregados — gerencie cadastro, histórico e frota"
         actions={
-          <Button size="sm" className="h-9 gap-1.5" onClick={() => navegar('nova-operacao')}>
+          <Button size="sm" className="h-9 gap-1.5" onClick={() => {
+            navegar('pipeline-kanban')
+            toast.info('Cadastre um interessado no Pipeline Enterprise para iniciar o fluxo: interessado → candidato → aprovado → prestador')
+          }}>
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Novo Prestador</span>
           </Button>
@@ -74,6 +104,49 @@ export function PaginaPrestadores() {
         <MetricCard title="Em Análise" value={String(metricas.analise)} icon={<Shield className="w-4 h-4" />} loading={loading} />
         <MetricCard title="Score Médio" value={String(Math.round(metricas.scoreMedio))} icon={<Star className="w-4 h-4" />} loading={loading} />
       </div>
+
+      {divergencias.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="font-medium">
+              {divergencias.length} divergência{divergencias.length > 1 ? 's' : ''} de sincronização detectada{divergencias.length > 1 ? 's' : ''}
+            </span>
+            <span className="text-amber-400/60 text-xs ml-auto">
+              recrutamento &harr; operacional
+            </span>
+          </div>
+          <div className="grid gap-1.5">
+            {divergencias.map(d => {
+              const isSyncing = syncingIds.has(d.prestadorId)
+              return (
+              <div key={d.prestadorId} className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/30 border border-border/30 text-xs">
+                <span className={`shrink-0 mt-0.5 w-1.5 h-1.5 rounded-full ${
+                  d.tipo === 'ausente' ? 'bg-red-400' : 'bg-amber-400'
+                }`} />
+                <div className="min-w-0 flex-1">
+                  <span className="font-medium text-foreground/80">{d.prestadorNome}</span>
+                  <span className="text-muted-foreground/60 ml-1">
+                    {d.tipo === 'ausente' ? '— sem registro operacional' : `— status "${d.statusOperacional}" (esperado: "${d.statusRecrutamento === 'bloqueado' ? 'inativo' : 'ativo'}")`}
+                  </span>
+                </div>
+                <span className="shrink-0 text-muted-foreground/40 whitespace-nowrap">{d.telefone}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isSyncing}
+                  className="h-6 px-2 text-[10px] gap-1 border-amber-500/40 text-amber-300 hover:bg-amber-500/10 hover:text-amber-200 shrink-0"
+                  onClick={(e) => { e.stopPropagation(); handleSync(d) }}
+                >
+                  <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isSyncing ? '...' : 'Re-sincronizar'}</span>
+                </Button>
+              </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
@@ -120,7 +193,10 @@ export function PaginaPrestadores() {
           title="Nenhum prestador encontrado"
           description="Cadastre prestadores ou ajuste os filtros."
           action={
-            <Button size="sm" onClick={() => navegar('nova-operacao')}><Plus className="w-4 h-4 mr-1.5" /> Novo Prestador</Button>
+            <Button size="sm" onClick={() => {
+              navegar('pipeline-kanban')
+              toast.info('Cadastre um interessado no Pipeline Enterprise para iniciar o fluxo: interessado → candidato → aprovado → prestador')
+            }}><Plus className="w-4 h-4 mr-1.5" /> Novo Prestador</Button>
           }
         />
       ) : (
@@ -131,6 +207,30 @@ export function PaginaPrestadores() {
               prestador={p}
               onAction={handleOpenSheet}
               onClick={() => handleOpenSheet(p.id, 'perfil', false)}
+              onToggleBlock={async (id) => {
+                try {
+                  const prestador = prestadores.find(p => p.id === id)
+                  if (!prestador) return
+                  const novoStatus = prestador.status === 'bloqueado' ? 'aprovado' : 'bloqueado'
+                  await atualizarStatus(id, novoStatus)
+                  toast.success(prestador.status === 'bloqueado' ? 'Prestador desbloqueado' : 'Prestador bloqueado')
+                } catch { toast.error('Erro ao alterar status') }
+              }}
+              onRemove={async (id) => {
+                const prestador = prestadores.find(p => p.id === id)
+                if (!window.confirm(`Remover definitivamente ${prestador?.nome ?? 'prestador'}?`)) return
+                try {
+                  await remover(id)
+                  toast.success('Prestador removido')
+                } catch (err) {
+                  const mensagem = err instanceof Error ? err.message : 'Erro ao remover prestador'
+                  if (mensagem.includes('vínculos operacionais')) {
+                    toast.error(mensagem, { duration: 6000 })
+                  } else {
+                    toast.error('Erro ao remover prestador')
+                  }
+                }
+              }}
             />
           ))}
         </div>
@@ -147,10 +247,12 @@ export function PaginaPrestadores() {
   )
 }
 
-function PrestadorCard({ prestador, onClick, onAction }: { 
+function PrestadorCard({ prestador, onClick, onAction, onToggleBlock, onRemove }: { 
   prestador: Prestador
   onClick: () => void
   onAction: (id: string, tab: 'perfil' | 'veiculo' | 'historico' | 'score' | 'documentos' | 'crm' | 'operacoes', edit?: boolean) => void 
+  onToggleBlock: (id: string) => void
+  onRemove: (id: string) => void
 }) {
   const contato = prestador.contatos.find(c => c.tipo === 'whatsapp' || c.tipo === 'telefone')
 
@@ -234,20 +336,20 @@ function PrestadorCard({ prestador, onClick, onAction }: {
           <Button 
             size="sm" 
             variant="ghost" 
-            className="text-[10px] h-7 px-1.5 text-muted-foreground hover:text-primary gap-1"
-            onClick={(e) => { e.stopPropagation(); onAction(prestador.id, 'historico', false) }}
+            className={`text-[10px] h-7 px-1.5 gap-1 ${prestador.status === 'bloqueado' ? 'text-amber-400 hover:text-amber-300' : 'text-rose-400/60 hover:text-rose-400'}`}
+            onClick={(e) => { e.stopPropagation(); onToggleBlock(prestador.id) }}
           >
-            <Activity className="w-3 h-3" />
-            <span>Histórico</span>
+            <Ban className="w-3 h-3" />
+            <span>{prestador.status === 'bloqueado' ? 'Desbloquear' : 'Bloquear'}</span>
           </Button>
           <Button 
             size="sm" 
             variant="ghost" 
-            className="text-[10px] h-7 px-1.5 text-muted-foreground hover:text-primary gap-1"
-            onClick={(e) => { e.stopPropagation(); onAction(prestador.id, 'operacoes', false) }}
+            className="text-[10px] h-7 px-1.5 text-muted-foreground/40 hover:text-rose-400 gap-1"
+            onClick={(e) => { e.stopPropagation(); onRemove(prestador.id) }}
           >
-            <Truck className="w-3 h-3" />
-            <span>Compatíveis</span>
+            <Trash2 className="w-3 h-3" />
+            <span>Remover</span>
           </Button>
         </PremiumCardFooter>
       </PremiumCard>

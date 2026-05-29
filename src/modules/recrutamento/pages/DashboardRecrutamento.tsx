@@ -10,9 +10,10 @@ import {
   CheckCircle2, Ban, Truck, MapPin, FileText,
   Shield, Activity, Award, Search,
   Thermometer, Bell, UserX, Car, ChevronRight,
-  BarChart3, Layers
+  BarChart3, Layers, BookmarkCheck, ClipboardCheck
 } from 'lucide-react'
 import { useDashboardRecrutamento, type DashboardData } from '../hooks/useDashboardRecrutamento'
+import { useMetricasRecrutamento } from '../hooks/useMetricasRecrutamento'
 import { PageHeader } from '../components/design-system/PageHeader'
 import { PremiumCard, PremiumCardHeader, PremiumCardTitle, PremiumCardContent, PremiumCardFooter } from '../components/design-system/PremiumCard'
 import { PremiumBadge } from '../components/design-system/PremiumBadge'
@@ -169,6 +170,7 @@ function CustomTooltip({ active, payload, label, formatter }: {
 
 export function DashboardRecrutamento() {
   const { data, loading, error } = useDashboardRecrutamento()
+  const { metricas: opMetricas, loading: opLoading } = useMetricasRecrutamento()
   const [selectedChart, setSelectedChart] = useState<string | null>(null)
 
   if (error) {
@@ -579,6 +581,90 @@ export function DashboardRecrutamento() {
             <span className="text-xs text-muted-foreground/50">Déficit = vagas abertas sem prestador disponível</span>
           </PremiumCardFooter>
         </PremiumCard>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Layers className="w-5 h-5 text-primary" />
+          <h3 className="text-sm font-semibold text-foreground">Métricas Operacionais do Recrutamento</h3>
+          {opMetricas && <PremiumBadge variant="info" size="sm">{opMetricas.totalCandidatos} candidatos</PremiumBadge>}
+        </div>
+        {opLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} lines={2} />)}
+          </div>
+        ) : opMetricas ? (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+              <KpiCard title="Total Pipeline" value={fmtN(opMetricas.totalCandidatos)} icon={Users} subtitle="candidatos no funil" accent="bg-blue-500/60" />
+              <KpiCard title="Aptos Operacionais" value={fmtN(opMetricas.aptos)} icon={CheckCircle2} subtitle="prontos para alocar" accent="bg-emerald-500/60" />
+              <KpiCard title="Pendentes" value={fmtN(opMetricas.pendentes)} icon={Clock} subtitle="aguardando etapa" accent="bg-amber-500/60" />
+              <KpiCard title="Bloqueados" value={fmtN(opMetricas.bloqueados)} icon={Ban} subtitle="impedidos" accent="bg-rose-500/60" />
+              <KpiCard title="Pré-selecionados" value={fmtN(opMetricas.preSelecionados)} icon={BookmarkCheck} subtitle="marcados para operação" accent="bg-violet-500/60" />
+              <KpiCard title="Onboarding Concluído" value={fmtN(opMetricas.onboardingConcluido)} icon={ClipboardCheck} subtitle={`${fmtN(opMetricas.onboardingEmAndamento)} em andamento`} accent="bg-cyan-500/60" />
+              <KpiCard title="Disponíveis Imediatos" value={fmtN(opMetricas.disponiveisImediatos)} icon={Clock} subtitle="prontos agora" accent="bg-emerald-500/60" />
+              <KpiCard title="Indisponíveis" value={fmtN(opMetricas.indisponiveis)} icon={AlertTriangle} subtitle="não disponíveis" accent="bg-zinc-500/60" />
+              <KpiCard title="Taxa Conversão Pipeline" value={fmtP(opMetricas.taxaConversaoPipeline)} icon={Target} subtitle="candidatos → aprovados" accent="bg-orange-500/60" />
+              <KpiCard title="Tempo Médio Onboarding" value={opMetricas.tempoMedioOnboarding} icon={Clock} subtitle="estimado" accent="bg-violet-500/60" />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <PremiumCard>
+                <PremiumCardHeader>
+                  <PremiumCardTitle className="flex items-center gap-2 text-sm">
+                    <BarChart3 className="w-4 h-4 text-primary" />
+                    Pipeline por Etapa
+                  </PremiumCardTitle>
+                </PremiumCardHeader>
+                <PremiumCardContent>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={opMetricas.pipelinePorEtapa} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis type="number" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                      <YAxis type="category" dataKey="etapa" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} width={120} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="quantidade" name="Candidatos" fill="#3B82F6" radius={[0, 3, 3, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </PremiumCardContent>
+              </PremiumCard>
+
+              <PremiumCard>
+                <PremiumCardHeader>
+                  <PremiumCardTitle className="flex items-center gap-2 text-sm">
+                    <FileText className="w-4 h-4 text-primary" />
+                    Status Documental
+                  </PremiumCardTitle>
+                </PremiumCardHeader>
+                <PremiumCardContent>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={opMetricas.statusDocumental}
+                        dataKey="quantidade"
+                        nameKey="status"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={70}
+                        label={({ status, percent }) => `${status} ${(percent * 100).toFixed(0)}%`}
+                      >
+                        {opMetricas.statusDocumental.map((_, i) => (
+                          <Cell key={i} fill={CORES_PIE[i % CORES_PIE.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </PremiumCardContent>
+              </PremiumCard>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-center py-8 text-sm text-muted-foreground/50">
+            <AlertTriangle className="w-4 h-4 mr-2" />
+            Nenhum dado disponível
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { format, addDays, startOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar as CalendarIcon, Filter, Search, Plus, MapPin, Truck, Smartphone, Check, ChevronLeft, ChevronRight, MessageCircle, FileText, Download, Wallet, Clock, DollarSign, Percent, Activity, AlertTriangle, AlertCircle, CheckCircle, History, ExternalLink, Play } from "lucide-react";
+import { Calendar as CalendarIcon, Filter, Search, Plus, MapPin, Truck, Smartphone, Check, ChevronLeft, ChevronRight, MessageCircle, FileText, Download, Wallet, Clock, DollarSign, Percent, Activity, AlertTriangle, AlertCircle, CheckCircle, History, ExternalLink, Play, Edit } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,9 +17,14 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { calcularFinanceiroEscala } from "@/utils/engineFinanceira";
+import { normalizeClienteNome } from "@/utils/clienteHelper";
 
 
 import jsPDF from "jspdf";
+import {
+  drawCoverPage, drawContentHeader, drawInfoBlock, drawFinancialComposition, drawObservations, getPageSetup, fmtBRL as pdfFmtBRL
+} from "@/lib/pdf/foundation";
 
 type Periodo = 'semanal' | 'quinzenal' | 'mensal';
 
@@ -83,88 +88,7 @@ export default function EscalaLista() {
   const [selectedCell, setSelectedCell] = useState<{prestadorId: string, data: Date} | null>(null);
   const [selectedCarregamentoDetail, setSelectedCarregamentoDetail] = useState<any>(null);
   const [showCarregamentoDetailModal, setShowCarregamentoDetailModal] = useState(false);
-  const [confirmacoesCarregamento, setConfirmacoesCarregamento] = useState([
-    {
-      id: "conf-1",
-      prestador: "Carlos Alberto Santos",
-      tipo: "agregado",
-      cliente: "Matriz São Paulo",
-      os: "OS-2026-00412",
-      horarioCarregamento: "19/05/2026 08:00",
-      posicaoFila: 2,
-      status: "liberado_para_rota",
-      veiculo: "Fiorino Branca",
-      placa: "ABC-1234",
-      destino: "Campinas, SP",
-      checklist: {
-        documentosConferidos: true,
-        volumesConferidos: true,
-        temperaturaConferida: false,
-        semAvarias: true,
-        observacoes: "Carga estivada corretamente."
-      }
-    },
-    {
-      id: "conf-2",
-      prestador: "Marcos Pereira",
-      tipo: "agregado",
-      cliente: "Filial Extrema",
-      os: "OS-2026-00413",
-      horarioCarregamento: "19/05/2026 10:00",
-      posicaoFila: 1,
-      status: "carregamento_iniciado",
-      veiculo: "HR Baú",
-      placa: "XYZ-9876",
-      destino: "Rio de Janeiro, RJ",
-      checklist: {
-        documentosConferidos: true,
-        volumesConferidos: false,
-        temperaturaConferida: true,
-        semAvarias: false,
-        observacoes: "1 caixa amassada na ponta."
-      }
-    },
-    {
-      id: "conf-3",
-      prestador: "Renato Silva",
-      tipo: "esporadico",
-      cliente: "Filial Extrema",
-      os: "OS-2026-00414",
-      horarioCarregamento: "19/05/2026 13:00",
-      posicaoFila: 3,
-      status: "aguardando_prestador",
-      veiculo: "Truck Baú",
-      placa: "DEF-5678",
-      destino: "Belo Horizonte, MG",
-      checklist: {
-        documentosConferidos: false,
-        volumesConferidos: false,
-        temperaturaConferida: false,
-        semAvarias: true,
-        observacoes: ""
-      }
-    },
-    {
-      id: "conf-4",
-      prestador: "Adriano Souza",
-      tipo: "esporadico",
-      cliente: "CD Diadema",
-      os: "OS-2026-00415",
-      horarioCarregamento: "19/05/2026 14:30",
-      posicaoFila: 4,
-      status: "divergencia",
-      veiculo: "Van Refrigerada",
-      placa: "MNO-4321",
-      destino: "Santos, SP",
-      checklist: {
-        documentosConferidos: true,
-        volumesConferidos: true,
-        temperaturaConferida: false,
-        semAvarias: false,
-        observacoes: "Divergência de temperatura no baú."
-      }
-    }
-  ]);
+  // Removed mock confirmacoesCarregamento
   
   // States reais para dados
   const [prestadores, setPrestadores] = useState<any[]>([]);
@@ -176,10 +100,17 @@ export default function EscalaLista() {
   const [novaOS, setNovaOS] = useState("");
   const [novoPrestadorId, setNovoPrestadorId] = useState("");
   const [novoPrestadorNome, setNovoPrestadorNome] = useState("");
+  const [filtroPrestadorModal, setFiltroPrestadorModal] = useState("");
+  const [showPrestadorDropdown, setShowPrestadorDropdown] = useState(false);
   const [novoClienteId, setNovoClienteId] = useState("");
   const [novoClienteNome, setNovoClienteNome] = useState("");
   const [prestadorVeiculo, setPrestadorVeiculo] = useState<{tipo_veiculo: string, placa: string, refrigerado: boolean} | null>(null);
-  const [tabelaValores, setTabelaValores] = useState<{valor_base: number, valor_km: number, km_franquia: number, tipo_veiculo: string} | null>(null);
+  const [tabelaValores, setTabelaValores] = useState<any>(null);
+  const [tabelaRascunhoEncontrada, setTabelaRascunhoEncontrada] = useState<any>(null);
+  const [kmExcedentePrestador, setKmExcedentePrestador] = useState<number>(0);
+  const [minutosEspera, setMinutosEspera] = useState<number>(0);
+  const [ajusteClienteValor, setAjusteClienteValor] = useState<number>(0);
+  const [ajusteClienteMotivo, setAjusteClienteMotivo] = useState("");
   const [regraEspecialAtiva, setRegraEspecialAtiva] = useState(false);
   const [loadingTabelaValores, setLoadingTabelaValores] = useState(false);
   const [novoTipo, setNovoTipo] = useState("reserva");
@@ -194,44 +125,69 @@ export default function EscalaLista() {
   const [tempoFinalizacaoEntregas, setTempoFinalizacaoEntregas] = useState("17:30");
 
   // Função para buscar tabela de valores do cliente
-  const buscarTabelaValoresCliente = useCallback(async (clienteId: string, tipoVeiculo: string) => {
-    if (!clienteId || !tipoVeiculo) return null;
+  const buscarTabelaValoresCliente = useCallback(async (clienteId: string, clienteNome: string, tipoVeiculo: string, dataEscalaStr?: string) => {
+    if (!clienteId || !clienteNome || !tipoVeiculo) return null;
     setLoadingTabelaValores(true);
     try {
-      const { data, error } = await supabase
-        .from("tabelas_valores")
-        .select("id, valor_base, valor_km, km_franquia, tipo_veiculo")
-        .eq("cliente_id", clienteId)
-        .eq("tipo_veiculo", tipoVeiculo)
-        .eq("ativo", true)
-        .single();
+      const dataEscala = dataEscalaStr ? new Date(dataEscalaStr) : new Date();
       
-      if (!error && data) {
-        setTabelaValores({ ...data, km_franquia: data.km_franquia || 200 });
+      const nomeNormalizado = normalizeClienteNome(clienteNome);
+      
+      const { data: specificData, error: specificError } = await supabase
+        .from("tabelas_valores")
+        .select("id, nome, valor_base, valor_km, km_franquia, valor_km_excedente, tipo_veiculo, status, data_inicio, data_fim, ativo, percentual_prestador, valor_fixo_prestador, tipo_repasse_prestador, adicionais")
+        .eq("cliente", nomeNormalizado)
+        .eq("tipo_veiculo", tipoVeiculo);
+        
+      let escolhida = null;
+      let rascunhoEncontrado = null;
+      
+      if (!specificError && specificData && specificData.length > 0) {
+         const ativas = specificData.filter(d => d.ativo || d.status === 'ativa');
+         const rascunhos = specificData.filter(d => !d.ativo || d.status === 'rascunho' || d.status === 'inativa');
+         
+         if (rascunhos.length > 0) rascunhoEncontrado = rascunhos[0];
+         
+         if (ativas.length > 0) {
+           const comVigencia = ativas.find(d => {
+             if (!d.data_inicio) return true;
+             return new Date(d.data_inicio) <= dataEscala && (!d.data_fim || new Date(d.data_fim) >= dataEscala);
+           });
+           escolhida = comVigencia || ativas[0];
+         }
+      }
+      
+      if (escolhida) {
+        setTabelaRascunhoEncontrada(rascunhoEncontrado);
+        setTabelaValores({ ...escolhida, km_franquia: escolhida.km_franquia || 200, valor_km_excedente: escolhida.valor_km_excedente || escolhida.valor_km || 2.50 });
         setRegraEspecialAtiva(true);
-        return data;
+        return escolhida;
       }
       
       const { data: universalData } = await supabase
         .from("tabelas_valores")
-        .select("id, valor_base, valor_km, km_franquia, tipo_veiculo")
+        .select("id, nome, valor_base, valor_km, km_franquia, valor_km_excedente, tipo_veiculo, status, data_inicio, data_fim, ativo, percentual_prestador, valor_fixo_prestador, tipo_repasse_prestador, adicionais")
         .eq("universal", true)
         .eq("tipo_veiculo", tipoVeiculo)
         .eq("ativo", true)
+        .limit(1)
         .single();
       
       if (universalData) {
-        setTabelaValores({ ...universalData, km_franquia: universalData.km_franquia || 200 });
+        setTabelaRascunhoEncontrada(rascunhoEncontrado);
+        setTabelaValores({ ...universalData, km_franquia: universalData.km_franquia || 200, valor_km_excedente: universalData.valor_km_excedente || universalData.valor_km || 2.50 });
         setRegraEspecialAtiva(false);
         return universalData;
       }
       
+      setTabelaRascunhoEncontrada(rascunhoEncontrado);
       setTabelaValores(null);
       setRegraEspecialAtiva(false);
       return null;
     } catch (err) {
       console.error("Erro ao buscar tabela de valores:", err);
       setTabelaValores(null);
+      setTabelaRascunhoEncontrada(null);
       setRegraEspecialAtiva(false);
       return null;
     } finally {
@@ -243,15 +199,16 @@ export default function EscalaLista() {
   const buscarDadosVeiculoPrestador = useCallback(async (prestadorId: string) => {
     const { data, error } = await supabase
       .from("prestadores")
-      .select("veiculo_tipo, veiculo_placa, refrigerado")
+      .select("veiculos(tipo, placa)")
       .eq("id", prestadorId)
       .single();
     
     if (!error && data) {
+      const v = data.veiculos && data.veiculos.length > 0 ? data.veiculos[0] : null;
       setPrestadorVeiculo({
-        tipo_veiculo: data.veiculo_tipo || "fiorino",
-        placa: data.veiculo_placa || "",
-        refrigerado: data.refrigerado || false
+        tipo_veiculo: v?.tipo || "vuc",
+        placa: v?.placa || "",
+        refrigerado: false
       });
       return data;
     }
@@ -296,14 +253,6 @@ export default function EscalaLista() {
   // Alocações do período
   const [alocacoes, setAlocacoes] = useState<any[]>([]);
   const [listaClientes, setListaClientes] = useState<any[]>([]);
-  const [modoVisualizacao, setModoVisualizacao] = useState<'grade' | 'calendario'>(() => {
-    const saved = localStorage.getItem('escala_modo_visualizacao');
-    return (saved === 'grade' || saved === 'calendario') ? saved : 'calendario';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('escala_modo_visualizacao', modoVisualizacao);
-  }, [modoVisualizacao]);
 
   useEffect(() => {
     // Carregar prestadores reais
@@ -311,7 +260,7 @@ export default function EscalaLista() {
       try {
         const { data, error } = await supabase
           .from("prestadores")
-          .select("id, nome_completo, cpf_cnpj, telefone, whatsapp, veiculos(tipo, placa), status, regiao_principal")
+          .select("id, nome_completo, cpf_cnpj, telefone, whatsapp, veiculos(tipo, placa), status, regiao_principal, valor_diaria, valor_saida, fixo_mensal, franquia_km, valor_km, tipo_pagamento")
           .eq("status", "ativo");
         
         if (error) throw error;
@@ -326,7 +275,15 @@ export default function EscalaLista() {
           placa: p.veiculos && p.veiculos.length > 0 ? p.veiculos[0].placa : '',
           regiao: p.regiao_principal || "Sem região",
           status: "disponivel",
-          avatar: p.nome_completo ? p.nome_completo.substring(0,2).toUpperCase() : "PR"
+          avatar: p.nome_completo ? p.nome_completo.substring(0,2).toUpperCase() : "PR",
+          financeiro_real: {
+             tipo_pagamento: p.tipo_pagamento,
+             valor_diaria: p.valor_diaria || 0,
+             valor_saida: p.valor_saida || 0,
+             fixo_mensal: p.fixo_mensal || 0,
+             franquia_km: p.franquia_km || 0,
+             valor_km: p.valor_km || 0
+          }
         }));
         
         setPrestadores(fmtd);
@@ -352,13 +309,69 @@ export default function EscalaLista() {
     loadPrestadores();
     loadClientes();
 
-    // Carregar alocações locais
-    const saved = localStorage.getItem("conexao_escala_operacional");
-    if (saved) {
+    // Tentar carregar alocações do Supabase primeiro
+    async function loadAlocacoes() {
       try {
-        setAlocacoes(JSON.parse(saved));
-      } catch (e) {}
+        const hoje = new Date();
+        const inicioMes = format(startOfMonth(hoje), 'yyyy-MM-dd');
+        const fimMes = format(endOfMonth(hoje), 'yyyy-MM-dd');
+        const { data, error } = await supabase
+          .from('alocacoes_escala')
+          .select(`
+            id, data_escala, status, status_pagamento, turno, tipo_veiculo, placa,
+            valor_fixo, valor_frete, valor_pedagio, valor_combustivel, valor_ajudante,
+            valor_adicional, valor_desconto, valor_total, km_realizados, metadata, observacoes,
+            prestador_id, cliente_id,
+            prestadores!prestador_id(id, nome_completo),
+            clientes!cliente_id(id, nome_fantasia)
+          `)
+          .gte('data_escala', inicioMes)
+          .lte('data_escala', fimMes)
+          .order('data_escala', { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          const mapped = data.map((r: any) => {
+            const prestNome = r.prestadores?.nome_completo || r.metadata?.prestadorNome || '';
+            const cliNome = r.clientes?.nome_fantasia || r.metadata?.clienteNome || '';
+            const meta = r.metadata || {};
+            const valorBase = Number(r.valor_fixo ?? meta.totals?.valorBase ?? 0);
+            const adicionais = Number(r.valor_adicional ?? meta.totals?.totalAdicionais ?? 0);
+            const descontos = Number(r.valor_desconto ?? meta.totals?.totalDescontos ?? 0);
+            const total = Number(r.valor_total ?? (valorBase + adicionais - descontos));
+            return {
+              id: r.id,
+              prestadorId: r.prestador_id,
+              prestadorNome: prestNome,
+              clienteId: r.cliente_id,
+              clienteNome: cliNome,
+              data: r.data_escala,
+              turno: r.turno,
+              status: r.status,
+              statusPagamento: r.status_pagamento,
+              os: meta.os || '',
+              horarioInicio: meta.horarioInicio || '',
+              horarioFim: meta.horarioFim || '',
+              kmInicial: meta.kmInicial || 0,
+              kmFinal: meta.kmFinal || 0,
+              prestadorVeiculo: { tipo_veiculo: r.tipo_veiculo, placa: r.placa },
+              financeiro: meta.financeiro || {},
+              totals: { valorBase, totalAdicionais: adicionais, totalDescontos: descontos, total },
+            };
+          });
+          setAlocacoes(mapped);
+          return; // Não usa localStorage se Supabase respondeu
+        }
+      } catch (e) {
+        console.warn('Fallback para localStorage (Supabase indisponível):', e);
+      }
+      // Fallback: carregar alocações locais
+      const saved = localStorage.getItem('conexao_escala_operacional');
+      if (saved) {
+        try { setAlocacoes(JSON.parse(saved)); } catch (e) {}
+      }
     }
+
+    loadAlocacoes();
   }, []);
 
   const diasPeriodo = useMemo(() => {
@@ -406,27 +419,42 @@ export default function EscalaLista() {
     return Array.from({ length: days }).map((_, i) => addDays(start, i));
   }, [currentDate, filtroPeriodo, dataInicio, dataFim]);
 
+  const clientesDisponiveis = useMemo(() => {
+    const clients = new Map();
+    alocacoes.forEach(a => {
+      if (a.clienteId && a.clienteNome) {
+        clients.set(a.clienteId, a.clienteNome);
+      }
+    });
+    return Array.from(clients.entries()).map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [alocacoes]);
+
+  const alocacoesFiltradas = useMemo(() => {
+    return alocacoes.filter(a => {
+      if (filtroCliente !== "todos" && a.clienteId !== filtroCliente) return false;
+      return true;
+    });
+  }, [alocacoes, filtroCliente]);
+
   const prestadoresFiltrados = useMemo(() => {
     return prestadores.filter(p => {
       const matchNome = p.nome.toLowerCase().includes(filtroNome.toLowerCase()) ||
                         p.placa.toLowerCase().includes(filtroNome.toLowerCase());
       const matchVeiculo = filtroVeiculo === "todos" || p.veiculo === filtroVeiculo;
 
-      // Se filtro de cliente ativo, verifica se tem alocação para esse cliente no período
       let matchCliente = true;
       if (filtroCliente !== "todos") {
-        matchCliente = alocacoes.some(a => a.prestadorId === p.id && a.clienteId === filtroCliente && diasPeriodo.some(d => isSameDay(new Date(a.data), d)));
+        matchCliente = alocacoesFiltradas.some(a => a.prestadorId === p.id && diasPeriodo.some(d => isSameDay(new Date(a.data), d)));
       }
 
-      // Se filtro de status ativo, verifica se tem alocação com esse status/tipo no período
       let matchStatus = true;
       if (filtroStatus !== "todos") {
-        matchStatus = alocacoes.some(a => a.prestadorId === p.id && a.tipo === filtroStatus && diasPeriodo.some(d => isSameDay(new Date(a.data), d)));
+        matchStatus = alocacoesFiltradas.some(a => a.prestadorId === p.id && a.tipo === filtroStatus && diasPeriodo.some(d => isSameDay(new Date(a.data), d)));
       }
 
       return matchNome && matchVeiculo && matchCliente && matchStatus;
     });
-  }, [prestadores, filtroNome, filtroVeiculo, filtroCliente, filtroStatus, alocacoes, diasPeriodo]);
+  }, [prestadores, filtroNome, filtroVeiculo, filtroCliente, filtroStatus, alocacoesFiltradas, diasPeriodo]);
 
 
 
@@ -478,7 +506,7 @@ export default function EscalaLista() {
       else setTempoFinalizacaoEntregas("17:30");
       
       if (existing.clienteId && existing.prestadorVeiculo?.tipo_veiculo) {
-        buscarTabelaValoresCliente(existing.clienteId, existing.prestadorVeiculo.tipo_veiculo);
+        buscarTabelaValoresCliente(existing.clienteId, existing.clienteNome || "", existing.prestadorVeiculo.tipo_veiculo, existing.data);
       }
     } else {
       // Resetar para valores padrão
@@ -492,6 +520,9 @@ export default function EscalaLista() {
       setNovaOS("");
       setHorarioInicio("08:00");
       setHorarioFim("18:00");
+      setKmExcedentePrestador(0);
+      setMinutosEspera(0);
+      
       setFinanceiro({
         valorTipo: 'percentual',
         valorPercentual: 0,
@@ -525,7 +556,12 @@ export default function EscalaLista() {
       setTempoSaidaRua("09:15");
       setTempoFinalizacaoEntregas("17:30");
       setTabelaValores(null);
+      setTabelaRascunhoEncontrada(null);
       setRegraEspecialAtiva(false);
+      setAjusteClienteValor(0);
+      setAjusteClienteMotivo("");
+      setKmExcedentePrestador(0);
+      setMinutosEspera(0);
       
       buscarDadosVeiculoPrestador(prestadorId);
     }
@@ -533,67 +569,57 @@ export default function EscalaLista() {
   };
 
   const calcularTotalAlocacao = () => {
-    const diariaBase = tabelaValores?.valor_base || 400;
-    const kmFranquia = tabelaValores?.km_franquia || 200;
-    const valorKm = tabelaValores?.valor_km || 2.50;
-    const kmRodados = Math.max(kmFinal - kmInicial, 0);
-    const kmExcedente = Math.max(kmRodados - kmFranquia, 0);
-    
-    const tabelaNaoConfigurada = novoClienteId && !regraEspecialAtiva;
-    const valorKmExcedente = tabelaNaoConfigurada ? 0 : (kmExcedente * valorKm);
+    const prestadorSelecionado = prestadores.find(p => p.id === novoPrestadorId);
 
-    const horaSaida = tempoSaidaRua ? parseInt(tempoSaidaRua.split(":")[0]) : 8;
-    let diariaCalculada = diariaBase;
-    
-    if (regraEspecialAtiva && novoClienteId) {
-      if (horaSaida <= 11) {
-        diariaCalculada = diariaBase;
-      } else if (horaSaida <= 14) {
-        diariaCalculada = diariaBase * 1.50;
-      } else if (horaSaida <= 16) {
-        diariaCalculada = diariaBase * 1.70;
-      } else {
-        diariaCalculada = diariaBase * 1.85;
-      }
-    }
-
-    // Let the operator override or use the manual fixo value if specified
-    const valorDiariaFinal = financeiro.valorTipo === 'fixo' && financeiro.valorFixo > 0 
-      ? financeiro.valorFixo 
-      : (financeiro.valorTipo === 'percentual' && financeiro.valorPercentual > 0 
-          ? (financeiro.valorPercentual / 100) * diariaCalculada 
-          : diariaCalculada);
-
-    const totalAdicionais = 
-      financeiro.combustivel +
-      valorKmExcedente +
-      financeiro.pedagio +
-      (financeiro.diariasAdicionais * (financeiro.valorDiaria || valorDiariaFinal)) +
-      (financeiro.segundaSaida ? financeiro.valorSegundaSaida : 0) +
-      (financeiro.terceiraSaida ? financeiro.valorTerceiraSaida : 0) +
-      (financeiro.saidasAdicionais * financeiro.valorSaidaAdicional) +
-      (financeiro.ajudantes * financeiro.valorAjudante) +
-      financeiro.valorReembolsoOutros;
-
-    const totalDescontos = financeiro.desconto;
-
-    return {
-      valorBase: valorDiariaFinal,
-      totalAdicionais,
-      totalDescontos,
-      total: valorDiariaFinal + totalAdicionais - totalDescontos
-    };
+    return calcularFinanceiroEscala({
+      tabelaValores,
+      km: {
+        inicial: kmInicial,
+        final: kmFinal
+      },
+      espera: {
+        minutosTotais: minutosEspera,
+        tipoCobranca: 'proporcional'
+      },
+      regrasOperacionais: {
+        regraEspecialAtiva,
+        horaSaida: tempoSaidaRua ? parseInt(tempoSaidaRua.split(":")[0]) : 8,
+        clienteValido: !!novoClienteId
+      },
+      inputsManuais: {
+        ajusteClienteValor,
+        kmExcedentePrestadorValor: kmExcedentePrestador
+      },
+      financeiroPrestador: financeiro,
+      financeiroRealPrestador: prestadorSelecionado?.financeiro_real
+    });
   };
 
   const handleCreateReserva = async () => {
     if (!novoPrestadorId) {
       return toast.error("Selecione um prestador obrigatório.");
     }
+    
+    if (novoClienteId && !tabelaValores && !ajusteClienteMotivo && ajusteClienteValor === 0) {
+      return toast.error("Sem tabela de preço. Informe o 'Ajuste Manual' e o 'Motivo' para faturar.");
+    }
+    
+    if (ajusteClienteValor !== 0 && !ajusteClienteMotivo) {
+      return toast.error("Por favor, preencha o Motivo do Ajuste do Cliente.");
+    }
 
     const totals = calcularTotalAlocacao();
     const existing = alocacoes.find(a => a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data), selectedCell?.data ? selectedCell.data : new Date()));
+    const prestadorSelecionado = prestadores.find(p => p.id === novoPrestadorId);
+    
+    let financeiroStatus = 'ok';
+    if (!tabelaValores) financeiroStatus = 'pendente';
+    else if (!prestadorSelecionado?.financeiro_real || prestadorSelecionado.financeiro_real.valor_diaria === 0) financeiroStatus = 'fallback';
+    if (!tabelaValores && ajusteClienteValor > 0) financeiroStatus = 'manual';
+
+    // --- Objeto para o estado local (camelCase) ---
     const novaAlocacao = {
-      id: existing?.id || Date.now(),
+      id: existing?.id || String(Date.now()),
       prestadorId: novoPrestadorId,
       prestadorNome: novoPrestadorNome,
       clienteId: novoClienteId,
@@ -606,40 +632,116 @@ export default function EscalaLista() {
       horarioFim,
       financeiro,
       totals,
+      valorCliente: 0, // Pode ser preenchido depois via financeiro
       prestadorVeiculo,
-      statusPagamento: 'a pagar',
-      status: 'confirmado',
+      statusPagamento: 'pendente',
+      status: 'planejada',
       kmInicial,
       kmFinal,
       tempoChegadaPatio,
       tempoInicioCarregamento,
       tempoFimCarregamento,
       tempoSaidaRua,
-      tempoFinalizacaoEntregas
+      tempoFinalizacaoEntregas,
+      metadata: { financeiro_status: financeiroStatus }
+    };
+
+    // --- Payload para o banco (snake_case conforme schema alocacoes_escala) ---
+    const payload = {
+      prestador_id: novoPrestadorId || null,
+      cliente_id: novoClienteId || null,
+      data_escala: selectedCell?.data ? format(selectedCell.data, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+      turno: novoTurno,
+      tipo_veiculo: prestadorVeiculo?.tipo_veiculo || 'vuc',
+      placa: prestadorVeiculo?.placa || null,
+      status: 'planejada',
+      status_pagamento: 'pendente',
+      observacoes: novaOS ? `OS: ${novaOS}` : null,
+      // Financeiro
+      valor_fixo: totals.prestador.valorBase,
+      valor_repasse: totals.prestador.valorBase,
+      valor_frete: totals.cliente.total, // Faturamento do Cliente
+      valor_pedagio: financeiro.pedagio || 0,
+      valor_combustivel: financeiro.combustivel || 0,
+      valor_ajudante: (financeiro.ajudantes || 0) * (financeiro.valorAjudante || 0),
+      valor_adicional: totals.prestador.adicionais,
+      valor_desconto: totals.prestador.descontos,
+      valor_total: totals.prestador.total, // Total Repasse
+      km_realizados: Math.max((kmFinal || 0) - (kmInicial || 0), 0),
+      // Metadados extras
+      metadata: {
+        financeiro_status: financeiroStatus,
+        financeiro: financeiro,
+        totals: totals,
+        os: novaOS,
+        turno: novoTurno,
+        horarioInicio,
+        horarioFim,
+        tempoChegadaPatio,
+        tempoInicioCarregamento,
+        tempoFimCarregamento,
+        tempoSaidaRua,
+        tempoFinalizacaoEntregas,
+        faturamento: {
+          tabela_id: tabelaValores?.id || null,
+          nome_tabela: tabelaValores?.nome || 'Sem Tabela',
+          franquia_km: tabelaValores?.km_franquia || 0,
+          valor_km_excedente: tabelaValores?.valor_km_excedente || 0,
+          ajuste_manual: ajusteClienteValor,
+          motivo_ajuste: ajusteClienteMotivo
+        },
+        repasse: {
+          valor_km_prestador: kmExcedentePrestador,
+          tipo_repasse: tabelaValores?.tipo_repasse_prestador || financeiro.valorTipo,
+          percentual: tabelaValores?.percentual_prestador || financeiro.valorPercentual,
+          valor_fixo: tabelaValores?.valor_fixo_prestador || financeiro.valorFixo
+        },
+        km: {
+          inicial: kmInicial,
+          final: kmFinal,
+          rodados: Math.max((kmFinal || 0) - (kmInicial || 0), 0)
+        },
+        espera: {
+          minutos_espera: minutosEspera
+        }
+      }
     };
 
     try {
-      // Tentar salvar no Supabase se existir a tabela (simulado ou real)
-      const { error } = await supabase.from('alocacoes_escala').insert([novaAlocacao]);
-      
-      if (error && error.code === '42P01') {
-        // Fallback para localStorage
-        const novasAlocacoes = [...alocacoes.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data), new Date(novaAlocacao.data)))), novaAlocacao];
-        setAlocacoes(novasAlocacoes);
-        localStorage.setItem("conexao_escala_operacional", JSON.stringify(novasAlocacoes));
-        toast.info("Salvo localmente em 'conexao_escala_operacional' (Tabela não encontrada no DB)");
-      } else if (error) {
-        throw error;
+      if (existing?.id && typeof existing.id === 'string' && existing.id.includes('-')) {
+        // Atualizar registro existente no Supabase
+        const { error } = await supabase.from('alocacoes_escala').update(payload).eq('id', existing.id);
+        if (error && error.code !== '42P01') throw error;
+        if (!error) {
+          setAlocacoes(prev => prev.map(a => a.id === existing.id ? { ...novaAlocacao, id: existing.id } : a));
+          toast.success(`Alocação de ${novoPrestadorNome || 'prestador'} atualizada!`);
+          setModalOpen(false);
+          return;
+        }
       } else {
-        toast.success("Alocação salva no banco de dados!");
-        setAlocacoes(prev => [...prev, novaAlocacao]);
+        // Inserir novo registro no Supabase
+        const { data: inserted, error } = await supabase.from('alocacoes_escala').insert([payload]).select('id').single();
+        if (error && error.code === '42P01') {
+          // Tabela não existe → fallback localStorage
+          const novas = [...alocacoes.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data), new Date(novaAlocacao.data)))), novaAlocacao];
+          setAlocacoes(novas);
+          localStorage.setItem("conexao_escala_operacional", JSON.stringify(novas));
+          toast.info('Salvo localmente (tabela não encontrada no banco)');
+        } else if (error) {
+          throw error;
+        } else {
+          const idReal = inserted?.id || novaAlocacao.id;
+          setAlocacoes(prev => [...prev.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data), new Date(novaAlocacao.data)))), { ...novaAlocacao, id: idReal }]);
+          toast.success(`Alocação de ${novoPrestadorNome || 'prestador'} salva!`);
+        }
       }
-    } catch (err) {
-      // Fallback genérico
-      const novasAlocacoes = [...alocacoes.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data), new Date(novaAlocacao.data)))), novaAlocacao];
-      setAlocacoes(novasAlocacoes);
-      localStorage.setItem("conexao_escala_operacional", JSON.stringify(novasAlocacoes));
-      toast.success("Alocação salva localmente!");
+    } catch (err: any) {
+      // Fallback genérico para localStorage
+      const novas = [...alocacoes.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data), new Date(novaAlocacao.data)))), novaAlocacao];
+      setAlocacoes(novas);
+      localStorage.setItem("conexao_escala_operacional", JSON.stringify(novas));
+      toast.success('Alocação salva localmente!');
+      console.warn('Supabase insert fallback:', err?.message);
     }
 
     setModalOpen(false);
@@ -672,7 +774,7 @@ export default function EscalaLista() {
                });
              }
           }
-       });
+        });
      });
 
      setAlocacoes(novas);
@@ -680,90 +782,264 @@ export default function EscalaLista() {
      toast.success("Escala gerada automaticamente com IA!");
   };
 
-  const handleGerarRelatorioPagamento = (aloc: any) => {
+  const handleGerarRelatorioPagamento = async (aloc: any) => {
     try {
-      const doc = new jsPDF();
-      
-      // Header
-      doc.setFillColor(30, 41, 59); // Slate-800
-      doc.rect(0, 0, 210, 40, "F");
-      
-      doc.setTextColor(255, 255, 255);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(16);
-      doc.text("CONEXÃO EXPRESS TMS - RELATÓRIO DE PAGAMENTO", 15, 25);
-      
-      doc.setFontSize(10);
-      doc.text(`Data de Emissão: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 145, 25);
-      
-      // Content
-      doc.setTextColor(50, 50, 50);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text("DADOS DA ALOCAÇÃO", 15, 55);
-      
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text(`Prestador: ${aloc.prestadorNome || 'Não informado'}`, 15, 65);
-      doc.text(`Veículo: ${aloc.prestadorVeiculo?.tipo_veiculo ? TIPO_VEICULO_LABEL[aloc.prestadorVeiculo.tipo_veiculo] || aloc.prestadorVeiculo.tipo_veiculo : 'Não informado'}`, 15, 72);
-      doc.text(`Placa: ${aloc.prestadorVeiculo?.placa || 'Não informado'}`, 15, 79);
-      doc.text(`OS Vinculada: ${aloc.os || 'Nenhuma'}`, 15, 86);
-      doc.text(`Cliente: ${aloc.clienteNome || 'Nenhum'}`, 15, 93);
-      doc.text(`Data Alocação: ${format(new Date(aloc.data), "dd/MM/yyyy")}`, 15, 100);
-      
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text("TEMPOS OPERACIONAIS", 15, 115);
-      
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text(`Horário Agendado: ${aloc.horarioInicio || '08:00'}`, 15, 125);
-      doc.text(`Chegada Pátio: ${aloc.tempoChegadaPatio || '07:45'}`, 15, 132);
-      doc.text(`Início Carregamento: ${aloc.tempoInicioCarregamento || '08:15'}`, 15, 139);
-      doc.text(`Fim Carregamento: ${aloc.tempoFimCarregamento || '09:00'}`, 15, 146);
-      doc.text(`Saída para Rua: ${aloc.tempoSaidaRua || '09:15'}`, 15, 153);
-      doc.text(`Finalização Entregas: ${aloc.tempoFinalizacaoEntregas || '17:30'}`, 15, 160);
-      
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text("RESUMO DE QUILOMETRAGEM (KM)", 15, 175);
-      
-      const kmRodados = Math.max((aloc.kmFinal || 0) - (aloc.kmInicial || 0), 0);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text(`KM Inicial: ${aloc.kmInicial || 0} km`, 15, 185);
-      doc.text(`KM Final: ${aloc.kmFinal || 0} km`, 15, 192);
-      doc.text(`KM Rodados: ${kmRodados} km`, 15, 199);
-      
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text("VALORES E FECHAMENTO FINANCEIRO", 15, 215);
-      
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text(`Diária Base / Final: R$ ${aloc.totals?.valorBase?.toFixed(2) || "0.00"}`, 15, 225);
-      doc.text(`Adicionais Operacionais: R$ ${aloc.totals?.totalAdicionais?.toFixed(2) || "0.00"}`, 15, 232);
-      doc.text(`Descontos: R$ ${aloc.totals?.totalDescontos?.toFixed(2) || "0.00"}`, 15, 239);
-      
-      doc.setFillColor(240, 240, 240);
-      doc.rect(15, 248, 180, 12, "F");
-      
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text(`VALOR TOTAL DO PAGAMENTO DO DIA:`, 20, 256);
-      doc.text(`R$ ${aloc.totals?.total?.toFixed(2) || "0.00"}`, 140, 256);
-      
-      // Save PDF
-      doc.save(`relatorio-pagamento-${aloc.prestadorNome?.toLowerCase().replace(/\s+/g, '-') || 'prestador'}.pdf`);
-      toast.success("Relatório de pagamento em PDF gerado!");
+      const finStatus = aloc.metadata?.financeiro_status;
+      if (finStatus && finStatus !== 'ok') {
+        return toast.error(`Atenção: A alocação possui status financeiro '${finStatus.toUpperCase()}'. Regularize a composição financeira antes de gerar o demonstrativo.`);
+      }
+
+      const rawId = aloc.id.toString();
+      const shortId = `ESC-${rawId.replace(/-/g, '').substring(rawId.length > 8 ? rawId.length - 8 : 0, rawId.length).replace(/-/g, '').toUpperCase().substring(0, 8)}`;
+      const doc = new jsPDF("portrait", "mm", "a4");
+      const page = getPageSetup(doc, 15);
+
+      const prestador = aloc.metadata?.totals?.prestador || {};
+      const financeiro = aloc.metadata?.financeiroPrestador || {};
+
+      const vBase = Number(prestador.valorBase) || 0;
+      const vKmAdicional = Number(prestador.detalhes?.km?.totalExcedente) || 0;
+      const vEspera = Number(prestador.detalhes?.espera?.totalExcedente || financeiro.espera) || 0;
+      const vPedagio = Number(financeiro.pedagio) || 0;
+      const vReembolso = Number(financeiro.valorReembolsoOutros) || 0;
+      const vAjudante = (Number(financeiro.ajudantes) || 0) * (Number(financeiro.valorAjudante) || 0);
+      const vCombustivel = Number(financeiro.combustivel) || 0;
+      const vDescontos = Number(prestador.descontos) || 0;
+      const vAdiantamento = Number(financeiro.adiantamento) || 0;
+
+      const totaisAdicionais = vKmAdicional + vEspera + vPedagio + vReembolso + vAjudante + vCombustivel;
+      const vLiquido = vBase + totaisAdicionais - vDescontos - vAdiantamento;
+
+      const logo = await drawCoverPage(doc, {
+        documentType: "DEMONSTRATIVO DE PAGAMENTO",
+        documentNumber: shortId,
+        entityName: aloc.prestadorNome || "Prestador Não Informado",
+        entitySubtitle: "Prestador autônomo / agregado — prestação de serviços",
+        date: format(new Date(), "dd/MM/yyyy HH:mm"),
+        via: "Prestador"
+      });
+
+      let y = 85;
+      const infoFields = [
+        { label: "Data da Operação", value: format(new Date(aloc.data), "dd/MM/yyyy") },
+        { label: "OS / Referência", value: shortId },
+        { label: "Placa do Veículo", value: aloc.prestadorVeiculo?.placa || "N/D" },
+        { label: "Tipo de Veículo", value: aloc.prestadorVeiculo?.tipo_veiculo ? String(aloc.prestadorVeiculo.tipo_veiculo).toUpperCase() : "N/D", col: "right" as const },
+        { label: "Operação / Cliente", value: aloc.clienteNome || "N/D", col: "right" as const },
+        { label: "Origem → Destino", value: aloc.regiao || "Não informada", col: "right" as const },
+      ];
+      y = drawInfoBlock(doc, page.margin, y, page.contentWidth, "DADOS DA OPERAÇÃO", infoFields);
+
+      const financeLines: { label: string; value: number; indent?: boolean; isTotal?: boolean; highlight?: boolean }[] = [
+        { label: "Valor Base / Diária", value: vBase }
+      ];
+      if (vKmAdicional > 0) financeLines.push({ label: "KM Adicional", value: vKmAdicional, indent: true });
+      if (vEspera > 0) financeLines.push({ label: "Espera / Aguarde", value: vEspera, indent: true });
+      if (vPedagio > 0) financeLines.push({ label: "Pedágio", value: vPedagio, indent: true });
+      if (vReembolso > 0) financeLines.push({ label: "Reembolso", value: vReembolso, indent: true });
+      if (vAjudante > 0) financeLines.push({ label: "Ajudante", value: vAjudante, indent: true });
+      if (vCombustivel > 0) financeLines.push({ label: "Posto / Convênio Combustível", value: vCombustivel, indent: true });
+      if (vAdiantamento > 0) financeLines.push({ label: "( - ) Adiantamentos", value: -vAdiantamento, indent: true });
+      if (vDescontos > 0) financeLines.push({ label: "( - ) Descontos", value: -vDescontos, indent: true });
+      financeLines.push({ label: "VALOR LÍQUIDO A RECEBER", value: vLiquido, isTotal: true, highlight: true });
+
+      y = drawFinancialComposition(doc, page.margin, y, page.contentWidth, "COMPOSIÇÃO DO PAGAMENTO", financeLines);
+
+      drawObservations(
+        doc, page.margin, y + 10, page.contentWidth,
+        `Demonstrativo destinado exclusivamente ao Prestador de Serviço. Confira os valores e comunique divergências em até 48h úteis ao financeiro. CNPJ: 31.227.975/0001-80 — Tel: (11) 4225-1600 — financeiro@conexaoexpress.com.br`
+      );
+
+      doc.save(`demonstrativo-${(aloc.prestadorNome || 'prestador').toLowerCase().replace(/\s+/g, '-')}-${shortId}.pdf`);
+      toast.success("Demonstrativo de pagamento gerado com sucesso!");
     } catch (e) {
       console.error(e);
-      toast.error("Erro ao gerar relatório de pagamento.");
+      toast.error("Erro ao gerar demonstrativo de pagamento.");
+    }
+  };
+
+  const handleShareWhatsApp = (aloc: any) => {
+    const finStatus = aloc.metadata?.financeiro_status;
+    if (finStatus && finStatus !== 'ok') {
+      return toast.error(`Atenção: A alocação possui status financeiro '${finStatus.toUpperCase()}'. Regularize antes de enviar ao prestador.`);
+    }
+
+    const rawId = aloc.id.toString();
+    const shortId = `ESC-${rawId.replace(/-/g, '').substring(rawId.length > 8 ? rawId.length - 8 : 0, rawId.length).replace(/-/g, '').toUpperCase().substring(0, 8)}`;
+    const prestador = aloc.metadata?.totals?.prestador || {};
+    const financeiro = aloc.metadata?.financeiroPrestador || {};
+
+    const vBase = Number(prestador.valorBase) || 0;
+    const vKmAdicional = Number(prestador.detalhes?.km?.totalExcedente) || 0;
+    const vEspera = Number(prestador.detalhes?.espera?.totalExcedente || financeiro.espera) || 0;
+    const vPedagio = Number(financeiro.pedagio) || 0;
+    const vReembolso = Number(financeiro.valorReembolsoOutros) || 0;
+    const vAjudante = (Number(financeiro.ajudantes) || 0) * (Number(financeiro.valorAjudante) || 0);
+    const vCombustivel = Number(financeiro.combustivel) || 0;
+    const vDescontos = Number(prestador.descontos) || 0;
+    const vAdiantamento = Number(financeiro.adiantamento) || 0;
+
+    const totaisAdicionais = vKmAdicional + vEspera + vPedagio + vReembolso + vAjudante + vCombustivel;
+    const vLiquido = vBase + totaisAdicionais - vDescontos - vAdiantamento;
+
+    const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const dataFmt = format(new Date(aloc.data), "dd/MM/yyyy");
+
+    let msg = `*CONEXÃO EXPRESS*\n`;
+    msg += `*Demonstrativo Operacional*\n\n`;
+    msg += `*Prestador:* ${aloc.prestadorNome || 'Não informado'}\n`;
+    msg += `*OS / Ref.:* ${shortId}\n`;
+    msg += `*Data:* ${dataFmt}\n`;
+    if (aloc.regiao) msg += `*Rota:* ${aloc.regiao}\n`;
+    if (aloc.prestadorVeiculo?.placa) msg += `*Veículo:* ${aloc.prestadorVeiculo.placa}\n\n`;
+
+    msg += `*VALORES*\n`;
+    msg += `Valor Base: ${fmt(vBase)}\n`;
+    if (vKmAdicional > 0) msg += `KM Adicional: ${fmt(vKmAdicional)}\n`;
+    if (vEspera > 0) msg += `Espera: ${fmt(vEspera)}\n`;
+    if (vPedagio > 0) msg += `Pedágio: ${fmt(vPedagio)}\n`;
+    if (vReembolso > 0) msg += `Reembolso: ${fmt(vReembolso)}\n\n`;
+
+    const subtotal = vBase + vKmAdicional + vEspera + vPedagio + vReembolso;
+    msg += `*Subtotal:* ${fmt(subtotal)}\n\n`;
+
+    if (vCombustivel > 0 || vAdiantamento > 0 || vDescontos > 0) {
+      msg += `*DESCONTOS*\n`;
+      if (vCombustivel > 0) msg += `Convênio Combustível: ${fmt(vCombustivel)}\n`;
+      if (vAdiantamento > 0) msg += `Adiantamentos: ${fmt(vAdiantamento)}\n`;
+      if (vDescontos > 0) msg += `Descontos Diversos: ${fmt(vDescontos)}\n\n`;
+    }
+
+    msg += `*TOTAL LÍQUIDO A RECEBER*\n`;
+    msg += `${fmt(vLiquido)}\n\n`;
+    msg += `_Em caso de divergência retornar em até 48 horas._`;
+
+    const encoded = encodeURIComponent(msg);
+    const telClean = aloc.prestadorTelefone ? aloc.prestadorTelefone.replace(/\D/g, '') : '';
+
+    if (telClean) {
+      window.open(`https://wa.me/55${telClean}?text=${encoded}`, '_blank');
+    } else {
+      navigator.clipboard.writeText(msg);
+      toast.success("Texto copiado! Prestador sem telefone cadastrado.");
     }
   };
 
   const handleExportPDF = () => {
-    toast.success("Gerando PDF da escala do período...");
+    try {
+      const fmtBRL = (v: any) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const alocacoesPeriodo = alocacoesFiltradas.filter(a => {
+        const d = new Date(a.data);
+        return d >= diasPeriodo[0] && d <= diasPeriodo[diasPeriodo.length - 1];
+      });
+
+      if (alocacoesPeriodo.length === 0) {
+        toast.info('Nenhuma alocação no período para exportar.');
+        return;
+      }
+
+      const extrairFaturamento = (a: any): number => {
+        return Number(a.valor_frete ?? a.metadata?.totals?.cliente?.total ?? 0);
+      };
+      
+      const extrairRepasse = (a: any): number => {
+        return Number(a.valor_repasse ?? a.valor_fixo ?? a.metadata?.totals?.prestador?.total ?? a.metadata?.totals?.total ?? a.totals?.total ?? 0);
+      };
+
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 15;
+
+      // Header
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, 0, pageWidth, 38, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('RELATÓRIO OPERACIONAL DE FATURAMENTO E REPASSE', margin, 18);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Período: ${format(diasPeriodo[0], 'dd/MM/yyyy')} a ${format(diasPeriodo[diasPeriodo.length - 1], 'dd/MM/yyyy')}`, margin, 28);
+      doc.text(`Emissão: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, pageWidth - margin, 28, { align: 'right' });
+
+      let y = 50;
+      doc.setTextColor(50, 50, 50);
+
+      // Cabeçalho da tabela
+      const cols = ['OS/Data', 'Cliente / Prestador', 'Placa', 'Faturamento', 'Repasse', 'Margem', 'Status'];
+      const colWidths = [20, 50, 15, 23, 23, 23, 20];
+      let x = margin;
+      doc.setFillColor(241, 245, 249);
+      doc.rect(margin, y - 6, pageWidth - margin * 2, 10, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      cols.forEach((col, i) => {
+        doc.text(col, x + 1, y);
+        x += colWidths[i];
+      });
+      y += 6;
+
+      // Linhas
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      let totalFaturamento = 0;
+      let totalRepasse = 0;
+      
+      alocacoesPeriodo.forEach((a, idx) => {
+        const prestNome = a.prestadorNome || prestadores.find((p: any) => p.id === a.prestadorId)?.nome || '-';
+        const cliNome = a.clienteNome || '-';
+        const placa = a.prestadorVeiculo?.placa || prestadores.find((p: any) => p.id === a.prestadorId)?.placa || '-';
+        const vFat = extrairFaturamento(a);
+        const vRep = extrairRepasse(a);
+        const margem = vFat - vRep;
+        
+        totalFaturamento += vFat;
+        totalRepasse += vRep;
+        
+        const statusTxt = a.status || '-';
+        const dataStr = a.data ? format(new Date(a.data), 'dd/MM') : '-';
+        const osData = `${a.os || '-'}\n${dataStr}`;
+        const cliPrest = `${String(cliNome).substring(0, 25)}\n${String(prestNome).substring(0, 25)}`;
+        
+        const row = [osData, cliPrest, placa, fmtBRL(vFat), fmtBRL(vRep), fmtBRL(margem), statusTxt];
+
+        if (idx % 2 === 0) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(margin, y - 4, pageWidth - margin * 2, 10, 'F');
+        }
+        x = margin;
+        row.forEach((cell, i) => {
+          const lines = cell.split('\n');
+          lines.forEach((line, li) => {
+             doc.text(line, x + 1, y + (li * 4));
+          });
+          x += colWidths[i];
+        });
+        y += 10;
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
+      });
+
+      // Totais
+      y += 4;
+      doc.setDrawColor(200, 200, 200);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 8;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text(`Total de Alocações: ${alocacoesPeriodo.length}`, margin, y);
+      
+      const totaisTxt = `Faturamento: ${fmtBRL(totalFaturamento)}  |  Repasse: ${fmtBRL(totalRepasse)}  |  Margem: ${fmtBRL(totalFaturamento - totalRepasse)}`;
+      doc.text(totaisTxt, pageWidth - margin, y, { align: 'right' });
+
+      doc.save(`relatorio-operacional-${format(diasPeriodo[0], 'dd-MM-yyyy')}.pdf`);
+      toast.success('PDF do relatório operacional gerado!');
+    } catch (err: any) {
+      console.error('Erro ao gerar PDF:', err);
+      toast.error('Erro ao exportar PDF: ' + (err?.message || 'desconhecido'));
+    }
   };
 
   const handleIncluirLote = () => {
@@ -773,304 +1049,438 @@ export default function EscalaLista() {
   const prestadorAtivo = selectedCell ? prestadores.find(p => p.id === selectedCell.prestadorId) : null;
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-[calc(100vh-230px)]">
-       {/* Sidebar Prestadores */}
-       <div className="xl:col-span-1 bg-card border border-border rounded-xl overflow-hidden shadow-sm flex flex-col h-full escala-sidebar">
-          <div className="p-4 border-b border-border bg-muted/30 escala-header">
-             <h3 className="font-bold text-foreground flex items-center gap-2 mb-4"><Truck className="w-5 h-5 text-primary"/> Prestadores Homologados</h3>
-             <div className="relative mb-3">
-               <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground"/>
-               <Input placeholder="Buscar por placa ou nome..." className="pl-9 text-xs h-9" value={filtroNome} onChange={(e) => setFiltroNome(e.target.value)} />
-               <div className="flex flex-col gap-2 mt-3">
-                <Select value={filtroVeiculo} onValueChange={setFiltroVeiculo}>
-                  <SelectTrigger className="text-xs h-8"><SelectValue/></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(TIPO_VEICULO_LABEL).map(([val, label]) => (
-                      <SelectItem key={val} value={val}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="grid grid-cols-2 gap-2">
-                  <Select value={filtroStatus} onValueChange={setFiltroStatus}>
-                    <SelectTrigger className="text-xs h-8"><SelectValue placeholder="Status"/></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos">Todos Status</SelectItem>
-                      <SelectItem value="ativo">Ativo</SelectItem>
-                      <SelectItem value="indisponivel">Indisponível</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button variant="outline" size="sm" className="h-8 px-2"><Filter className="w-4 h-4"/></Button>
-                </div>
-              </div>
+    <div className="flex flex-col h-[calc(100vh-80px)] bg-slate-50">
+       {/* Unified Header & Filters */}
+       <div className="bg-white border-b border-slate-200 px-4 py-2 flex flex-col gap-2 shrink-0 z-10 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+             <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
+               <CalendarIcon className="w-5 h-5 text-primary"/> Escala de Operação
+             </h3>
+             <div className="flex items-center gap-2 flex-wrap">
+                <Button variant="outline" size="sm" className="gap-1 text-xs h-8" onClick={handleGerarEscalaAutomatica}><Truck className="w-3.5 h-3.5"/> Gerar Escala</Button>
+                <Button variant="outline" size="sm" className="gap-1 text-xs h-8" onClick={handleExportPDF}><Download className="w-3.5 h-3.5"/> Exportar PDF</Button>
+                <Button size="sm" className="gap-1 text-xs h-8 bg-orange-500 hover:bg-orange-600 text-white" onClick={handleIncluirLote}><DollarSign className="w-3.5 h-3.5"/> Incluir Lote</Button>
+                <Button size="sm" className="gap-1 text-xs h-8" onClick={() => { handleCellClick("", new Date()); setModalOpen(true); }}><Plus className="w-3.5 h-3.5"/> Alocar</Button>
              </div>
           </div>
-          <div className="overflow-y-auto flex-1 p-2 space-y-2 custom-scrollbar">
-             {prestadoresFiltrados.map(p => (
-                <div key={p.id} className="p-3 bg-card border border-border rounded-lg hover:border-primary/50 transition cursor-pointer flex gap-3 items-center group escala-prestador-card">
-                   <Avatar className="w-10 h-10 border border-border shadow-sm"><AvatarFallback className="bg-muted text-muted-foreground font-bold">{p.avatar}</AvatarFallback></Avatar>
-                   <div className="flex-1 overflow-hidden">
-                      <p className="text-sm font-bold text-foreground truncate">{p.nome}</p>
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">{p.veiculo} • {p.regiao}</p>
-                   </div>
-                   <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${p.status === 'disponivel' ? 'bg-emerald-500' : p.status === 'ocupado' ? 'bg-orange-500' : 'bg-muted-foreground/40'}`}/>
-                </div>
-             ))}
+          <div className="flex items-center flex-wrap gap-3">
+             <div className="relative min-w-[220px]">
+               <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400"/>
+               <Input placeholder="Buscar por placa ou nome..." className="pl-9 h-9 text-xs" value={filtroNome} onChange={(e) => setFiltroNome(e.target.value)} />
+             </div>
+             <Select value={filtroCliente} onValueChange={setFiltroCliente}>
+                <SelectTrigger className="h-9 w-[180px] text-xs"><SelectValue placeholder="Todos Clientes"/></SelectTrigger>
+                <SelectContent>
+                   <SelectItem value="todos">Todos Clientes</SelectItem>
+                   {clientesDisponiveis.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
+                </SelectContent>
+             </Select>
+             <div className="flex items-center bg-white border border-slate-200 rounded-md shadow-sm h-9">
+               <Button variant="ghost" size="icon" onClick={prevPeriodo} className="h-9 w-9 rounded-r-none border-r border-slate-200"><ChevronLeft className="w-4 h-4 text-slate-600"/></Button>
+               <div className="px-3 text-xs font-bold text-slate-700 min-w-[130px] text-center">
+                 {format(diasPeriodo[0], "dd/MM")} - {format(diasPeriodo[diasPeriodo.length - 1], "dd/MM")}
+               </div>
+               <Button variant="ghost" size="icon" onClick={nextPeriodo} className="h-9 w-9 rounded-l-none border-l border-slate-200"><ChevronRight className="w-4 h-4 text-slate-600"/></Button>
+             </div>
+             <Select value={filtroPeriodo} onValueChange={setFiltroPeriodo}>
+                <SelectTrigger className="h-9 w-[130px] text-xs"><SelectValue/></SelectTrigger>
+                <SelectContent>
+                   <SelectItem value="hoje">Hoje</SelectItem>
+                   <SelectItem value="amanha">Amanhã</SelectItem>
+                   <SelectItem value="esta_semana">Esta semana</SelectItem>
+                   <SelectItem value="proxima_semana">Próxima semana</SelectItem>
+                   <SelectItem value="quinzenal">Quinzenal</SelectItem>
+                   <SelectItem value="este_mes">Este mês</SelectItem>
+                   <SelectItem value="proximo_mes">Próximo mês</SelectItem>
+                   <SelectItem value="personalizado">Personalizado</SelectItem>
+                </SelectContent>
+             </Select>
+             {filtroPeriodo === 'personalizado' && (
+               <div className="flex items-center gap-1.5">
+                 <Input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} className="h-9 text-xs w-32" />
+                 <Input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} className="h-9 text-xs w-32" />
+               </div>
+             )}
+             <Select value={filtroVeiculo} onValueChange={setFiltroVeiculo}>
+                <SelectTrigger className="h-9 w-[140px] text-xs"><SelectValue placeholder="Veículo"/></SelectTrigger>
+                <SelectContent>
+                   <SelectItem value="todos">Todos Veículos</SelectItem>
+                   {Object.entries(TIPO_VEICULO_LABEL).map(([val, label]) => (
+                     <SelectItem key={val} value={val}>{label}</SelectItem>
+                   ))}
+                </SelectContent>
+             </Select>
+             <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+                <SelectTrigger className="h-9 w-[140px] text-xs"><SelectValue placeholder="Status"/></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos Status</SelectItem>
+                  <SelectItem value="ativo">Ativo</SelectItem>
+                  <SelectItem value="indisponivel">Indisponível</SelectItem>
+                </SelectContent>
+             </Select>
           </div>
        </div>
 
-       {/* Calendário Principal */}
-        <div className="xl:col-span-3 bg-card border border-border rounded-xl shadow-sm flex flex-col h-full overflow-hidden">
-            <div className="py-2.5 px-4 border-b border-border flex justify-between items-center bg-muted/20 flex-wrap gap-3 escala-header">
-               <div>
-                 <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
-                   <CalendarIcon className="w-4.5 h-4.5 text-primary"/> Escala de Operação
-                 </h3>
-               </div>
-               <div className="flex items-center gap-2 flex-wrap">
-                 <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" onClick={handleGerarEscalaAutomatica}><Truck className="w-3 h-3"/> Gerar Escala</Button>
-                 <Button variant="outline" size="sm" className="gap-1 h-8 text-xs" onClick={handleExportPDF}><Download className="w-3 h-3"/> Exportar PDF</Button>
-                 <Button size="sm" className="gap-1 h-8 text-xs bg-orange-500 hover:bg-orange-600 text-white" onClick={handleIncluirLote}><DollarSign className="w-3 h-3"/> Incluir em Lote</Button>
-                 <Button size="sm" className="gap-1 h-8 text-xs" onClick={() => { setSelectedCell(null); setModalOpen(true); }}><Plus className="w-3 h-3"/> Alocar</Button>
-               </div>
-            </div>
-            
-            <div className="flex flex-col gap-2 w-full p-3 flex-1 overflow-hidden">
-                 <Tabs defaultValue="calendario" className="w-full flex-1 flex flex-col overflow-hidden">
-                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b pb-2">
-                     <div className="flex items-center gap-2 flex-wrap">
-                       <div className="flex items-center bg-card border border-border rounded-lg shadow-sm h-8">
-                         <Button variant="ghost" size="icon" onClick={prevPeriodo} className="h-8 w-8 rounded-r-none"><ChevronLeft className="w-3.5 h-3.5"/></Button>
-                         <div className="px-3 text-xs font-bold border-x border-border text-foreground min-w-[140px] text-center">
-                           {format(diasPeriodo[0], "dd/MM")} - {format(diasPeriodo[diasPeriodo.length - 1], "dd/MM/yyyy")}
-                         </div>
-                         <Button variant="ghost" size="icon" onClick={nextPeriodo} className="h-8 w-8 rounded-l-none"><ChevronRight className="w-3.5 h-3.5"/></Button>
-                       </div>
-                       <Select value={filtroPeriodo} onValueChange={setFiltroPeriodo}>
-                         <SelectTrigger className="h-8 w-32 text-xs"><SelectValue/></SelectTrigger>
-                         <SelectContent>
-                           <SelectItem value="hoje">Hoje</SelectItem>
-                           <SelectItem value="amanha">Amanhã</SelectItem>
-                           <SelectItem value="esta_semana">Esta semana</SelectItem>
-                           <SelectItem value="proxima_semana">Próxima semana</SelectItem>
-                           <SelectItem value="quinzenal">Quinzenal</SelectItem>
-                           <SelectItem value="este_mes">Este mês</SelectItem>
-                           <SelectItem value="proximo_mes">Próximo mês</SelectItem>
-                           <SelectItem value="personalizado">Personalizado</SelectItem>
-                         </SelectContent>
-                       </Select>
-                       
-                       <Select value={modoVisualizacao} onValueChange={(v) => setModoVisualizacao(v as any)}>
-                         <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="Visualização" /></SelectTrigger>
-                         <SelectContent>
-                           <SelectItem value="grade">Grade Horizontal</SelectItem>
-                           <SelectItem value="calendario">Modo Calendário</SelectItem>
-                         </SelectContent>
-                       </Select>
+       {/* Quick KPIs as Operational Chips */}
+       <div className="flex items-center gap-2 shrink-0 px-4 py-1.5 bg-slate-100 border-b border-slate-200 overflow-x-auto custom-scrollbar">
+          <Badge variant="outline" className="bg-blue-50/80 text-blue-700 border-blue-200 flex items-center gap-1.5 px-2 py-0.5"><Truck className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">{alocacoesFiltradas.length}</span> <span className="text-[9px] uppercase font-semibold">Alocações</span></Badge>
+          <Badge variant="outline" className="bg-emerald-50/80 text-emerald-700 border-emerald-200 flex items-center gap-1.5 px-2 py-0.5"><CheckCircle className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">{alocacoesFiltradas.filter(a => a.status === 'operacao' || a.status === 'confirmado' || a.statusPagamento === 'a pagar').length}</span> <span className="text-[9px] uppercase font-semibold">Em Rota/Conf.</span></Badge>
+          <Badge variant="outline" className="bg-amber-50/80 text-amber-700 border-amber-200 flex items-center gap-1.5 px-2 py-0.5"><Clock className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">{alocacoesFiltradas.filter(a => a.tipo === 'reserva' || a.status === 'aguardando').length}</span> <span className="text-[9px] uppercase font-semibold">Aguardando</span></Badge>
+          <Badge variant="outline" className="bg-orange-50/80 text-orange-700 border-orange-200 flex items-center gap-1.5 px-2 py-0.5"><DollarSign className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">R$ {alocacoesFiltradas.reduce((acc, a) => acc + (a.totals?.total ?? a.metadata?.totals?.prestador?.total ?? 0), 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span> <span className="text-[9px] uppercase font-semibold">Repasse</span></Badge>
+       </div>
 
-                       {filtroPeriodo === 'personalizado' && (
-                         <div className="flex items-center gap-1.5">
-                           <Input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} className="h-8 text-xs w-28" />
-                           <Input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} className="h-8 text-xs w-28" />
-                         </div>
-                       )}
-                     </div>
-                     
-                     <TabsList className="bg-muted/50 w-fit h-8 p-0.5">
-                       <TabsTrigger value="grade" className="text-xs h-7 px-2.5"><CalendarIcon className="w-3 h-3 mr-1"/> Grade de Escala</TabsTrigger>
-                       <TabsTrigger value="metricas" className="text-xs h-7 px-2.5"><Percent className="w-3 h-3 mr-1"/> Métricas</TabsTrigger>
-                       <TabsTrigger value="graficos" className="text-xs h-7 px-2.5"><DollarSign className="w-3 h-3 mr-1"/> Gráficos</TabsTrigger>
-                       <TabsTrigger value="tabelas" className="text-xs h-7 px-2.5"><FileText className="w-3 h-3 mr-1"/> Tabelas</TabsTrigger>
-                       <TabsTrigger value="confirmacoes" className="text-xs h-7 px-2.5"><Check className="w-3 h-3 mr-1"/> Confirmações</TabsTrigger>
-                     </TabsList>
+       {/* Main Tabs Area */}
+       <Tabs defaultValue="tabelas" className="flex-1 flex flex-col overflow-hidden bg-transparent">
+          <div className="bg-white border-b border-slate-200 px-4 py-2 overflow-x-auto shrink-0 shadow-sm z-10">
+             <TabsList className="bg-transparent h-9 p-0 flex w-max gap-2">
+                <TabsTrigger value="tabelas" className="text-xs font-bold h-8 px-4 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200 data-[state=active]:text-primary"><FileText className="w-3.5 h-3.5 mr-1.5"/> Controle Diário</TabsTrigger>
+                <TabsTrigger value="grade" className="text-xs font-bold h-8 px-4 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200 data-[state=active]:text-primary"><Truck className="w-3.5 h-3.5 mr-1.5"/> Grade Horizontal</TabsTrigger>
+                <TabsTrigger value="calendario" className="text-xs font-bold h-8 px-4 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200 data-[state=active]:text-primary"><CalendarIcon className="w-3.5 h-3.5 mr-1.5"/> Calendário Mensal</TabsTrigger>
+                <TabsTrigger value="confirmacoes" className="text-xs font-bold h-8 px-4 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200 data-[state=active]:text-primary"><Check className="w-3.5 h-3.5 mr-1.5"/> Fila e Pátio</TabsTrigger>
+             </TabsList>
+          </div>
+
+          <TabsContent value="calendario" className="data-[state=active]:flex-1 data-[state=active]:flex data-[state=active]:flex-col overflow-auto bg-slate-50 m-0 custom-scrollbar border-t border-slate-200">
+             <div className="bg-white h-full flex flex-col">
+               <div className="grid grid-cols-7 gap-2 min-w-[700px] flex-1">
+                 {["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"].map((day) => (
+                   <div key={day} className="text-center font-bold text-xs text-slate-500 py-2 border-b border-slate-100 uppercase">
+                     {day}
                    </div>
+                 ))}
+                 
+                 {(() => {
+                   const monthStart = startOfMonth(currentDate);
+                   const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+                   const gridDays = Array.from({ length: 42 }).map((_, i) => addDays(gridStart, i));
                    
-                   <TabsContent value="grade" className="flex-1 flex flex-col overflow-hidden">
-                     {modoVisualizacao === 'calendario' ? (
-                       <div className="flex-1 overflow-auto bg-card rounded-xl border border-border p-4 custom-scrollbar">
-                         <div className="grid grid-cols-7 gap-2 min-w-[700px]">
-                           {["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"].map((day) => (
-                             <div key={day} className="text-center font-bold text-xs text-muted-foreground py-2 border-b border-border uppercase">
-                               {day}
+                   return gridDays.map((d, index) => {
+                     const isSelectedPeriod = diasPeriodo.some((pDay) => isSameDay(pDay, d));
+                     const dayAlocacoes = alocacoesFiltradas.filter((a) => isSameDay(new Date(a.data), d));
+                     const isToday = isSameDay(d, new Date());
+                     const isCurrentMonth = d.getMonth() === currentDate.getMonth();
+
+                     return (
+                       <div
+                         key={index}
+                         onClick={() => {
+                           if (isSelectedPeriod) {
+                             handleCellClick("", d);
+                           }
+                         }}
+                         className={`min-h-[60px] border border-slate-200 rounded-xl p-1.5 transition flex flex-col justify-start gap-1 ${
+                           isSelectedPeriod 
+                             ? 'bg-white hover:bg-slate-50 cursor-pointer hover:border-primary shadow-sm' 
+                             : 'bg-slate-50/50 opacity-50 pointer-events-none'
+                         } ${isToday ? 'ring-2 ring-orange-500 ring-offset-2' : ''}`}
+                       >
+                         <div className="flex justify-between items-center">
+                           <span className={`text-xs font-black rounded-full w-6 h-6 flex items-center justify-center ${
+                             isToday 
+                               ? 'bg-orange-500 text-white' 
+                               : (isCurrentMonth ? 'text-slate-800' : 'text-slate-400')
+                           }`}>
+                             {format(d, "d")}
+                           </span>
+                           {isSelectedPeriod && dayAlocacoes.length > 0 && (
+                             <Badge className="text-[9px] px-1.5 py-0 bg-blue-50 text-blue-600 font-bold border-blue-200">
+                               {dayAlocacoes.length} aloc.
+                             </Badge>
+                           )}
+                         </div>
+                         
+                         <div className="flex-1 mt-1 space-y-0.5 overflow-y-auto custom-scrollbar">
+                           {isSelectedPeriod && dayAlocacoes.map((a, i) => (
+                             <div
+                               key={i}
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 handleCellClick(a.prestadorId, d);
+                               }}
+                               className="text-[9px] bg-slate-100 border border-slate-200 text-slate-700 rounded px-1.5 py-0.5 truncate font-semibold hover:bg-slate-200 transition"
+                             >
+                               {a.prestadorNome || "Alocação"}
                              </div>
                            ))}
-                           
-                           {(() => {
-                             const monthStart = startOfMonth(currentDate);
-                             const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-                             const gridDays = Array.from({ length: 42 }).map((_, i) => addDays(gridStart, i));
-                             
-                             return gridDays.map((d, index) => {
-                               const isSelectedPeriod = diasPeriodo.some((pDay) => isSameDay(pDay, d));
-                               const dayAlocacoes = alocacoes.filter((a) => isSameDay(new Date(a.data), d));
-                               const isToday = isSameDay(d, new Date());
-                               const isCurrentMonth = d.getMonth() === currentDate.getMonth();
-
-                               return (
-                                 <div
-                                   key={index}
-                                   onClick={() => {
-                                     if (isSelectedPeriod) {
-                                       handleCellClick("", d);
-                                     }
-                                   }}
-                                   className={`min-h-[110px] border border-border rounded-xl p-2.5 transition flex flex-col justify-between ${
-                                     isSelectedPeriod 
-                                       ? 'bg-background hover:bg-muted/50 cursor-pointer border-primary/40 hover:border-primary shadow-sm' 
-                                       : 'bg-muted/10 opacity-30 pointer-events-none'
-                                   } ${isToday ? 'ring-2 ring-orange-500 ring-offset-2' : ''}`}
-                                 >
-                                   <div className="flex justify-between items-center">
-                                     <span className={`text-xs font-black rounded-full w-6 h-6 flex items-center justify-center ${
-                                       isToday 
-                                         ? 'bg-orange-500 text-white' 
-                                         : (isCurrentMonth ? 'text-slate-800' : 'text-slate-400')
-                                     }`}>
-                                       {format(d, "d")}
-                                     </span>
-                                     {isSelectedPeriod && dayAlocacoes.length > 0 && (
-                                       <Badge className="text-[9px] px-1.5 py-0 bg-primary/10 text-primary font-bold border-0">
-                                         {dayAlocacoes.length} aloc.
-                                       </Badge>
-                                     )}
-                                   </div>
-                                   
-                                   <div className="flex-1 mt-2 space-y-1 overflow-y-auto max-h-[65px] custom-scrollbar">
-                                     {isSelectedPeriod && dayAlocacoes.map((a, i) => (
-                                       <div
-                                         key={i}
-                                         onClick={(e) => {
-                                           e.stopPropagation();
-                                           handleCellClick(a.prestadorId, d);
-                                         }}
-                                         className="text-[9px] bg-slate-100 border border-slate-200 text-slate-700 rounded px-1.5 py-0.5 truncate font-semibold hover:bg-slate-200 transition"
-                                       >
-                                         {a.prestadorNome || "Alocação"}
-                                       </div>
-                                     ))}
-                                   </div>
-                                 </div>
-                               );
-                             });
-                           })()}
                          </div>
                        </div>
-                     ) : (
-                       <div className="flex-1 overflow-auto custom-scrollbar">
-                         <div className="min-w-[800px]">
-                           <div className="grid bg-muted/40 border-b border-border" style={{gridTemplateColumns:`200px repeat(${diasPeriodo.length},1fr)`}}>
-                             <div className="p-3 border-r border-border font-bold text-xs uppercase text-muted-foreground flex items-center">Recurso</div>
-                             {diasPeriodo.map((d, i) => (
-                               <div key={i} className={`p-3 border-r border-border text-center ${isSameDay(d, new Date()) ? 'bg-primary/10 border-b-2 border-b-primary' : ''}`}>
-                                 <p className="text-[10px] uppercase font-bold text-muted-foreground">{format(d, "EEE", {locale: ptBR})}</p>
-                                 <p className={`text-base font-black ${isSameDay(d, new Date()) ? 'text-primary' : 'text-foreground'}`}>{format(d, "dd/MM")}</p>
-                               </div>
-                             ))}
-                           </div>
-                           <div className="divide-y divide-border">
-                             {prestadoresFiltrados.length === 0 && (
-                                <div className="p-8 text-center text-muted-foreground text-sm">Nenhum prestador encontrado com os filtros atuais.</div>
-                             )}
-                             {prestadoresFiltrados.map(p => (
-                               <div key={p.id} className="hover:bg-muted/20 transition" style={{display:'grid', gridTemplateColumns:`200px repeat(${diasPeriodo.length},1fr)`}}>
-                                 <div className="p-3 border-r border-border flex items-center gap-2 bg-card/50">
-                                   <Avatar className="w-8 h-8 border border-border"><AvatarFallback className="text-xs font-bold">{p.avatar}</AvatarFallback></Avatar>
-                                   <div className="overflow-hidden">
-                                     <p className="text-xs font-bold truncate">{p.nome}</p>
-                                     <p className="text-[10px] text-muted-foreground">{TIPO_VEICULO_LABEL[p.veiculo as keyof typeof TIPO_VEICULO_LABEL] || p.veiculo}</p>
-                                   </div>
-                                 </div>
-                                 {diasPeriodo.map((d, i) => {
-                                   const res = alocacoes.find(r => r.prestadorId === p.id && isSameDay(new Date(r.data), d));
-                                   let slotStatus = p.status === "inativo" ? "indisponivel" : "disponivel";
-                                   let slotLabel = "Livre";
-                                   if (res) {
-                                     slotStatus = res.status === "confirmado" ? "confirmado" : res.status === "aguardando" ? "aguardando" : "operacao";
-                                     slotLabel = res.status === "confirmado" ? "Confirmado" : res.status === "aguardando" ? "Aguard. Conf." : "Em Rota";
+                     );
+                   });
+                 })()}
+               </div>
+             </div>
+          </TabsContent>
+
+          <TabsContent value="grade" className="data-[state=active]:flex-1 data-[state=active]:flex overflow-hidden m-0 p-0 bg-white border-t border-slate-200">
+            {/* Sidebar Prestadores (moved to inside Grade Horizontal) */}
+            <div className="w-[280px] bg-white border-r border-slate-200 flex flex-col h-full shrink-0">
+               <div className="p-3 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="font-bold text-xs text-slate-700 flex items-center gap-2"><Truck className="w-4 h-4 text-slate-500"/> Motoristas e Veículos</h3>
+               </div>
+               <div className="overflow-y-auto flex-1 p-2 space-y-2 custom-scrollbar">
+                  {prestadoresFiltrados.map(p => (
+                     <div key={p.id} className="p-2.5 bg-white border border-slate-200 rounded-lg hover:border-primary/50 transition cursor-pointer flex gap-3 items-center group">
+                        <Avatar className="w-8 h-8 border border-slate-200 shadow-sm"><AvatarFallback className="bg-slate-100 text-slate-500 text-xs font-bold">{p.avatar}</AvatarFallback></Avatar>
+                        <div className="flex-1 overflow-hidden">
+                           <p className="text-xs font-bold text-slate-800 truncate">{p.nome}</p>
+                           <p className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold truncate">{TIPO_VEICULO_LABEL[p.veiculo as keyof typeof TIPO_VEICULO_LABEL] || p.veiculo}</p>
+                        </div>
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${p.status === 'disponivel' ? 'bg-emerald-500' : p.status === 'ocupado' ? 'bg-orange-500' : 'bg-slate-300'}`}/>
+                     </div>
+                  ))}
+                  {prestadoresFiltrados.length === 0 && (
+                     <div className="p-4 text-center text-slate-400 text-xs font-medium">Nenhum prestador listado.</div>
+                  )}
+               </div>
+            </div>
+
+            {/* Horizontal Grid */}
+            <div className="flex-1 overflow-auto bg-slate-50 custom-scrollbar relative">
+              <div className="min-w-[800px]">
+                <div className="grid bg-slate-50 border-b border-slate-200 sticky top-0 z-10" style={{gridTemplateColumns:`repeat(${diasPeriodo.length}, minmax(100px, 1fr))`}}>
+                  {diasPeriodo.map((d, i) => (
+                    <div key={i} className={`p-2 border-r border-slate-200 text-center ${isSameDay(d, new Date()) ? 'bg-blue-50/50 border-b-2 border-b-blue-500' : ''}`}>
+                      <p className="text-[9px] uppercase font-bold text-slate-400">{format(d, "EEE", {locale: ptBR})}</p>
+                      <p className={`text-sm font-black ${isSameDay(d, new Date()) ? 'text-blue-600' : 'text-slate-700'}`}>{format(d, "dd/MM")}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {prestadoresFiltrados.length === 0 ? (
+                     <div className="p-8 text-center text-slate-400 text-sm">Nenhuma informação de grade.</div>
+                  ) : (
+                    prestadoresFiltrados.map(p => (
+                    <div key={p.id} className="hover:bg-slate-50/50 transition" style={{display:'grid', gridTemplateColumns:`repeat(${diasPeriodo.length}, minmax(100px, 1fr))`}}>
+                      {diasPeriodo.map((d, i) => {
+                        const res = alocacoesFiltradas.find(r => r.prestadorId === p.id && isSameDay(new Date(r.data), d));
+                        let slotStyle = "bg-white text-slate-400";
+                        if (p.status === "inativo") slotStyle = "bg-slate-50 text-slate-300";
+                        let slotLabel = "Livre";
+                        let icon = null;
+                        
+                        let isAtrasado = false;
+                        let minAtraso = 0;
+
+                        if (res) {
+                           const st = res.status?.toLowerCase() || "";
+                           if (st === "confirmado") {
+                              slotStyle = "bg-emerald-50 text-emerald-700 border-b-2 border-b-emerald-500";
+                              slotLabel = "Liberado";
+                              icon = <CheckCircle className="w-3 h-3 text-emerald-600" />;
+                           } else if (st === "operacao") {
+                              slotStyle = "bg-blue-50 text-blue-700 border-b-2 border-b-blue-600";
+                              slotLabel = "Em Rota";
+                              icon = <Truck className="w-3 h-3 text-blue-600" />;
+                           } else if (st === "aguardando") {
+                              slotStyle = "bg-orange-50 text-orange-700 border-b-2 border-b-orange-500";
+                              slotLabel = "Aguardando";
+                              icon = <Clock className="w-3 h-3 text-orange-600" />;
+                           } else if (["divergencia", "ocorrencia", "bloqueado"].includes(st)) {
+                              slotStyle = "bg-rose-50 text-rose-700 border-b-2 border-b-rose-600";
+                              slotLabel = "Ocorrência";
+                              icon = <AlertTriangle className="w-3 h-3 text-rose-600" />;
+                           } else if (["concluido", "finalizado"].includes(st)) {
+                              slotStyle = "bg-slate-100 text-slate-700 border-b-2 border-b-slate-600";
+                              slotLabel = "Concluído";
+                              icon = <Check className="w-3 h-3 text-slate-600" />;
+                           } else {
+                              slotStyle = "bg-slate-100 text-slate-600 border-b-2 border-b-slate-400";
+                              slotLabel = st.toUpperCase();
+                           }
+
+                           if (res.horarioInicio && ["aguardando", "confirmado"].includes(st)) {
+                             const [hStr, mStr] = res.horarioInicio.split(':');
+                             if (hStr && mStr && res.data) {
+                                const dataAlocacao = new Date(res.data);
+                                dataAlocacao.setHours(Number(hStr), Number(mStr), 0, 0);
+                                if (isSameDay(dataAlocacao, new Date())) {
+                                   const diffMinutos = Math.floor((new Date().getTime() - dataAlocacao.getTime()) / 60000);
+                                   if (diffMinutos > 0) {
+                                      isAtrasado = true;
+                                      minAtraso = diffMinutos;
                                    }
-                                   return (
-                                     <div key={i} onClick={() => handleCellClick(p.id, d)} className={`p-2 border-r border-border cursor-pointer hover:bg-primary/5 transition min-h-[60px] flex items-center justify-center ${CORES_STATUS[slotStatus]}`}>
-                                       <span className="text-[10px] font-medium">{slotLabel}</span>
-                                     </div>
-                                   );
-                                 })}
+                                }
+                             }
+                           }
+                        }
+
+                        return (
+                          <div key={i} onClick={() => handleCellClick(p.id, d)} className={`p-2 border-r border-slate-200 cursor-pointer hover:brightness-95 transition min-h-[70px] flex flex-col items-start justify-between relative ${slotStyle}`}>
+                            {res ? (
+                               <div className="flex flex-col w-full h-full gap-0.5">
+                                 <div className="flex items-center justify-between w-full">
+                                   <div className="flex items-center gap-1 font-black text-[10px] uppercase tracking-tighter">
+                                     {icon}
+                                     <span>{slotLabel}</span>
+                                   </div>
+                                   <span className="font-bold text-[9px] bg-white/60 px-1 rounded shadow-sm">{res.horarioInicio || "08:00"}</span>
+                                 </div>
+                                 <div className="text-[10px] font-semibold truncate leading-tight mt-1 w-full" title={res.clienteNome}>{res.clienteNome || "Cliente"}</div>
+                                 {isAtrasado && (
+                                   <div className="absolute -bottom-1.5 right-1 bg-rose-600 text-white text-[8px] font-bold px-1 rounded shadow-md z-10 flex items-center gap-0.5">
+                                      +{minAtraso}m
+                                   </div>
+                                 )}
                                </div>
-                             ))}
-                           </div>
-                         </div>
-                       </div>
-                     )}
-                   </TabsContent>
+                            ) : (
+                               <div className="w-full h-full flex items-center justify-center opacity-40">
+                                 <span className="text-[10px] font-bold">{slotLabel}</span>
+                               </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )))}
+                </div>
+              </div>
+            </div>
+          </TabsContent>
 
-                  <TabsContent value="metricas" className="flex-1 overflow-auto">
-                    <Card>
-                      <CardHeader><CardTitle className="text-sm">Métricas da Escala</CardTitle></CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="grid grid-cols-4 gap-4">
-                          <div className="p-3 bg-emerald-50 rounded-lg"><p className="text-xs text-muted-foreground">Disponíveis</p><p className="text-xl font-bold text-emerald-600">{prestadoresFiltrados.filter(p => p.status === "disponivel").length}</p></div>
-                          <div className="p-3 bg-blue-50 rounded-lg"><p className="text-xs text-muted-foreground">Em Rota</p><p className="text-xl font-bold text-blue-600">{alocacoes.filter(a => a.statusPagamento === 'a pagar').length}</p></div>
-                          <div className="p-3 bg-orange-50 rounded-lg"><p className="text-xs text-muted-foreground">Aguard. Conf.</p><p className="text-xl font-bold text-orange-600">{alocacoes.filter(a => a.tipo === 'reserva').length}</p></div>
-                          <div className="p-3 bg-slate-50 rounded-lg"><p className="text-xs text-muted-foreground">Inativos</p><p className="text-xl font-bold text-slate-600">{prestadoresFiltrados.filter(p => p.status === "inativo").length}</p></div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-
-                  <TabsContent value="graficos" className="flex-1 overflow-auto">
-                    <Card>
-                      <CardHeader><CardTitle className="text-sm">Distribuição por Veículo</CardTitle></CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          {Object.entries(TIPO_VEICULO_LABEL).map(([key, label]) => {
-                            const count = prestadores.filter(p => p.veiculo === key).length;
-                            const pct = prestadores.length ? (count / prestadores.length * 100).toFixed(0) : 0;
-                            if (count === 0) return null;
-                            return (
-                              <div key={key} className="flex items-center gap-2">
-                                <span className="text-xs w-20 truncate">{label}</span>
-                                <div className="flex-1 bg-muted rounded-full h-2"><div className="bg-primary h-2 rounded-full" style={{width:`${pct}%`}}></div></div>
-                                <span className="text-xs font-bold w-8 text-right">{count}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-
-                  <TabsContent value="tabelas" className="flex-1 overflow-auto">
-                    <Card>
-                      <CardHeader><CardTitle className="text-sm">Tabela de Alocações</CardTitle></CardHeader>
-                      <CardContent>
-                        <Table>
-                          <TableHeader><TableRow><TableHead>Prestador</TableHead><TableHead>Veículo</TableHead><TableHead>Status</TableHead><TableHead>Valor</TableHead></TableRow></TableHeader>
-                          <TableBody>
-                            {alocacoes.map((a, i) => {
-                              const prest = prestadores.find(p => p.id === a.prestadorId);
-                              return (
-                                <TableRow key={i}>
-                                  <TableCell className="text-xs">{prest?.nome || "-"}</TableCell>
-                                  <TableCell className="text-xs">{prest ? TIPO_VEICULO_LABEL[prest.veiculo as keyof typeof TIPO_VEICULO_LABEL] || prest.veiculo : "-"}</TableCell>
-                                  <TableCell><Badge variant="outline" className="text-xs">{a.statusPagamento}</Badge></TableCell>
-                                  <TableCell className="text-xs font-bold">R$ {a.totals?.total?.toLocaleString('pt-BR') || "-"}</TableCell>
+          <TabsContent value="tabelas" className="data-[state=active]:flex-1 data-[state=active]:flex data-[state=active]:flex-col overflow-auto m-0 p-0 bg-white custom-scrollbar h-full">
+            <div className="flex flex-col h-full bg-white">
+              <div className="border-b border-slate-200 bg-slate-50/50 py-1.5 px-4 flex flex-row items-center justify-between sticky top-0 z-20">
+                <h4 className="text-[11px] font-black text-slate-800 uppercase flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 text-primary"/> Controle Diário de Alocações</h4>
+              </div>
+              <div className="overflow-x-auto flex-1">
+                          <Table>
+                            <TableHeader className="bg-slate-50/50">
+                              <TableRow className="border-b border-slate-100">
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase pl-6">Data</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase">Prestador</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase">Cliente</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase">Veículo</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase">Placa</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase">OS</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase">Status</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase text-center">Financeiro</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase text-right">Valor Cliente</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase text-right">Repasse</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase text-right">Acréscimos</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase text-right">Espera</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase text-center">Região</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase text-center">Horário</TableHead>
+                                <TableHead className="font-extrabold text-[10px] text-slate-400 uppercase text-right pr-6">Ações</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody className="divide-y divide-slate-100">
+                              {alocacoesFiltradas.filter(a => a.data && diasPeriodo.some(dp => isSameDay(dp, new Date(a.data)))).length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={14} className="h-32 text-center text-slate-500 font-medium">
+                                    Nenhuma alocação encontrada para os filtros selecionados.
+                                  </TableCell>
                                 </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
+                              ) : (
+                                alocacoesFiltradas.filter(a => a.data && diasPeriodo.some(dp => isSameDay(dp, new Date(a.data)))).map((a, i) => {
+                                  const prest = prestadores.find(p => p.id === a.prestadorId);
+                                  const veiculoLabel = prest ? (TIPO_VEICULO_LABEL[prest.veiculo as keyof typeof TIPO_VEICULO_LABEL] || prest.veiculo) : (a.prestadorVeiculo?.tipo_veiculo || "—");
+                                  const placaLabel = prest?.placa || a.prestadorVeiculo?.placa || "—";
+                                  const valorCliente = a.valor_frete ?? a.metadata?.totals?.cliente?.total ?? 0;
+                                  const repasse = a.totals?.total ?? a.metadata?.totals?.prestador?.total ?? 0;
+                                  const acrescimos = a.totals?.totalAdicionais ?? a.metadata?.totals?.adicionais ?? 0;
+                                  const espera = a.metadata?.totals?.espera ?? 0;
+                                  const financeiroStatus = a.metadata?.financeiro_status || 'ok';
 
-                  <TabsContent value="confirmacoes" className="mt-1.5 flex-1 overflow-auto">
-                    <Card className="bg-white border-slate-100 shadow-sm rounded-2xl overflow-hidden">
-                      <CardHeader className="border-b border-slate-100 bg-slate-50/50 py-2 px-6 flex flex-row items-center justify-between">
-                        <div>
-                          <CardTitle className="text-base font-black text-slate-800 flex items-center gap-2"><Clock className="w-5 h-5 text-primary"/> Confirmações e Controle de Carregamento</CardTitle>
-                          <CardDescription className="text-xs font-semibold text-slate-400">Acompanhe e valide o status da escala integrada ao controle de pátio e fila de docas.</CardDescription>
+                                  const statusAtual = (a.statusPagamento === 'a pagar' ? a.status : a.statusPagamento) || a.status || "—";
+                                  let statusStyle = { color: "bg-slate-100 text-slate-600 border-slate-200", icon: null as React.ReactNode };
+                                  if (statusAtual.toLowerCase() === "confirmado" || statusAtual === "a pagar") statusStyle = { color: "bg-emerald-500 text-white border-emerald-600", icon: <CheckCircle className="w-2.5 h-2.5" /> };
+                                  else if (statusAtual.toLowerCase() === "operacao") statusStyle = { color: "bg-blue-600 text-white border-blue-700", icon: <Truck className="w-2.5 h-2.5" /> };
+                                  else if (statusAtual.toLowerCase() === "aguardando") statusStyle = { color: "bg-orange-500 text-white border-orange-600", icon: <Clock className="w-2.5 h-2.5" /> };
+                                  else if (["divergencia", "ocorrencia", "bloqueado"].includes(statusAtual.toLowerCase())) statusStyle = { color: "bg-rose-500 text-white border-rose-600", icon: <AlertTriangle className="w-2.5 h-2.5" /> };
+                                  else if (["concluido", "finalizado"].includes(statusAtual.toLowerCase())) statusStyle = { color: "bg-slate-700 text-white border-slate-800", icon: <Check className="w-2.5 h-2.5" /> };
+
+                                  let isAtrasado = false;
+                                  let minutosAtraso = 0;
+                                  if (a.horarioInicio && ["aguardando", "confirmado"].includes(a.status?.toLowerCase() || "")) {
+                                    const [hStr, mStr] = a.horarioInicio.split(':');
+                                    if (hStr && mStr && a.data) {
+                                       const dataAlocacao = new Date(a.data);
+                                       dataAlocacao.setHours(Number(hStr), Number(mStr), 0, 0);
+                                       if (isSameDay(dataAlocacao, new Date())) {
+                                          const diffMinutos = Math.floor((new Date().getTime() - dataAlocacao.getTime()) / 60000);
+                                          if (diffMinutos > 0) {
+                                             isAtrasado = true;
+                                             minutosAtraso = diffMinutos;
+                                          }
+                                       }
+                                    }
+                                  }
+
+                                  return (
+                                    <TableRow key={i} className="hover:bg-slate-50/80 transition-colors border-b border-slate-100">
+                                      <TableCell className="text-xs font-semibold pl-6">{a.data ? format(new Date(a.data), 'dd/MM/yyyy') : "—"}</TableCell>
+                                      <TableCell className="text-xs font-bold text-slate-900">{prest?.nome || a.prestadorNome || "—"}</TableCell>
+                                      <TableCell className="text-[10px] font-semibold text-slate-500">{a.clienteNome || "—"}</TableCell>
+                                      <TableCell className="text-xs font-semibold text-slate-700">{veiculoLabel}</TableCell>
+                                      <TableCell><span className="font-mono font-bold text-slate-800 bg-slate-100 border-t-2 border-t-blue-600 border-x border-b border-slate-300 px-1.5 py-0.5 rounded shadow-[0_1px_2px_rgba(0,0,0,0.1)] text-[10px] uppercase tracking-wider">{placaLabel}</span></TableCell>
+                                      <TableCell className="text-xs font-bold text-slate-700">{a.os || "—"}</TableCell>
+                                      <TableCell>
+                                        <Badge className={`text-[9px] font-bold px-1.5 py-0.5 flex items-center w-max gap-1 border shadow-sm ${statusStyle.color}`}>
+                                          {statusStyle.icon}
+                                          <span className="uppercase">{statusAtual}</span>
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        <Badge className={`text-[9px] font-bold px-1.5 py-0.5 border shadow-sm ${
+                                          financeiroStatus === 'ok' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                          financeiroStatus === 'pendente' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                          financeiroStatus === 'fallback' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                          financeiroStatus === 'manual' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                          'bg-slate-50 text-slate-700 border-slate-200'
+                                        }`}>
+                                          {financeiroStatus === 'ok' && <CheckCircle className="w-2.5 h-2.5 mr-1 inline" />}
+                                          {financeiroStatus === 'pendente' && <AlertTriangle className="w-2.5 h-2.5 mr-1 inline" />}
+                                          {financeiroStatus === 'fallback' && <AlertTriangle className="w-2.5 h-2.5 mr-1 inline" />}
+                                          <span className="uppercase">{financeiroStatus}</span>
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-xs text-blue-600 font-bold text-right">{valorCliente > 0 ? `R$ ${Number(valorCliente).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : "—"}</TableCell>
+                                      <TableCell className="text-xs text-emerald-600 font-bold text-right">{repasse > 0 ? `R$ ${Number(repasse).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : "—"}</TableCell>
+                                      <TableCell className="text-xs text-orange-600 font-bold text-right">{acrescimos > 0 ? `R$ ${Number(acrescimos).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : "—"}</TableCell>
+                                      <TableCell className="text-xs text-amber-600 font-bold text-right">{espera > 0 ? `R$ ${Number(espera).toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : "—"}</TableCell>
+                                      <TableCell className="text-[10px] font-semibold text-center text-slate-500">{a.regiao || "—"}</TableCell>
+                                      <TableCell className="text-[10px] font-semibold text-center text-slate-500">
+                                        <div className="flex flex-col items-center justify-center gap-1">
+                                           <span>{a.horarioInicio || "—"}</span>
+                                           {isAtrasado ? (
+                                             <span className="text-[8px] font-bold bg-rose-100 text-rose-700 px-1 rounded-sm flex items-center gap-0.5"><AlertTriangle className="w-2 h-2"/> +{minutosAtraso}min</span>
+                                           ) : (
+                                             a.horarioInicio && (statusAtual.toLowerCase() === "aguardando" || statusAtual.toLowerCase() === "confirmado") && (
+                                               <span className="text-[8px] font-bold bg-emerald-100 text-emerald-700 px-1 rounded-sm">No Prazo</span>
+                                             )
+                                           )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="text-right pr-6 space-x-1">
+                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-blue-600" onClick={(e) => { e.stopPropagation(); handleCellClick(a.prestadorId, new Date(a.data)); }} title="Editar">
+                                          <Edit className="w-3.5 h-3.5" />
+                                        </Button>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-emerald-600" onClick={(e) => { e.stopPropagation(); handleShareWhatsApp(a); }} title="WhatsApp">
+                                          <MessageCircle className="w-3.5 h-3.5" />
+                                        </Button>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-rose-600" onClick={(e) => { e.stopPropagation(); handleGerarRelatorioPagamento(a); }} title="PDF">
+                                          <FileText className="w-3.5 h-3.5" />
+                                        </Button>
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })
+                              )}
+                            </TableBody>
+                          </Table>
                         </div>
-                      </CardHeader>
-                      <CardContent className="p-0">
-                        <div className="overflow-x-auto">
+              </div>
+          </TabsContent>
+
+                  <TabsContent value="confirmacoes" className="data-[state=active]:flex-1 data-[state=active]:flex data-[state=active]:flex-col overflow-auto m-0 p-0 bg-white custom-scrollbar h-full">
+                    <div className="flex flex-col h-full bg-white">
+                      <div className="border-b border-slate-200 bg-slate-50/50 py-1.5 px-4 flex flex-row items-center justify-between sticky top-0 z-20">
+                        <div className="flex items-center gap-3">
+                          <h4 className="text-[11px] font-black text-slate-800 uppercase flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-primary"/> Confirmações e Fila</h4>
+                          <span className="text-[10px] font-semibold text-slate-400 hidden sm:inline-block">Status integrado ao controle de pátio</span>
+                        </div>
+                      </div>
+                      <div className="overflow-x-auto flex-1">
                           <Table>
                             <TableHeader className="bg-slate-50/50">
                               <TableRow className="border-b border-slate-100">
@@ -1085,89 +1495,128 @@ export default function EscalaLista() {
                               </TableRow>
                             </TableHeader>
                             <TableBody className="divide-y divide-slate-100">
-                              {confirmacoesCarregamento.map((c) => (
-                                <TableRow key={c.id} className="hover:bg-slate-50/80 transition-colors border-b border-slate-100">
-                                  <TableCell className="pl-6">
-                                    <div className="font-bold text-slate-900 text-xs">{c.prestador}</div>
-                                    <Badge className={`text-[9px] font-bold border-0 px-2 py-0.2 mt-1 ${
-                                      c.tipo === "agregado" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800"
-                                    }`}>
-                                      {c.tipo === "agregado" ? "Agregado / Frota" : "Esporádico"}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="font-bold text-slate-700 text-xs">{c.os}</div>
-                                    <div className="text-[10px] font-semibold text-slate-400">{c.cliente}</div>
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="font-semibold text-slate-700 text-xs">{c.veiculo}</div>
-                                    <span className="font-black text-slate-600 bg-slate-100 px-1 py-0.5 rounded text-[10px]">{c.placa}</span>
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="font-bold text-slate-700 text-xs">{c.destino}</div>
-                                    <div className="text-[10px] font-semibold text-slate-400">Região Principal</div>
-                                  </TableCell>
-                                  <TableCell className="text-xs text-slate-600 font-medium">
-                                    {c.horarioCarregamento.split(" ")[1]}
-                                  </TableCell>
-                                  <TableCell className="font-bold text-slate-700 text-xs">
-                                    {c.posicaoFila ? `${c.posicaoFila}º lugar` : "—"}
-                                  </TableCell>
-                                  <TableCell>
-                                    {c.status === "liberado_para_rota" && (
-                                      <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-[9px] border-0 px-2 py-0.5">
-                                        Liberado Rota
-                                      </Badge>
-                                    )}
-                                    {c.status === "carregamento_iniciado" && (
-                                      <Badge className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-[9px] border-0 px-2 py-0.5 animate-pulse">
-                                        Em Carregamento
-                                      </Badge>
-                                    )}
-                                    {c.status === "aguardando_prestador" && (
-                                      <Badge className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-[9px] border-0 px-2 py-0.5">
-                                        Aguard. Chegada
-                                      </Badge>
-                                    )}
-                                    {c.status === "divergencia" && (
-                                      <Badge className="bg-rose-500 hover:bg-rose-600 text-white font-bold text-[9px] border-0 px-2 py-0.5">
-                                        Divergência
-                                      </Badge>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-right pr-6">
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm"
-                                      className="text-orange-500 hover:text-orange-600 font-bold text-xs gap-1"
-                                      onClick={() => {
-                                        setSelectedCarregamentoDetail(c);
-                                        setShowCarregamentoDetailModal(true);
-                                      }}
-                                    >
-                                      <ExternalLink className="w-3.5 h-3.5" />
-                                      Ver Carregamento
-                                    </Button>
+                              {alocacoesFiltradas.filter(a => a.data && diasPeriodo.some(dp => isSameDay(dp, new Date(a.data)))).length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={8} className="h-32 text-center text-slate-500 font-medium">
+                                    Nenhuma confirmação pendente para os filtros selecionados.
                                   </TableCell>
                                 </TableRow>
-                              ))}
+                              ) : (
+                                alocacoesFiltradas.filter(a => a.data && diasPeriodo.some(dp => isSameDay(dp, new Date(a.data)))).map((c, i) => {
+                                  const prest = prestadores.find(p => p.id === c.prestadorId);
+                                  const veiculoLabel = prest ? (TIPO_VEICULO_LABEL[prest.veiculo as keyof typeof TIPO_VEICULO_LABEL] || prest.veiculo) : (c.prestadorVeiculo?.tipo_veiculo || "—");
+                                  const placaLabel = prest?.placa || c.prestadorVeiculo?.placa || "—";
+                                  const statusAtual = c.status || "—";
+                                  let statusStyle = { label: statusAtual, color: "bg-slate-100 text-slate-600 border-slate-200", icon: null as React.ReactNode };
+                                  if (statusAtual.toLowerCase() === "confirmado") statusStyle = { label: 'Liberado Rota', color: "bg-emerald-500 text-white border-emerald-600", icon: <CheckCircle className="w-2.5 h-2.5" /> };
+                                  else if (statusAtual.toLowerCase() === "operacao") statusStyle = { label: 'Em Rota', color: "bg-blue-600 text-white border-blue-700", icon: <Truck className="w-2.5 h-2.5" /> };
+                                  else if (statusAtual.toLowerCase() === "aguardando") statusStyle = { label: 'Aguard. Chegada', color: "bg-orange-500 text-white border-orange-600", icon: <Clock className="w-2.5 h-2.5" /> };
+                                  else if (["divergencia", "ocorrencia", "bloqueado"].includes(statusAtual.toLowerCase())) statusStyle = { label: 'Divergência', color: "bg-rose-500 text-white border-rose-600", icon: <AlertTriangle className="w-2.5 h-2.5" /> };
+                                  else if (["cancelado"].includes(statusAtual.toLowerCase())) statusStyle = { label: 'Cancelado', color: "bg-rose-500 text-white border-rose-600", icon: <AlertTriangle className="w-2.5 h-2.5" /> };
+
+                                  let isAtrasado = false;
+                                  let minutosAtraso = 0;
+                                  if (c.horarioInicio && ["aguardando"].includes(c.status?.toLowerCase() || "")) {
+                                    const [hStr, mStr] = c.horarioInicio.split(':');
+                                    if (hStr && mStr && c.data) {
+                                       const dataAlocacao = new Date(c.data);
+                                       dataAlocacao.setHours(Number(hStr), Number(mStr), 0, 0);
+                                       if (isSameDay(dataAlocacao, new Date())) {
+                                          const diffMinutos = Math.floor((new Date().getTime() - dataAlocacao.getTime()) / 60000);
+                                          if (diffMinutos > 0) {
+                                             isAtrasado = true;
+                                             minutosAtraso = diffMinutos;
+                                          }
+                                       }
+                                    }
+                                  }
+
+                                  return (
+                                    <TableRow key={c.id || i} className="hover:bg-slate-50/80 transition-colors border-b border-slate-100">
+                                      <TableCell className="pl-6">
+                                        <div className="font-bold text-slate-900 text-xs">{c.prestadorNome || prest?.nome || "—"}</div>
+                                        <Badge className={`text-[9px] font-bold border-0 px-2 py-0.2 mt-1 ${
+                                          c.turno === "integral" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800"
+                                        }`}>
+                                          {c.turno === "integral" ? "Integral" : "Meio Período"}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-bold text-slate-700 text-xs">{c.os || "—"}</div>
+                                        <div className="text-[10px] font-semibold text-slate-400">{c.clienteNome || "—"}</div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-semibold text-slate-700 text-xs">{veiculoLabel}</div>
+                                        <div className="mt-1"><span className="font-mono font-bold text-slate-800 bg-slate-100 border-t-2 border-t-blue-600 border-x border-b border-slate-300 px-1.5 py-0.5 rounded shadow-[0_1px_2px_rgba(0,0,0,0.1)] text-[10px] uppercase tracking-wider">{placaLabel}</span></div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="font-bold text-slate-700 text-xs">Região Principal</div>
+                                      </TableCell>
+                                      <TableCell className="text-xs text-slate-600 font-medium">
+                                        <div className="flex flex-col items-start gap-1">
+                                           <span>{c.horarioInicio || "08:00"}</span>
+                                           {isAtrasado && (
+                                             <span className="text-[8px] font-bold bg-rose-100 text-rose-700 px-1 rounded-sm flex items-center w-max gap-0.5"><AlertTriangle className="w-2 h-2"/> +{minutosAtraso}min</span>
+                                           )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-1 bg-slate-50 border border-slate-100 w-max px-2 py-1 rounded-full shadow-inner">
+                                           <span className={`w-2 h-2 rounded-full ${statusAtual.toLowerCase() === 'aguardando' || statusAtual.toLowerCase() === 'confirmado' || statusAtual.toLowerCase() === 'operacao' ? 'bg-orange-500 shadow-[0_0_5px_rgba(249,115,22,0.5)]' : 'bg-slate-300'}`} title="Portaria"></span>
+                                           <div className={`w-3 h-px ${statusAtual.toLowerCase() === 'confirmado' || statusAtual.toLowerCase() === 'operacao' ? 'bg-orange-300' : 'bg-slate-200'}`}></div>
+                                           <span className={`w-2 h-2 rounded-full ${statusAtual.toLowerCase() === 'confirmado' || statusAtual.toLowerCase() === 'operacao' ? 'bg-orange-500 shadow-[0_0_5px_rgba(249,115,22,0.5)]' : 'bg-slate-300'}`} title="Doca"></span>
+                                           <div className={`w-3 h-px ${statusAtual.toLowerCase() === 'confirmado' || statusAtual.toLowerCase() === 'operacao' ? 'bg-emerald-300' : 'bg-slate-200'}`}></div>
+                                           <span className={`w-2 h-2 rounded-full ${statusAtual.toLowerCase() === 'confirmado' || statusAtual.toLowerCase() === 'operacao' ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]' : 'bg-slate-300'}`} title="Liberado"></span>
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge className={`text-[9px] font-bold px-1.5 py-0.5 flex items-center w-max gap-1 border shadow-sm ${statusStyle.color}`}>
+                                          {statusStyle.icon}
+                                          <span className="uppercase">{statusStyle.label}</span>
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right pr-6">
+                                        <Button 
+                                          variant="ghost" 
+                                          size="sm"
+                                          className="text-orange-500 hover:text-orange-600 font-bold text-xs gap-1"
+                                          onClick={() => {
+                                            setSelectedCarregamentoDetail(c);
+                                            setShowCarregamentoDetailModal(true);
+                                          }}
+                                        >
+                                          <ExternalLink className="w-3.5 h-3.5" />
+                                          Ver Carregamento
+                                        </Button>
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })
+                              )}
                             </TableBody>
                           </Table>
                         </div>
-                      </CardContent>
-                    </Card>
+                    </div>
                   </TabsContent>
                 </Tabs>
-              </div>
-       </div>
 
         {/* Modal de Reserva */}
         <Dialog open={modalOpen} onOpenChange={setModalOpen}>
           <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Gerenciar Alocação de Recurso</DialogTitle>
-              <DialogDescription>
-                Alocação para <strong className="text-slate-800">{prestadorAtivo?.nome || 'Novo Prestador'}</strong> em <strong className="text-slate-800">{selectedCell?.data ? format(selectedCell.data, "dd/MM/yyyy") : 'Data não selecionada'}</strong>.
+              <DialogDescription className="flex items-center flex-wrap gap-1 mt-1">
+                Alocação para <strong className="text-slate-800">{prestadorAtivo?.nome || 'Prestador em seleção'}</strong> em
+                <Input 
+                  type="date" 
+                  className="h-8 text-xs w-[130px] ml-1 bg-white" 
+                  value={selectedCell?.data ? format(selectedCell.data, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd")}
+                  onChange={(e) => {
+                     if(e.target.value) {
+                       setSelectedCell({ prestadorId: selectedCell?.prestadorId || "", data: new Date(e.target.value + "T12:00:00") });
+                     }
+                  }}
+                />
               </DialogDescription>
             </DialogHeader>
             
@@ -1181,20 +1630,46 @@ export default function EscalaLista() {
              <TabsContent value="dados" className="space-y-4 py-4">
                 <div className="space-y-1">
                    <Label className="text-xs font-bold text-primary">Prestador *</Label>
-                   <SearchableSelect 
-                     table="prestadores" 
-                     labelField="nome_completo" 
-                     searchFields={["nome_completo", "cpf_cnpj"]} 
-                     value={novoPrestadorId} 
-                     onChange={(id, item) => {
-                       setNovoPrestadorId(id || "");
-                       if (item) {
-                         setNovoPrestadorNome(item.nome_completo);
-                         buscarDadosVeiculoPrestador(id || "");
-                       }
-                     }} 
-                     placeholder="Pesquisar por nome ou CPF/CNPJ..."
-                   />
+                   <div className="relative">
+                     <Input 
+                       placeholder="Pesquisar prestador (nome, placa, veículo)..."
+                       value={filtroPrestadorModal}
+                       onChange={(e) => {
+                          setFiltroPrestadorModal(e.target.value);
+                          setShowPrestadorDropdown(true);
+                          if(novoPrestadorId) { 
+                             setNovoPrestadorId(""); 
+                             setNovoPrestadorNome(""); 
+                             setPrestadorVeiculo(null); 
+                          }
+                       }}
+                       onFocus={() => setShowPrestadorDropdown(true)}
+                       className="h-9 text-xs"
+                     />
+                     {showPrestadorDropdown && filtroPrestadorModal.length > 0 && (
+                       <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-48 overflow-y-auto z-50">
+                          {prestadores.filter(p => p.nome.toLowerCase().includes(filtroPrestadorModal.toLowerCase()) || (p.placa && p.placa.toLowerCase().includes(filtroPrestadorModal.toLowerCase())) || (p.veiculo && p.veiculo.toLowerCase().includes(filtroPrestadorModal.toLowerCase()))).length === 0 ? (
+                            <div className="p-2 text-xs text-slate-500">Nenhum prestador encontrado.</div>
+                          ) : (
+                            prestadores.filter(p => p.nome.toLowerCase().includes(filtroPrestadorModal.toLowerCase()) || (p.placa && p.placa.toLowerCase().includes(filtroPrestadorModal.toLowerCase())) || (p.veiculo && p.veiculo.toLowerCase().includes(filtroPrestadorModal.toLowerCase()))).map(p => (
+                              <div key={p.id} className="p-2 text-xs cursor-pointer hover:bg-slate-50 border-b last:border-b-0" onClick={() => {
+                                setNovoPrestadorId(p.id);
+                                setNovoPrestadorNome(p.nome);
+                                setFiltroPrestadorModal(p.nome);
+                                setShowPrestadorDropdown(false);
+                                buscarDadosVeiculoPrestador(p.id);
+                              }}>
+                                <div className="font-bold text-slate-800">{p.nome}</div>
+                                <div className="text-[10px] text-slate-500 flex gap-2 mt-0.5">
+                                  <span>Placa: {p.placa || "N/A"}</span>
+                                  <span>Veículo: {p.veiculo || "N/A"}</span>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                       </div>
+                     )}
+                   </div>
                  </div>
                  {prestadorVeiculo && (
                    <div className="p-3 bg-slate-100 rounded-xl border border-slate-200">
@@ -1225,7 +1700,7 @@ export default function EscalaLista() {
                        if (item) {
                          setNovoClienteNome(item.nome_fantasia);
                          if (prestadorVeiculo?.tipo_veiculo) {
-                           buscarTabelaValoresCliente(id || "", prestadorVeiculo.tipo_veiculo);
+                           buscarTabelaValoresCliente(id || "", item.nome_fantasia || item.razao_social || "", prestadorVeiculo.tipo_veiculo);
                          }
                        }
                      }} 
@@ -1238,6 +1713,15 @@ export default function EscalaLista() {
                      Buscando tabela de valores...
                    </div>
                  )}
+                 {novoClienteId && !tabelaValores && !loadingTabelaValores && (
+                   <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 flex gap-2 items-center">
+                     <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                     <div className="flex flex-col">
+                       <span className="font-bold text-rose-800 text-xs">Nenhuma tabela de preço encontrada para este cliente/veículo.</span>
+                       <span className="text-[10px] text-rose-600">Alocação ficará com financeiro pendente ou zerado.</span>
+                     </div>
+                   </div>
+                 )}
                  {tabelaValores && (
                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
                      <div className="flex items-center justify-between text-xs">
@@ -1246,7 +1730,16 @@ export default function EscalaLista() {
                      </div>
                    </div>
                  )}
-                 <div className="space-y-1">
+                 {novoPrestadorId && (!prestadores.find(p => p.id === novoPrestadorId)?.financeiro_real || prestadores.find(p => p.id === novoPrestadorId)?.financeiro_real?.valor_diaria === 0) && (
+                   <div className="p-3 bg-orange-50 rounded-xl border border-orange-200 flex gap-2 items-center mt-2">
+                     <AlertTriangle className="w-4 h-4 text-orange-600 shrink-0" />
+                     <div className="flex flex-col">
+                       <span className="font-bold text-orange-800 text-xs">Prestador sem regra financeira de repasse cadastrada.</span>
+                       <span className="text-[10px] text-orange-600">O sistema usará regras de repasse genéricas como fallback.</span>
+                     </div>
+                   </div>
+                 )}
+                 <div className="space-y-1 mt-3">
                    <Label className="text-xs text-muted-foreground italic">OS vinculada (opcional)</Label>
                    <SearchableSelect 
                      table="ordens_servico" 
@@ -1369,9 +1862,89 @@ export default function EscalaLista() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Inputs Column */}
                   <div className="md:col-span-2 space-y-4">
+                    {/* Faturamento Cliente - Tabela e Ajuste */}
+                    <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-4">
+                      <h4 className="text-xs font-bold text-blue-800 uppercase tracking-wider flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5"/> Faturamento do Cliente</h4>
+                      
+                      
+                      {tabelaRascunhoEncontrada && !tabelaValores && (
+                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-2 flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                            <div className="text-xs text-amber-800">
+                               <strong>Aviso:</strong> Existe a tabela específica <em>"{tabelaRascunhoEncontrada.nome}"</em> para este cliente e veículo, mas ela está com status <strong>{tabelaRascunhoEncontrada.status.toUpperCase()}</strong> (inativa). Ela não será usada nesta operação.
+                            </div>
+                         </div>
+                      )}
+
+                      <div className="bg-white border rounded-lg p-3 grid grid-cols-2 gap-4">
+                        <div>
+                           <p className="text-[10px] text-slate-500 font-semibold uppercase">Tabela Utilizada</p>
+                           <p className="text-xs font-bold text-slate-800 mt-0.5">{tabelaValores ? tabelaValores.nome : 'NENHUMA TABELA VINCULADA'}</p>
+                           {tabelaValores && <p className="text-[10px] text-slate-500 mt-0.5">Vigência: {tabelaValores.data_inicio ? format(new Date(tabelaValores.data_inicio), 'dd/MM/yyyy') : 'Sem data'} a {tabelaValores.data_fim ? format(new Date(tabelaValores.data_fim), 'dd/MM/yyyy') : 'Sem data'}</p>}
+                           {!tabelaValores && novoClienteId && <p className="text-[9px] text-red-500 mt-1">Nenhuma tabela ativa para este cliente e veículo.</p>}
+                        </div>
+                        <div>
+                           <p className="text-[10px] text-slate-500 font-semibold uppercase">Parâmetros (Base / KM)</p>
+                           <p className="text-xs font-bold text-slate-800 mt-0.5">
+                             {tabelaValores ? `R$ ${tabelaValores.valor_base?.toFixed(2)} / R$ ${tabelaValores.valor_km_excedente?.toFixed(2)}` : '-'}
+                           </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-4 pt-1">
+                         <div className="space-y-1">
+                            <Label className="text-xs text-blue-900 font-semibold">Ajuste Manual (R$)</Label>
+                            <Input 
+                              type="number" 
+                              value={ajusteClienteValor} 
+                              onChange={e => setAjusteClienteValor(Number(e.target.value))} 
+                              className="h-9 border-blue-200 focus-visible:ring-blue-500" 
+                            />
+                         </div>
+                         <div className="space-y-1">
+                            <Label className="text-xs text-blue-900 font-semibold">Motivo do Ajuste</Label>
+                            <Input 
+                              type="text" 
+                              placeholder="Obrigatório"
+                              value={ajusteClienteMotivo} 
+                              onChange={e => setAjusteClienteMotivo(e.target.value)} 
+                              className={`h-9 ${(!tabelaValores || ajusteClienteValor !== 0) && !ajusteClienteMotivo ? 'border-red-300 ring-1 ring-red-100' : 'border-blue-200'}`} 
+                            />
+                         </div>
+                         <div className="space-y-1">
+                            <Label className="text-xs text-blue-900 font-semibold">Espera (min)</Label>
+                            <Input 
+                              type="number" 
+                              placeholder="Tempo aguardado"
+                              value={minutosEspera} 
+                              onChange={e => setMinutosEspera(Number(e.target.value))} 
+                              className="h-9 border-blue-200 focus-visible:ring-blue-500" 
+                            />
+                            {minutosEspera > 0 && tabelaValores?.adicionais?.espera?.ativo && (!tabelaValores.adicionais.espera.faixas || tabelaValores.adicionais.espera.faixas.length === 0) && (
+                              <p className="text-[9px] text-orange-600 flex items-center gap-1 mt-1">
+                                <AlertTriangle className="w-3 h-3"/> Faixas de espera não cadastradas. Usando regra legada (valor fixo/hora).
+                              </p>
+                            )}
+                         </div>
+                      </div>
+                    </div>
+
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Valor do Prestador</h4>
-                      <div className="grid grid-cols-2 gap-4">
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1"><Truck className="w-3.5 h-3.5"/> Valor do Prestador</h4>
+                      
+                      {tabelaValores && tabelaValores.tipo_repasse_prestador && (!prestadores.find(p => p.id === novoPrestadorId)?.financeiro_real || prestadores.find(p => p.id === novoPrestadorId)?.financeiro_real?.valor_diaria === 0) && (
+                         <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-2 flex flex-col gap-1">
+                            <span className="text-[10px] text-orange-800 font-bold flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> FALLBACK: REGRA DA TABELA DO CLIENTE</span>
+                            <span className="text-xs font-bold text-orange-900">
+                               {tabelaValores.tipo_repasse_prestador === 'percentual' 
+                                 ? `${tabelaValores.percentual_prestador}% sobre o faturamento` 
+                                 : `Valor Fixo de R$ ${tabelaValores.valor_fixo_prestador}`}
+                            </span>
+                            <span className="text-[9px] text-orange-700">Prestador sem financeiro próprio. Usando regra de repasse embutida na tabela do cliente.</span>
+                         </div>
+                      )}
+                      
+                      <div className="grid grid-cols-3 gap-4">
                          <div className="space-y-1">
                             <Label className="text-xs">Tipo de Cálculo</Label>
                             <Select value={financeiro.valorTipo} onValueChange={v => setFinanceiro(f => ({ ...f, valorTipo: v as any }))}>
@@ -1382,17 +1955,17 @@ export default function EscalaLista() {
                                </SelectContent>
                             </Select>
                          </div>
-                         {financeiro.valorTipo === 'percentual' ? (
-                           <div className="space-y-1">
-                              <Label className="text-xs">Percentual (%)</Label>
-                              <Input type="number" value={financeiro.valorPercentual} onChange={e => setFinanceiro(f => ({ ...f, valorPercentual: Number(e.target.value) }))} className="h-9" />
-                           </div>
-                         ) : (
-                           <div className="space-y-1">
-                              <Label className="text-xs">Valor Fixo (R$)</Label>
-                              <Input type="number" value={financeiro.valorFixo} onChange={e => setFinanceiro(f => ({ ...f, valorFixo: Number(e.target.value) }))} className="h-9" />
-                           </div>
-                         )}
+                         <div className="space-y-1">
+                            <Label className="text-xs">{financeiro.valorTipo === 'percentual' ? 'Percentual (%)' : 'Valor Fixo (R$)'}</Label>
+                            <Input type="number" value={financeiro.valorTipo === 'percentual' ? financeiro.valorPercentual : financeiro.valorFixo} onChange={e => {
+                              if (financeiro.valorTipo === 'percentual') setFinanceiro(f => ({...f, valorPercentual: Number(e.target.value)}));
+                              else setFinanceiro(f => ({...f, valorFixo: Number(e.target.value)}));
+                            }} className="h-9" />
+                         </div>
+                         <div className="space-y-1">
+                            <Label className="text-xs">KM Excedente (R$)</Label>
+                            <Input type="number" value={kmExcedentePrestador} onChange={e => setKmExcedentePrestador(Number(e.target.value))} className="h-9" />
+                         </div>
                       </div>
                     </div>
                     
@@ -1459,23 +2032,61 @@ export default function EscalaLista() {
                       {(() => {
                         const res = calcularTotalAlocacao();
                         return (
-                          <div className="mt-3 space-y-2 text-xs">
-                            <div className="flex justify-between items-center py-1 border-b">
-                              <span className="text-slate-500 font-semibold">Diária Base:</span>
-                              <span className="font-bold text-slate-800">R$ {res.valorBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          <div className="mt-3 space-y-4 text-xs">
+                            {/* CLIENTE / FATURAMENTO */}
+                            <div>
+                              <p className="font-bold text-slate-700 uppercase mb-1 flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-500"/> Faturamento Cliente</p>
+                              {res.cliente.valorBase === 0 && <p className="text-[9px] text-red-500 font-bold bg-red-50 border border-red-200 p-1 rounded mb-2">⚠️ Sem Tabela - Valor Zerado</p>}
+                              <div className="flex justify-between items-center py-0.5">
+                                <span className="text-slate-500">Valor Base (Tabela):</span>
+                                <span className="font-semibold text-slate-800">R$ {res.cliente.valorBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-0.5">
+                                <span className="text-slate-500">Adicionais (KM exced.):</span>
+                                <span className="font-semibold text-slate-800">R$ {res.cliente.adicionais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-1 mt-1 border-t">
+                                <span className="text-slate-600 font-bold">Total a Faturar:</span>
+                                <span className="font-bold text-blue-600 text-sm">R$ {res.cliente.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                              </div>
                             </div>
-                            <div className="flex justify-between items-center py-1 border-b">
-                              <span className="text-slate-500 font-semibold">Adicionais:</span>
-                              <span className="font-bold text-slate-800 text-green-600">+ R$ {res.totalAdicionais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+
+                            {/* PRESTADOR / REPASSE */}
+                            <div>
+                              <p className="font-bold text-slate-700 uppercase mb-1 flex items-center gap-1"><Truck className="w-3 h-3 text-orange-500"/> Repasse Prestador</p>
+                              <div className="flex justify-between items-center py-0.5">
+                                <span className="text-slate-500">Diária Base:</span>
+                                <span className="font-semibold text-slate-800">R$ {res.prestador.valorBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-0.5">
+                                <span className="text-slate-500">Adicionais (+):</span>
+                                <span className="font-semibold text-green-600">+ R$ {res.prestador.adicionais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-0.5">
+                                <span className="text-slate-500">Descontos (-):</span>
+                                <span className="font-semibold text-red-500">- R$ {res.prestador.descontos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-1 mt-1 border-t">
+                                <span className="text-slate-600 font-bold">Total a Pagar:</span>
+                                <span className="font-bold text-orange-600 text-sm">R$ {res.prestador.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                              </div>
                             </div>
-                            <div className="flex justify-between items-center py-1 border-b text-red-500">
-                              <span className="font-semibold">Descontos:</span>
-                              <span className="font-bold">- R$ {res.totalDescontos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                            </div>
-                            
-                            <div className="bg-white border rounded-lg p-2 mt-4 text-center">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase">Total Final Estimado</p>
-                              <p className="text-lg font-black text-green-600 mt-0.5">R$ {res.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+
+                            {/* RESULTADO (MARGEM) */}
+                            <div className="bg-white border p-2 rounded mt-2">
+                              <p className="font-bold text-slate-700 uppercase mb-1 text-[10px]">Resultado da Operação</p>
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-500 font-medium">Margem Bruta (R$):</span>
+                                <span className={`font-bold ${res.margem.valor >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                  R$ {res.margem.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center mt-0.5">
+                                <span className="text-slate-500 font-medium">Margem (%):</span>
+                                <span className={`font-bold ${res.margem.percentual >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                  {res.margem.percentual.toFixed(1)}%
+                                </span>
+                              </div>
                             </div>
                           </div>
                         );
@@ -1777,7 +2388,8 @@ export default function EscalaLista() {
                                 tempoFinalizacaoEntregas,
                                 kmInicial,
                                 kmFinal,
-                                totals: calcularTotalAlocacao()
+                                totals: calcularTotalAlocacao(),
+                                metadata: { financeiro_status: prestadores.find(p => p.id === (novoPrestadorId || prestadorAtivo?.id))?.financeiro_real?.valor_diaria === 0 || !tabelaValores ? (!tabelaValores ? 'pendente' : 'fallback') : 'ok' }
                               };
                               handleGerarRelatorioPagamento(tempAloc);
                             }}
@@ -1793,7 +2405,7 @@ export default function EscalaLista() {
             </Tabs>
 
             <DialogFooter className="flex justify-between items-center sm:justify-between mt-4">
-              <Button variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 bg-emerald-50/50 gap-2 font-bold text-xs" onClick={() => toast.success("Mensagem enviada via WhatsApp!")}>
+              <Button variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 bg-emerald-50/50 gap-2 font-bold text-xs" onClick={() => handleShareWhatsApp(alocacaoEmEdicao)}>
                 <MessageCircle className="w-4 h-4"/> Confirmar via WA
               </Button>
               <Button onClick={handleCreateReserva}>Salvar na Grade</Button>

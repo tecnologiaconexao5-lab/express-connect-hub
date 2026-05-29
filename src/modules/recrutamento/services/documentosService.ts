@@ -36,7 +36,7 @@ export const documentosService = {
       id: generateId(),
       prestadorId: data.prestadorId ?? '',
       tipo: data.tipo ?? 'cnh',
-      status: 'pendente',
+      status: data.status ?? 'pendente',
       url: data.url ?? '',
       nomeArquivo: data.nomeArquivo ?? '',
       dataEnvio: new Date().toISOString(),

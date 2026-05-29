@@ -34,9 +34,8 @@ const logoCache = new Map<string, { base64: string; w: number; h: number }>();
  * Ordem de tentativas:
  *  1. localStorage (logo customizado da empresa — dark ou light conforme contexto)
  *  2. /logo-conexao-light.webp (servido em public/)
- *  3. /logo-oficial-conexao.png (legado, compatibilidade)
- *  4. Asset empacotado pelo Vite (garantia final)
- *  5. Texto "CONEXÃO EXPRESS"
+ *  3. Asset empacotado pelo Vite (garantia final)
+ *  4. Texto "CONEXÃO EXPRESS"
  *
  * @param isDark true quando o header tem fundo escuro (usa versão light/branca)
  * @param _scale (mantido por compatibilidade — não utilizado)
@@ -46,42 +45,24 @@ export const getLogoWithFallback = async (
   _scale: number = 1
 ): Promise<LogoResult> => {
   try {
-    // 1. localStorage — config personalizada da empresa
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("empresa_identidade_visual");
-      if (stored) {
-        try {
-          const config = JSON.parse(stored) as LogoConfig;
-
-          if (config.logoUsos?.relatoriosPdf === false) {
-            return { base64: null, isText: true };
-          }
-
-          const preferida = isDark ? config.logoDarkUrl : config.logoUrl;
-          for (const url of [preferida, config.logoDarkUrl, config.logoUrl]) {
-            if (!url) continue;
-            const loaded = await loadLogo(url);
-            if (loaded) return { ...loaded, isText: false };
-          }
-        } catch {
-          // JSON inválido — ignora e segue fallback
-        }
-      }
+    // 1. Logo oficial da pasta /logos/ (branco para fundos escuros, colorido para claros)
+    if (isDark) {
+      const logoWhite = await loadLogo("/logos/logo-conexao-branco.png");
+      if (logoWhite) return { ...logoWhite, isText: false };
+    } else {
+      const logoColor = await loadLogo("/logos/logo-conexao-colorido.png");
+      if (logoColor) return { ...logoColor, isText: false };
     }
 
-    // 2. Logo oficial servido em /public (nova versão light)
+    // 2. Fallback: logo servido em /public
     const publicLight = await loadLogo("/logo-conexao-light.webp");
     if (publicLight) return { ...publicLight, isText: false };
 
-    // 3. Legado (compatibilidade com instalações anteriores)
-    const publicLegacy = await loadLogo("/logo-oficial-conexao.png");
-    if (publicLegacy) return { ...publicLegacy, isText: false };
-
-    // 4. Asset empacotado — garantia final
+    // 3. Asset empacotado — garantia final
     const bundled = await loadLogo(logoBundledLight);
     if (bundled) return { ...bundled, isText: false };
 
-    // 5. Texto
+    // 4. Texto
     return { base64: null, isText: true };
   } catch (e) {
     console.warn("[pdfLogoSupport] Erro ao carregar logo:", e);
@@ -258,3 +239,27 @@ function detectFormat(base64: string): "PNG" | "JPEG" | "WEBP" {
     return "JPEG";
   return "PNG";
 }
+
+/** Renderiza fallback do logo com alto contraste para fundo navy */
+export const renderLogoTextPremium = (
+  doc: any,
+  x: number,
+  y: number,
+  text: string = "CONEXÃO EXPRESS",
+  subtext?: string
+) => {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(255, 255, 255);
+  doc.text(text, x, y + 6);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(249, 115, 22);
+  doc.text("TRANSPORTES & LOGÍSTICA", x, y + 13);
+  if (subtext) {
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(200, 200, 200);
+    doc.text(subtext, x, y + 18);
+  }
+};

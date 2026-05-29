@@ -1,23 +1,51 @@
 import type { DistanceResult } from "@/services/maps/types";
+import { obterClasseBadgeGlobal, obterLabelGlobal, type StatusGlobal } from "./statusGlobal";
 
 export type OSStatus = 
   | "rascunho" | "pendente" | "agendada" | "em_andamento" | "em_rota" 
   | "coletado" | "entregue" | "finalizada" | "cancelada" | "ocorrencia";
 
-export const STATUS_OPERACIONAL: Record<OSStatus, { label: string; twClass: string }> = {
-  "rascunho": { label: "Rascunho", twClass: "bg-gray-200 text-gray-800" },
-  "pendente": { label: "Pendente", twClass: "bg-yellow-100 text-yellow-800" },
-  "agendada": { label: "Agendada", twClass: "bg-blue-100 text-blue-800" },
-  "em_andamento": { label: "Em Andamento", twClass: "bg-blue-500 text-white" },
+export interface StatusInfo {
+  label: string;
+  twClass: string;
+}
+
+export const STATUS_OPERACIONAL: Record<OSStatus, StatusInfo> = {
+  "rascunho": { label: "Rascunho", twClass: "bg-slate-600 text-white" },
+  "pendente": { label: "Pendente", twClass: "bg-amber-500 text-white" },
+  "agendada": { label: "Alocado", twClass: "bg-blue-600 text-white" },
+  "em_andamento": { label: "Carregando", twClass: "bg-orange-500 text-white" },
   "em_rota": { label: "Em Rota", twClass: "bg-indigo-600 text-white" },
-  "coletado": { label: "Coletado", twClass: "bg-purple-600 text-white" },
-  "entregue": { label: "Entregue", twClass: "bg-green-500 text-white" },
-  "finalizada": { label: "Finalizada", twClass: "bg-green-800 text-white" },
-  "cancelada": { label: "Cancelada", twClass: "bg-red-600 text-white" },
+  "coletado": { label: "Carregando", twClass: "bg-orange-500 text-white" },
+  "entregue": { label: "Entregue", twClass: "bg-green-600 text-white" },
+  "finalizada": { label: "Finalizado", twClass: "bg-emerald-600 text-white" },
+  "cancelada": { label: "Cancelada", twClass: "bg-slate-400 text-white" },
   "ocorrencia": { label: "Ocorrência", twClass: "bg-orange-500 text-white" },
 };
 
-export const STATUS_CORES: Record<OSStatus, { label: string; twClass: string }> = STATUS_OPERACIONAL;
+export const STATUS_CORES: Record<OSStatus, StatusInfo> = STATUS_OPERACIONAL;
+
+export function obterStatusInfoOS(statusOS: string): StatusInfo {
+  return STATUS_OPERACIONAL[statusOS as OSStatus] || { label: statusOS, twClass: "bg-slate-400 text-white" };
+}
+
+export function obterStatusGlobalOS(statusOS: string): StatusGlobal {
+  const mapa: Record<string, StatusGlobal> = {
+    rascunho: "rascunho",
+    pendente: "pendente",
+    agendada: "alocado",
+    em_andamento: "carregando",
+    em_rota: "em_rota",
+    coletado: "carregando",
+    entregue: "entregue",
+    finalizada: "finalizado",
+    cancelada: "cancelado",
+    ocorrencia: "em_rota",
+    faturada: "faturado",
+    paga: "pago_prestador",
+  };
+  return mapa[statusOS] || "pendente";
+}
 
 export type TipoOperacao = 
   | "Coleta"
@@ -271,4 +299,13 @@ export interface OrdemServico {
 
   enderecos: OSEndereco[];
   historico: OSHistorico[];
+
+  // Auto-fill tracking
+  valorClienteEditado?: boolean;
+  custoPrestadorEditado?: boolean;
+  tabelaValoresPadraoId?: string;
+  tipoCobrancaCliente?: string;
+  vencimentoPadraoCliente?: number;
+  cfopPadraoCliente?: string;
+  tomadorCliente?: string;
 }

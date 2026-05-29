@@ -1,0 +1,16 @@
+{
+  "chunks": [
+    {
+      "start": 182,
+      "end": 185,
+      "target": "  const [tabelaValores, setTabelaValores] = useState<{id: string, nome: string, valor_base: number, valor_km: number, km_franquia: number, valor_km_excedente: number, tipo_veiculo: string, status: string, data_inicio: string, data_fim: string} | null>(null);\n  const [ajusteClienteValor, setAjusteClienteValor] = useState<number>(0);\n  const [ajusteClienteMotivo, setAjusteClienteMotivo] = useState(\"\");\n  const [regraEspecialAtiva, setRegraEspecialAtiva] = useState(false);",
+      "replacement": "  const [tabelaValores, setTabelaValores] = useState<any>(null);\n  const [tabelaRascunhoEncontrada, setTabelaRascunhoEncontrada] = useState<any>(null);\n  const [ajusteClienteValor, setAjusteClienteValor] = useState<number>(0);\n  const [ajusteClienteMotivo, setAjusteClienteMotivo] = useState(\"\");\n  const [regraEspecialAtiva, setRegraEspecialAtiva] = useState(false);"
+    },
+    {
+      "start": 197,
+      "end": 240,
+      "target": "  // Função para buscar tabela de valores do cliente...",
+      "replacement": "  // Função..."
+    }
+  ]
+}

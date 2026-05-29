@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import {
   MapPin, Truck, Phone, Mail, Shield,
   FileText, MessageSquare,
   UserCheck, Ban, Send, Star, Calendar, Save, Award, XCircle,
-  UserCircle, Clock, Users,
+  UserCircle, Clock, Users, Link2, History, ClipboardCheck, CheckCircle2, Circle,
 } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -11,8 +11,10 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useEnterpriseKanbanStore } from './enterpriseKanbanStore'
 import { enterpriseKanbanService } from './enterpriseKanbanService'
-import { PIPELINE_COLUMNS, STAGE_TRANSITIONS } from './enterpriseKanbanTypes'
-import type { PipelineStage } from './enterpriseKanbanTypes'
+import { conversaoCandidatoService } from '../../services/conversaoCandidatoService'
+import { prestadoresService } from '../../services/prestadoresService'
+import { PIPELINE_COLUMNS, STAGE_TRANSITIONS, DOCS_MINIMOS_OBRIGATORIOS, DOCS_MINIMOS_OPCIONAIS, ONBOARDING_ITENS } from './enterpriseKanbanTypes'
+import type { PipelineStage, DocumentoCandidato } from './enterpriseKanbanTypes'
 import { cn } from '../../utils/cn'
 import { useRecrutamentoStore } from '../../store/recrutamentoStore'
 import { toast } from 'sonner'
@@ -54,6 +56,7 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
   const recrutamentoStore = useRecrutamentoStore()
   const [novoContato, setNovoContato] = useState('')
   const [salvandoContato, setSalvandoContato] = useState(false)
+  const [convertendo, setConvertendo] = useState(false)
   const [stageAlvo, setStageAlvo] = useState<PipelineStage | ''>('')
 
   const candidate = useMemo(
@@ -63,89 +66,23 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
 
   const possibleStages = candidate ? STAGE_TRANSITIONS[candidate.stage] ?? [] : []
 
-  const handleAbrirCadastroCompleto = () => {
+  const handleConverterTop = async () => {
     if (!candidate) return
-    const prestadorExistente = recrutamentoStore.prestadores.find(p => p.id === candidate.id || p.nome === candidate.nome)
-    
-    if (!prestadorExistente) {
-      const novoPrestador = {
-        id: candidate.id,
-        nome: candidate.nome,
-        razaoSocial: candidate.nome,
-        cpfCnpj: 'Não informado',
-        rg: '',
-        dataNascimento: '',
-        contatos: [
-          { tipo: 'telefone' as const, valor: candidate.telefone, principal: true },
-          { tipo: 'email' as const, valor: candidate.email, principal: false }
-        ],
-        endereco: {
-          cep: '',
-          logradouro: '',
-          numero: '',
-          complemento: '',
-          bairro: '',
-          cidade: candidate.cidade,
-          uf: candidate.uf
-        },
-        tipoVeiculo: candidate.veiculo,
-        placaVeiculo: candidate.placa || '',
-        eixos: 2,
-        capacidadeKg: 0,
-        capacidadeM3: 0,
-        tipoCargaVeiculo: 'seco' as const,
-        disponibilidade: 'Imediata',
-        regioesAtuacao: [candidate.cidade],
-        origemCadastro: 'manual' as const,
-        status: candidate.stage === 'aprovado' || candidate.stage === 'ativo' ? 'aprovado' as const : 'em_analise' as const,
-        score: {
-          geral: candidate.score,
-          documentacao: 50,
-          experiencia: 50,
-          reputacao: 50,
-          regularidade: 50,
-          perfil: 50,
-          tendencia: 0,
-          ultimaAtualizacao: new Date().toISOString(),
-          historico: []
-        },
-        documentos: [],
-        onboarding: 'nao_iniciado' as const,
-        canalCaptacao: 'manual' as const,
-        indicadoPor: '',
-        historico: {
-          jaCarregouConosco: false,
-          quantidadeOperacoes: 0,
-          ultimaOperacao: '',
-          clientesAtendidos: [],
-          mediaPontualidade: 100,
-          mediaOcorrencias: 0,
-          avaliacaoOperacional: 5,
-          melhorPerfilOperacao: ''
-        },
-        dataCadastro: candidate.dataEntrada || new Date().toISOString(),
-        dataAtivacao: '',
-        ultimaAtividade: candidate.dataAtualizacao || new Date().toISOString(),
-        observacoes: candidate.observacoesIA || '',
-        tags: candidate.tags || [],
-        createdAt: candidate.dataEntrada || new Date().toISOString(),
-        updatedAt: candidate.dataAtualizacao || new Date().toISOString()
-      }
-      recrutamentoStore.setPrestadores([novoPrestador, ...recrutamentoStore.prestadores])
-      recrutamentoStore.setSelectedPrestadorId(novoPrestador.id)
-    } else {
-      recrutamentoStore.setSelectedPrestadorId(prestadorExistente.id)
-    }
-    recrutamentoStore.setCurrentSection('prestadores')
-    onOpenChange(false)
+    await handleConverter()
   }
 
   const handleMover = async (stage: PipelineStage) => {
     if (!candidate) return
+    const previousStage = candidate.stage
     store.moveCandidate(candidate.id, stage)
-    await enterpriseKanbanService.mover(candidate.id, stage)
-    toast.success(`Candidato movido para "${STAGE_LABELS[stage] ?? stage}"`)
-    onOpenChange(false)
+    try {
+      await enterpriseKanbanService.mover(candidate.id, stage)
+      toast.success(`Candidato movido para "${STAGE_LABELS[stage] ?? stage}"`)
+      onOpenChange(false)
+    } catch {
+      store.moveCandidate(candidate.id, previousStage)
+      toast.error('Erro ao mover candidato')
+    }
   }
 
   const handleWhatsApp = () => {
@@ -153,22 +90,74 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
     window.open(`https://wa.me/55${candidate.telefone.replace(/\D/g, '')}`, '_blank')
   }
 
+  const handleConverter = async () => {
+    if (!candidate) return
+    setConvertendo(true)
+    try {
+      const resultado = await conversaoCandidatoService.converterCandidatoParaPrestador(candidate.id)
+      if (resultado.success) {
+        toast.success(resultado.mensagem)
+        store.moveCandidate(candidate.id, 'ativo')
+        if (resultado.prestadorId) {
+          const prestador = await prestadoresService.obter(resultado.prestadorId)
+          if (prestador) {
+            recrutamentoStore.setPrestadores([prestador, ...recrutamentoStore.prestadores.filter(p => p.id !== prestador.id)])
+            recrutamentoStore.setSelectedPrestadorId(prestador.id)
+          }
+        }
+        recrutamentoStore.setCurrentSection('prestadores')
+        onOpenChange(false)
+      } else {
+        toast.error(resultado.mensagem)
+      }
+    } catch {
+      toast.error('Erro ao converter candidato')
+    } finally {
+      setConvertendo(false)
+    }
+  }
+
   const handleRegistrarContato = async () => {
     if (!candidate || !novoContato.trim()) return
     setSalvandoContato(true)
+    const obsAnterior = candidate.observacoesIA || ''
+    const obsAtual = candidate.observacoesIA || ''
+    const novaObs = `[${new Date().toLocaleString('pt-BR')}] Contato: ${novoContato.trim()}\n${obsAtual}`
+    store.updateCandidate(candidate.id, { observacoesIA: novaObs })
     try {
-      const obsAtual = candidate.observacoesIA || ''
-      const novaObs = `[${new Date().toLocaleString('pt-BR')}] Contato: ${novoContato.trim()}\n${obsAtual}`
-      store.updateCandidate(candidate.id, { observacoesIA: novaObs })
       await enterpriseKanbanService.adicionarObservacao(candidate.id, novaObs)
       toast.success('Contato registrado!')
       setNovoContato('')
     } catch {
+      store.updateCandidate(candidate.id, { observacoesIA: obsAnterior })
       toast.error('Erro ao registrar contato')
     } finally {
       setSalvandoContato(false)
     }
   }
+
+  const toggleOnboardingItem = useCallback(async (itemNome: string, concluido: boolean) => {
+    if (!candidate) return
+    const tagName = `onboarding_${itemNome.replace(/\s+/g, '_')}`
+    const novasTags = concluido
+      ? [...candidate.tags.filter(t => t !== tagName)]
+      : [...candidate.tags, tagName as any]
+    const tagsAnteriores = candidate.tags
+
+    store.updateCandidate(candidate.id, { tags: novasTags } as any)
+    try {
+      await enterpriseKanbanService.atualizar(candidate.id, { tags: novasTags } as any)
+      await enterpriseKanbanService.registrarEvento(candidate.id, {
+        tipo: 'observacao_adicionada',
+        descricao: `Onboarding: ${itemNome} ${concluido ? 'desmarcado' : 'concluído'}`,
+        data: new Date().toISOString(),
+      })
+      toast.success(`Onboarding: ${itemNome} ${concluido ? 'desmarcado' : 'concluído'}`)
+    } catch {
+      store.updateCandidate(candidate.id, { tags: tagsAnteriores } as any)
+      toast.error('Erro ao atualizar onboarding')
+    }
+  }, [candidate])
 
   if (!candidate) return null
 
@@ -200,13 +189,19 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
             <div className="min-w-0 flex-1">
               <SheetTitle className="text-lg truncate">{candidate.nome}</SheetTitle>
               <SheetDescription className="flex items-center gap-2 mt-1">
-                <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border', STAGE_COLORS[candidate.stage])}>
+                <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border', STAGE_COLORS[candidate.stage] ?? 'text-zinc-400 bg-zinc-500/10 border-zinc-500/30')}>
                   {STAGE_LABELS[candidate.stage] ?? candidate.stage}
                 </span>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border text-amber-400 bg-amber-500/10 border-amber-500/30">
                   <Star className="w-3 h-3 fill-current" />
                   {candidate.score}
                 </span>
+                {candidate.prestadorId && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border text-emerald-400 bg-emerald-500/10 border-emerald-500/30">
+                    <Link2 className="w-3 h-3" />
+                    Prestador Vinculado
+                  </span>
+                )}
               </SheetDescription>
             </div>
           </div>
@@ -216,17 +211,19 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
           <Button 
             className="w-full text-xs h-9 gap-1.5" 
             variant="outline"
-            onClick={handleAbrirCadastroCompleto}
+            onClick={handleConverterTop}
           >
             <UserCircle className="w-4 h-4 text-primary" />
-            Abrir cadastro completo
+            Converter em Prestador
           </Button>
         </div>
 
         <Tabs defaultValue="perfil" className="w-full">
-          <TabsList className="w-full grid grid-cols-3 h-9 mb-4">
+          <TabsList className="w-full grid grid-cols-5 h-9 mb-4">
             <TabsTrigger value="perfil" className="text-[10px] gap-1"><MapPin className="w-3 h-3" /> Perfil</TabsTrigger>
             <TabsTrigger value="documentos" className="text-[10px] gap-1"><FileText className="w-3 h-3" /> Documentos</TabsTrigger>
+            <TabsTrigger value="onboarding" className="text-[10px] gap-1"><ClipboardCheck className="w-3 h-3" /> Onboarding</TabsTrigger>
+            <TabsTrigger value="historico" className="text-[10px] gap-1"><History className="w-3 h-3" /> Histórico</TabsTrigger>
             <TabsTrigger value="acoes" className="text-[10px] gap-1"><Send className="w-3 h-3" /> Ações</TabsTrigger>
           </TabsList>
 
@@ -235,8 +232,8 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
               <SectionDivider title="Identificação" />
               <InfoRow icon={<MapPin className="w-4 h-4" />} label="Cidade / UF" value={`${candidate.cidade}, ${candidate.uf}`} />
               <InfoRow icon={<Truck className="w-4 h-4" />} label="Veículo" value={`${candidate.veiculo} - ${candidate.placa}`} />
-              <InfoRow icon={<Calendar className="w-4 h-4" />} label="Data Entrada" value={new Date(candidate.dataEntrada).toLocaleDateString('pt-BR')} />
-              <InfoRow icon={<Calendar className="w-4 h-4" />} label="Última Atualização" value={new Date(candidate.dataAtualizacao).toLocaleDateString('pt-BR')} />
+              <InfoRow icon={<Calendar className="w-4 h-4" />} label="Data Entrada" value={candidate.dataEntrada ? new Date(candidate.dataEntrada).toLocaleDateString('pt-BR') : 'Não informado'} />
+              <InfoRow icon={<Calendar className="w-4 h-4" />} label="Última Atualização" value={candidate.dataAtualizacao ? new Date(candidate.dataAtualizacao).toLocaleDateString('pt-BR') : 'Não informado'} />
             </div>
             <div>
               <SectionDivider title="Contato" />
@@ -245,10 +242,25 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
             </div>
             <div>
               <SectionDivider title="Informações de Recrutamento" />
-              <InfoRow icon={<Calendar className="w-4 h-4" />} label="Data do primeiro contato" value={candidate.dataEntrada ? new Date(candidate.dataEntrada).toLocaleDateString('pt-BR') : '15/05/2026'} />
-              <InfoRow icon={<Users className="w-4 h-4" />} label="Origem do lead" value={candidate.tags.includes('indicado') ? 'Indicação' : 'Fretebras'} />
-              <InfoRow icon={<Calendar className="w-4 h-4" />} label="Último contato" value={candidate.dataAtualizacao ? new Date(candidate.dataAtualizacao).toLocaleDateString('pt-BR') : '18/05/2026'} />
-              <InfoRow icon={<Clock className="w-4 h-4" />} label="Status do contato" value="Ativo / Em análise" />
+              <InfoRow icon={<Calendar className="w-4 h-4" />} label="Data do primeiro contato" value={candidate.dataEntrada ? new Date(candidate.dataEntrada).toLocaleDateString('pt-BR') : 'Não informado'} />
+              <InfoRow icon={<Users className="w-4 h-4" />} label="Origem do lead" value={(() => {
+                const origensConhecidas: Record<string, string> = {
+                  fretebras: 'Fretebras',
+                  indicacao: 'Indicação',
+                  indicado: 'Indicação',
+                  facebook: 'Facebook',
+                  whatsapp: 'WhatsApp',
+                  site: 'Site',
+                  linkedin: 'LinkedIn',
+                  manual: 'Manual',
+                  outro: 'Outro',
+                }
+                const normalizar = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                const tagEncontrada = candidate.tags.find(t => origensConhecidas[normalizar(t)])
+                return tagEncontrada ? origensConhecidas[normalizar(tagEncontrada)] : 'Não informado'
+              })()} />
+              <InfoRow icon={<Calendar className="w-4 h-4" />} label="Último contato" value={candidate.dataAtualizacao ? new Date(candidate.dataAtualizacao).toLocaleDateString('pt-BR') : 'Não informado'} />
+              <InfoRow icon={<Clock className="w-4 h-4" />} label="Status do contato" value={STAGE_LABELS[candidate.stage] ?? candidate.stage} />
               <InfoRow icon={<MessageSquare className="w-4 h-4" />} label="Observação comercial/recrutamento" value={candidate.observacoesIA || 'Sem observações comerciais registradas.'} />
             </div>
             {candidate.tags.length > 0 && (
@@ -265,6 +277,8 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
               <SectionDivider title="Classificação" />
               <InfoRow icon={<Award className="w-4 h-4" />} label="Score" value={String(candidate.score)} />
               <InfoRow icon={<MessageSquare className="w-4 h-4" />} label="Prioridade" value={candidate.prioridade} />
+              <InfoRow icon={<UserCheck className="w-4 h-4" />} label="Status Operacional" value={candidate.statusOperacional === 'apto' ? 'Apto' : candidate.statusOperacional === 'pendente' ? 'Pendente' : candidate.statusOperacional === 'bloqueado' ? 'Bloqueado' : 'Indisponível'} />
+              <InfoRow icon={<Clock className="w-4 h-4" />} label="Disponibilidade" value={candidate.disponibilidadeTipo === 'imediata' ? 'Imediata' : candidate.disponibilidadeTipo === 'parcial' ? 'Parcial' : 'Indisponível'} />
             </div>
             {candidate.observacoesIA && (
               <div>
@@ -277,7 +291,7 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
           </TabsContent>
 
           <TabsContent value="documentos" className="space-y-4 mt-0">
-            <SectionDivider title="Status Documental" />
+            <SectionDivider title="Status Operacional" />
             <div className="grid grid-cols-2 gap-2 mb-3">
               <div className="p-3 rounded-lg bg-muted/20 border border-border/30 text-center">
                 <p className="text-[10px] text-muted-foreground uppercase">Status Geral</p>
@@ -286,10 +300,12 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
                   'text-amber-400': candidate.statusDocumental === 'parcial',
                   'text-blue-400': candidate.statusDocumental === 'pendente',
                   'text-rose-400': candidate.statusDocumental === 'vencido',
+                  'text-red-400': candidate.statusDocumental === 'bloqueado',
                 })}>
-                  {candidate.statusDocumental === 'completo' ? 'Completo' :
+                  {candidate.statusDocumental === 'completo' ? ' Completo' :
                    candidate.statusDocumental === 'parcial' ? 'Parcial' :
-                   candidate.statusDocumental === 'pendente' ? 'Pendente' : 'Vencido'}
+                   candidate.statusDocumental === 'pendente' ? 'Pendente' :
+                   candidate.statusDocumental === 'bloqueado' ? ' Bloqueado' : 'Vencido'}
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-muted/20 border border-border/30 text-center">
@@ -305,30 +321,256 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
                 <p className="text-[10px] text-muted-foreground/50 mt-0.5">{candidate.dataValidadeCNH}</p>
               </div>
             </div>
-            <SectionDivider title="Documentos" />
-            {candidate.documentos.length === 0 ? (
+
+            <SectionDivider title="Checklist Obrigatório" />
+            <div className="space-y-1.5">
+              {[...DOCS_MINIMOS_OBRIGATORIOS].map(nomeDoc => {
+                const doc = candidate.documentos.find(d => d.nome === nomeDoc)
+                const presente = doc && doc.status === 'ok'
+                const vencido = doc && doc.status === 'vencido'
+                const pendente = !doc || doc.status === 'pendente'
+
+                return (
+                  <div key={nomeDoc} className={cn(
+                    'flex items-center gap-3 p-2.5 rounded-lg border transition-colors',
+                    presente ? 'bg-emerald-500/5 border-emerald-500/20' :
+                    vencido ? 'bg-rose-500/5 border-rose-500/20' :
+                    'bg-amber-500/5 border-amber-500/20',
+                  )}>
+                    <div className={cn(
+                      'w-5 h-5 rounded-full flex items-center justify-center shrink-0',
+                      presente ? 'bg-emerald-500/20 text-emerald-400' :
+                      vencido ? 'bg-rose-500/20 text-rose-400' :
+                      'bg-amber-500/20 text-amber-400',
+                    )}>
+                      <div className={cn(
+                        'w-2 h-2 rounded-full',
+                        presente ? 'bg-emerald-400' :
+                        vencido ? 'bg-rose-400' :
+                        'bg-amber-400',
+                      )} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={cn(
+                        'text-xs font-medium',
+                        presente ? 'text-emerald-300' :
+                        vencido ? 'text-rose-300' :
+                        'text-amber-300',
+                      )}>{nomeDoc}</p>
+                      {doc?.dataValidade && (
+                        <p className="text-[10px] text-muted-foreground/50 mt-0.5">
+                          Validade: {new Date(doc.dataValidade).toLocaleDateString('pt-BR')}
+                        </p>
+                      )}
+                    </div>
+                    <span className={cn('text-[10px] font-medium px-2 py-0.5 rounded-full', {
+                      'text-emerald-400 bg-emerald-500/10': presente,
+                      'text-rose-400 bg-rose-500/10': vencido,
+                      'text-amber-400 bg-amber-500/10': pendente,
+                    })}>
+                      {presente ? 'OK' : vencido ? 'Vencido' : 'Pendente'}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+
+            <SectionDivider title="Documentos Opcionais" />
+            <div className="space-y-1.5">
+              {[...DOCS_MINIMOS_OPCIONAIS].map(nomeDoc => {
+                const doc = candidate.documentos.find(d => d.nome === nomeDoc)
+                const presente = doc && doc.status === 'ok'
+                const pendente = !doc || doc.status === 'pendente'
+
+                return (
+                  <div key={nomeDoc} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/10 border border-border/20">
+                    <div className={cn(
+                      'w-5 h-5 rounded-full flex items-center justify-center shrink-0',
+                      presente ? 'bg-emerald-500/20 text-emerald-400' : 'bg-muted/30 text-muted-foreground/40',
+                    )}>
+                      <div className={cn(
+                        'w-2 h-2 rounded-full',
+                        presente ? 'bg-emerald-400' : 'bg-muted-foreground/30',
+                      )} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={cn(
+                        'text-xs font-medium',
+                        presente ? 'text-emerald-300' : 'text-muted-foreground/50',
+                      )}>{nomeDoc}</p>
+                    </div>
+                    <span className={cn('text-[10px] font-medium px-2 py-0.5 rounded-full', {
+                      'text-emerald-400 bg-emerald-500/10': presente,
+                      'text-muted-foreground/40 bg-muted/20': pendente,
+                    })}>
+                      {presente ? 'OK' : 'Não informado'}
+                    </span>
+                  </div>
+                )
+              })}
+
+              {candidate.documentos.filter(d =>
+                ![...DOCS_MINIMOS_OBRIGATORIOS, ...DOCS_MINIMOS_OPCIONAIS].includes(d.nome as any)
+              ).length > 0 && (
+                <>
+                  <SectionDivider title="Outros Documentos" />
+                  {candidate.documentos.filter(d =>
+                    ![...DOCS_MINIMOS_OBRIGATORIOS, ...DOCS_MINIMOS_OPCIONAIS].includes(d.nome as any)
+                  ).map(doc => (
+                    <div key={doc.nome} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/20 border border-border/30">
+                      <div className={cn(
+                        'w-2 h-2 rounded-full shrink-0',
+                        doc.status === 'ok' ? 'bg-emerald-400' : doc.status === 'pendente' ? 'bg-amber-400' : 'bg-rose-400',
+                      )} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-foreground">{doc.nome}</p>
+                      </div>
+                      <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', {
+                        'text-emerald-400 bg-emerald-500/10': doc.status === 'ok',
+                        'text-amber-400 bg-amber-500/10': doc.status === 'pendente',
+                        'text-rose-400 bg-rose-500/10': doc.status === 'vencido',
+                      })}>
+                        {doc.status === 'ok' ? 'OK' : doc.status === 'pendente' ? 'Pendente' : 'Vencido'}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="onboarding" className="space-y-4 mt-0">
+            <SectionDivider title="Progresso" />
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-2 rounded-full bg-muted/30 overflow-hidden">
+                  <div
+                    className={cn(
+                      'h-full rounded-full transition-all duration-500',
+                      candidate.onboardingProgress === 100 ? 'bg-emerald-500' :
+                      candidate.onboardingProgress >= 50 ? 'bg-amber-500' :
+                      'bg-blue-500',
+                    )}
+                    style={{ width: `${candidate.onboardingProgress}%` }}
+                  />
+                </div>
+                <span className={cn(
+                  'text-xs font-bold tabular-nums shrink-0',
+                  candidate.onboardingProgress === 100 ? 'text-emerald-400' :
+                  candidate.onboardingProgress >= 50 ? 'text-amber-400' :
+                  'text-blue-400',
+                )}>
+                  {candidate.onboardingProgress}%
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground/50">
+                Status: {candidate.onboardingStatus === 'pendente' ? 'Pendente' :
+                         candidate.onboardingStatus === 'em_andamento' ? 'Em andamento' :
+                         'Concluído'}
+              </p>
+            </div>
+
+            <SectionDivider title="Checklist Operacional" />
+            <div className="space-y-1.5">
+              {(candidate.onboardingChecklist ?? []).length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-xs">
+                  Nenhum item de onboarding disponível
+                </div>
+              ) : (
+                candidate.onboardingChecklist.map(item => (
+                  <button
+                    key={item.nome}
+                    onClick={() => toggleOnboardingItem(item.nome, item.concluido)}
+                    className={cn(
+                      'w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left',
+                      item.concluido
+                        ? 'bg-emerald-500/5 border-emerald-500/20'
+                        : 'bg-muted/10 border-border/30 hover:border-border/60',
+                    )}
+                  >
+                    <div className={cn(
+                      'w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors',
+                      item.concluido
+                        ? 'text-emerald-400'
+                        : 'text-muted-foreground/30',
+                    )}>
+                      {item.concluido
+                        ? <CheckCircle2 className="w-5 h-5" />
+                        : <Circle className="w-5 h-5" />
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={cn(
+                        'text-xs font-medium capitalize',
+                        item.concluido ? 'text-emerald-300' : 'text-muted-foreground',
+                      )}>
+                        {item.nome}
+                      </p>
+                    </div>
+                    <span className={cn(
+                      'text-[10px] font-medium px-2 py-0.5 rounded-full',
+                      item.concluido
+                        ? 'text-emerald-400 bg-emerald-500/10'
+                        : 'text-muted-foreground/40 bg-muted/20',
+                    )}>
+                      {item.concluido ? 'OK' : 'Pendente'}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="historico" className="space-y-4 mt-0">
+            <SectionDivider title="Linha do Tempo" />
+            {(!candidate.historico || candidate.historico.length === 0) ? (
               <div className="text-center py-8 text-muted-foreground text-xs">
-                Nenhum documento cadastrado
+                Nenhum histórico registrado
               </div>
             ) : (
-              candidate.documentos.map(doc => (
-                <div key={doc.nome} className="flex items-center gap-3 p-3 rounded-lg bg-muted/20 border border-border/30">
-                  <div className={cn(
-                    'w-2 h-2 rounded-full shrink-0',
-                    doc.status === 'ok' ? 'bg-emerald-400' : doc.status === 'pendente' ? 'bg-amber-400' : 'bg-rose-400',
-                  )} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-foreground">{doc.nome}</p>
-                  </div>
-                  <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', {
-                    'text-emerald-400 bg-emerald-500/10': doc.status === 'ok',
-                    'text-amber-400 bg-amber-500/10': doc.status === 'pendente',
-                    'text-rose-400 bg-rose-500/10': doc.status === 'vencido',
-                  })}>
-                    {doc.status === 'ok' ? 'OK' : doc.status === 'pendente' ? 'Pendente' : 'Vencido'}
-                  </span>
-                </div>
-              ))
+              <div className="relative space-y-0">
+                {[...candidate.historico].reverse().map((evento, idx) => {
+                  const isLast = idx === candidate.historico.length - 1
+                  const iconColor = evento.tipo === 'criado' ? 'bg-blue-500'
+                    : evento.tipo === 'convertido' ? 'bg-emerald-500'
+                    : evento.tipo === 'aprovado' ? 'bg-green-500'
+                    : evento.tipo === 'bloqueado' ? 'bg-rose-500'
+                    : evento.tipo === 'observacao_adicionada' ? 'bg-amber-500'
+                    : 'bg-gray-500'
+
+                  return (
+                    <div key={idx} className="flex gap-3 pb-4 relative">
+                      {!isLast && (
+                        <div className="absolute left-[11px] top-5 bottom-0 w-px bg-border/40" />
+                      )}
+                      <div className="shrink-0 mt-1">
+                        <div className={`w-[22px] h-[22px] rounded-full ${iconColor} flex items-center justify-center`}>
+                          <div className="w-[6px] h-[6px] rounded-full bg-white" />
+                        </div>
+                      </div>
+                      <div className="min-w-0 flex-1 -mt-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-semibold text-foreground capitalize">
+                            {evento.tipo === 'criado' ? 'Criado'
+                              : evento.tipo === 'mudou_etapa' ? 'Mudou de Etapa'
+                              : evento.tipo === 'convertido' ? 'Convertido'
+                              : evento.tipo === 'bloqueado' ? 'Bloqueado'
+                              : evento.tipo === 'aprovado' ? 'Aprovado'
+                              : evento.tipo === 'observacao_adicionada' ? 'Observação'
+                              : evento.tipo}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground/50">
+                            {new Date(evento.data).toLocaleString('pt-BR')}
+                          </span>
+                        </div>
+                        <p className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">
+                          {evento.descricao}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </TabsContent>
 
@@ -395,6 +637,16 @@ export function DetalhesCandidatoPipelineSheet({ candidateId, open, onOpenChange
                   onClick={handleWhatsApp}
                 >
                   <Send className="w-3.5 h-3.5" /> WhatsApp
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="gap-1.5 col-span-2 bg-indigo-600 hover:bg-indigo-500 text-white"
+                  onClick={handleConverter}
+                  disabled={convertendo}
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  {convertendo ? 'Convertendo...' : 'Converter em Prestador'}
                 </Button>
               </div>
             </div>

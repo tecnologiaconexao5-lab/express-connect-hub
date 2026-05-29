@@ -1,18 +1,31 @@
 // ============================================================
-// PDFs do módulo de Relatório Operacional de Faturamento
-// - Usa helper global drawLogoSafe (preserva aspect ratio)
-// - Sem qualquer referência a "Enterprise"
-// - Documentos cliente-facing NÃO exibem margem, custo interno,
-//   repasse a prestador ou resultado financeiro interno.
+// PDFs do modulo de Relatorio Operacional de Faturamento
+//
+// REESCRITO — agora delega para o novo sistema profissional
+// (foundation + consolidatedReports).
+//
+// Mantem compatibilidade total com todos os callers.
 // ============================================================
+
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { empresaConfig } from "./empresaConfig";
 import {
-  getLogoWithFallback,
-  drawLogoSafe,
-  renderLogoTextFallback,
-} from "@/lib/pdfLogoSupport";
+  drawCoverPage,
+  drawContentHeader,
+  drawContentFooter,
+  drawCorporateTable,
+  drawSectionTitle,
+  drawMetricsGrid,
+  drawInfoBlock,
+  drawFinancialComposition,
+  drawObservations,
+  getPageSetup,
+  type PdfLogo,
+  type FinancialLine,
+  type SummaryMetric,
+  fmtBRL,
+  fmtDate,
+} from "@/lib/pdf/foundation";
 
 interface PDFReportOptions {
   titulo: string;
@@ -26,148 +39,73 @@ interface PDFReportOptions {
   orientacao?: "portrait" | "landscape";
 }
 
-const primaryRGB = [249, 115, 22]; // Orange Conexão Express
-const darkRGB = [15, 26, 46]; // Navy Dark
-const grayRGB = [100, 116, 139];
-const lightBgRGB = [248, 250, 252];
+// ===================== GERAL: RELATORIO OPERACIONAL =====================
 
-/**
- * Gera o PDF profissional do Relatório Operacional de Faturamento
- * (visão agregada por cliente / consolidado).
- */
-export const gerarPDFRelatorioOperacional = async (
-  options: PDFReportOptions
-): Promise<void> => {
-  const logo = await getLogoWithFallback(true);
+export const gerarPDFRelatorioOperacional = async (options: PDFReportOptions): Promise<void> => {
+  console.info("[PDF_REAL] gerarPDFRelatorioOperacional -> usando NOVO sistema profissional (foundation)");
+
   const doc = new jsPDF(options.orientacao || "landscape", "mm", "a4");
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 15;
-  const usableWidth = pageWidth - margin * 2;
-  const dataHora = new Date().toLocaleString("pt-BR");
+  const page = getPageSetup(doc, 12);
 
-  const drawHeader = () => {
-    doc.setFillColor(darkRGB[0], darkRGB[1], darkRGB[2]);
-    doc.rect(0, 0, pageWidth, 38, "F");
-
-    drawLogoSafe(doc, logo, {
-      x: margin,
-      y: 5,
-      maxWidth: 50,
-      maxHeight: 28,
-      align: "left",
-      valign: "middle",
-      onFallback: () => renderLogoTextFallback(doc, margin, 18, "CONEXÃO EXPRESS", true),
-    });
-
-    doc.setFontSize(7);
-    doc.setTextColor(200, 200, 200);
-    doc.setFont("helvetica", "normal");
-    doc.text(
-      `${empresaConfig.cnpj}  •  ${empresaConfig.telefone}  •  ${empresaConfig.email}`,
-      margin,
-      35
-    );
-
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(255, 255, 255);
-    doc.text(options.titulo, pageWidth - margin, 15, { align: "right" });
-
-    if (options.subtitulo) {
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "normal");
-      doc.text(options.subtitulo, pageWidth - margin, 21, { align: "right" });
-    }
-
-    doc.setFontSize(7);
-    doc.text(`Gerado em: ${dataHora}`, pageWidth - margin, 28, { align: "right" });
-    if (options.periodo) {
-      doc.text(`Período: ${options.periodo}`, pageWidth - margin, 32, { align: "right" });
-    } else if (options.usuario) {
-      doc.text(`Responsável: ${options.usuario}`, pageWidth - margin, 32, { align: "right" });
-    }
-
-    doc.setDrawColor(primaryRGB[0], primaryRGB[1], primaryRGB[2]);
-    doc.setLineWidth(0.5);
-    doc.line(margin, 38, pageWidth - margin, 38);
-  };
-
-  drawHeader();
-
-  const startY = 46;
-
-  autoTable(doc, {
-    startY,
-    head: [options.colunas],
-    body: options.linhas,
-    theme: "striped",
-    headStyles: {
-      fillColor: [darkRGB[0], darkRGB[1], darkRGB[2]],
-      textColor: 255,
-      fontStyle: "bold",
-      fontSize: 7.5,
-      halign: "center",
-      valign: "middle",
-    },
-    bodyStyles: { fontSize: 7, textColor: [51, 65, 85], valign: "middle" },
-    alternateRowStyles: { fillColor: [lightBgRGB[0], lightBgRGB[1], lightBgRGB[2]] },
-    margin: { top: startY, right: margin, bottom: 35, left: margin },
-    didDrawPage: (data: any) => {
-      const pageNum = doc.internal.getNumberOfPages();
-      doc.setFontSize(7);
-      doc.setTextColor(grayRGB[0], grayRGB[1], grayRGB[2]);
-
-      doc.setDrawColor(primaryRGB[0], primaryRGB[1], primaryRGB[2]);
-      doc.setLineWidth(0.3);
-      doc.line(margin, pageHeight - 20, pageWidth - margin, pageHeight - 20);
-
-      doc.text(`Página ${pageNum}`, pageWidth / 2, pageHeight - 14, { align: "center" });
-      doc.text(`Emitido por ${options.usuario || "Sistema"} - ${dataHora}`, margin, pageHeight - 14);
-      doc.text(empresaConfig.nome, pageWidth - margin, pageHeight - 14, { align: "right" });
-
-      if (data.pageNumber > 1) drawHeader();
-    },
+  const logo = await drawCoverPage(doc, {
+    documentType: options.titulo.toUpperCase(),
+    documentNumber: options.subtitulo || "",
+    entityName: options.periodo || "",
+    entitySubtitle: options.usuario ? `Responsavel: ${options.usuario}` : undefined,
+    date: fmtDate(new Date().toISOString()),
+    via: "Cliente",
   });
 
-  const finalY = (doc as any).lastAutoTable?.finalY || startY;
+  let y = 85;
+
+  const drawContentPageHeader = (d: jsPDF, pg: typeof page, l: PdfLogo | null) => {
+    drawContentHeader(d, pg.pageWidth, pg.margin, l, {
+      title: options.titulo,
+      subtitle: options.subtitulo || options.periodo,
+    });
+  };
+
+  y = drawCorporateTable(doc, page, logo, {
+    startY: y,
+    columns: options.colunas,
+    rows: options.linhas as any,
+    fontSize: 7,
+    headerFontSize: 7.5,
+    columnAligns: { 0: "center" },
+    onPageDraw: drawContentPageHeader,
+  });
 
   if (options.totais && options.totais.length > 0) {
-    let totalsY = finalY + 8;
-    if (totalsY > pageHeight - 50) {
+    y = (doc as any).lastAutoTable?.finalY ?? y;
+    y += 8;
+
+    if (y > page.pageHeight - 60) {
       doc.addPage();
-      totalsY = 46;
+      y = 20;
+      drawContentPageHeader(doc, page, logo);
     }
 
-    doc.setFillColor(lightBgRGB[0], lightBgRGB[1], lightBgRGB[2]);
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(margin, totalsY, usableWidth, options.totais.length * 8 + 8, 2, 2, "FD");
+    const financeLines: FinancialLine[] = options.totais.map((t) => ({
+      label: t.label,
+      value: Number.parseFloat(t.valor.replace(/[^0-9,-]/g, "").replace(",", ".")) || 0,
+    }));
+    const lastItem = options.totais[options.totais.length - 1];
+    if (financeLines.length > 0) {
+      financeLines[financeLines.length - 1].highlight = true;
+    }
 
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(darkRGB[0], darkRGB[1], darkRGB[2]);
-    doc.text("RESUMO OPERACIONAL", margin + 4, totalsY + 6);
-
-    doc.setFontSize(8);
-    let y = totalsY + 12;
-    options.totais.forEach((t) => {
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(71, 85, 105);
-      doc.text(t.label, margin + 8, y);
-
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(darkRGB[0], darkRGB[1], darkRGB[2]);
-      doc.text(t.valor, pageWidth - margin - 8, y, { align: "right" });
-      y += 7;
-    });
+    drawFinancialComposition(doc, page.margin, y, page.contentWidth, "RESUMO OPERACIONAL", financeLines.map((l, i) => ({
+      ...l,
+      value: (() => {
+        const v = options.totais![i]?.valor || "0";
+        const n = Number.parseFloat(v.replace(/[^0-9,-]/g, "").replace(",", "."));
+        return Number.isFinite(n) ? n : 0;
+      })(),
+      label: options.totais![i]?.label || l.label,
+    })));
   }
 
-  if (options.rodape) {
-    doc.setFontSize(7);
-    doc.setTextColor(grayRGB[0], grayRGB[1], grayRGB[2]);
-    doc.setFont("helvetica", "italic");
-    doc.text(options.rodape, pageWidth / 2, pageHeight - 8, { align: "center" });
-  }
+  drawContentFooter(doc, page.pageWidth, page.pageHeight, page.margin);
 
   const filename = options.titulo
     .replace(/[^a-z0-9]/gi, "_")
@@ -177,428 +115,354 @@ export const gerarPDFRelatorioOperacional = async (
   doc.save(`${filename}.pdf`);
 };
 
-/**
- * PDF de repasses operacionais a prestador (uso interno / prestador).
- * Mantém valores de repasse pois o destinatário é o prestador.
- */
+// ===================== PRESTADOR: REPASSE =====================
+
 export const gerarPDFRepassePrestador = async (
   data: any[],
   filtros: any,
-  resumo: { totalRepasses: number; qtdOperacoes: number; mediaOperacional: number; pendencias: number; valorAprovado: number },
+  resumo: {
+    totalRepasses: number;
+    qtdOperacoes: number;
+    mediaOperacional: number;
+    pendencias: number;
+    valorAprovado: number;
+  },
   usuario?: string
 ) => {
-  const logo = await getLogoWithFallback(true);
+  console.info("[PDF_REAL] gerarPDFRepassePrestador -> usando NOVO sistema profissional (foundation)");
 
   const doc = new jsPDF("landscape", "mm", "a4");
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 15;
+  const page = getPageSetup(doc, 12);
+  const periodoStr = `${fmtDate(filtros.dataInicial)} a ${fmtDate(filtros.dataFinal)}`;
 
-  const drawHeader = () => {
-    doc.setFillColor(darkRGB[0], darkRGB[1], darkRGB[2]);
-    doc.rect(0, 0, pageWidth, 38, "F");
-
-    drawLogoSafe(doc, logo, {
-      x: margin,
-      y: 5,
-      maxWidth: 50,
-      maxHeight: 28,
-      align: "left",
-      valign: "middle",
-      onFallback: () => renderLogoTextFallback(doc, margin, 18, "CONEXÃO EXPRESS", true),
-    });
-
-    doc.setFontSize(7);
-    doc.setTextColor(200, 200, 200);
-    doc.setFont("helvetica", "normal");
-    doc.text(
-      `${empresaConfig.cnpj}  •  ${empresaConfig.telefone}  •  ${empresaConfig.email}`,
-      margin,
-      35
-    );
-
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(255, 255, 255);
-    doc.text("RELATÓRIO DE REPASSES OPERACIONAIS", pageWidth - margin, 15, { align: "right" });
-    doc.setFontSize(7.5);
-    doc.setFont("helvetica", "normal");
-    doc.text("Prestação de Serviços Autônomos de Transporte", pageWidth - margin, 21, { align: "right" });
-    doc.text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, pageWidth - margin, 28, { align: "right" });
-    if (usuario) doc.text(`Responsável: ${usuario}`, pageWidth - margin, 32, { align: "right" });
-
-    doc.setDrawColor(primaryRGB[0], primaryRGB[1], primaryRGB[2]);
-    doc.setLineWidth(0.5);
-    doc.line(margin, 38, pageWidth - margin, 38);
-  };
-
-  drawHeader();
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "italic");
-  doc.setTextColor(100);
-  doc.text(
-    "Relatório operacional de prestação de serviços e repasses financeiros referentes às operações executadas de forma autônoma.",
-    margin,
-    43
-  );
-
-  const fmtBRL = (v: number) =>
-    (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  const fmtData = (d: string) =>
-    d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(51, 65, 85);
-
-  let yPos = 48;
-  if (filtros.prestador) {
-    doc.setFont("helvetica", "bold");
-    doc.text(`Prestador: `, margin, yPos);
-    doc.setFont("helvetica", "normal");
-    doc.text(filtros.prestador, margin + 16, yPos);
-    yPos += 4;
-  }
-  if (filtros.cliente) {
-    doc.setFont("helvetica", "bold");
-    doc.text(`Cliente: `, margin, yPos);
-    doc.setFont("helvetica", "normal");
-    doc.text(filtros.cliente, margin + 16, yPos);
-    yPos += 4;
-  }
-  doc.setFont("helvetica", "bold");
-  doc.text(`Período: `, margin, yPos);
-  doc.setFont("helvetica", "normal");
-  doc.text(`${fmtData(filtros.dataInicial)} a ${fmtData(filtros.dataFinal)}`, margin + 14, yPos);
-
-  const linhas = data.map((item) => [
-    fmtData(item.data_finalizacao || item.created_at),
-    item.cliente_nome || "-",
-    item.numero || item.os_numero || "-",
-    item.veiculo_tipo || "-",
-    item.enderecos?.[0]?.cidade || "-",
-    item.enderecos?.[item.enderecos.length - 1]?.cidade || "-",
-    fmtBRL(Number(item.custo_prestador) || 0),
-    fmtBRL(Number(item.adicionais) || 0),
-    fmtBRL(Number(item.descontos) || 0),
-    fmtBRL(Number(item.valor_final_repasse) || 0),
-    item.status_pagamento === "pago" ? "Pago" : "Pendente",
-  ]);
-
-  const tableStartY = yPos + 6;
-
-  autoTable(doc, {
-    startY: tableStartY,
-    head: [["Data", "Cliente", "OS", "Veículo", "Origem", "Destino", "Operação", "Adicional", "Desconto", "Repasse Final", "Status"]],
-    body: linhas,
-    theme: "striped",
-    headStyles: {
-      fillColor: [darkRGB[0], darkRGB[1], darkRGB[2]],
-      textColor: 255,
-      fontStyle: "bold",
-      fontSize: 7.5,
-      halign: "center",
-      valign: "middle",
-    },
-    bodyStyles: { fontSize: 6.5, textColor: [51, 65, 85], valign: "middle" },
-    alternateRowStyles: { fillColor: [lightBgRGB[0], lightBgRGB[1], lightBgRGB[2]] },
-    margin: { top: tableStartY, right: margin, bottom: 45, left: margin },
-    didDrawPage: (data: any) => {
-      const pageNum = doc.internal.getNumberOfPages();
-      doc.setFontSize(6.5);
-      doc.setTextColor(grayRGB[0], grayRGB[1], grayRGB[2]);
-
-      doc.setDrawColor(primaryRGB[0], primaryRGB[1], primaryRGB[2]);
-      doc.setLineWidth(0.3);
-      doc.line(margin, pageHeight - 25, pageWidth - margin, pageHeight - 25);
-
-      doc.text(`Página ${pageNum}`, pageWidth / 2, pageHeight - 18, { align: "center" });
-      doc.text(`Emitido por Conexão Express - ${new Date().toLocaleString("pt-BR")}`, margin, pageHeight - 18);
-      doc.text(empresaConfig.nome, pageWidth - margin, pageHeight - 18, { align: "right" });
-
-      if (data.pageNumber > 1) drawHeader();
-    },
+  const logo = await drawCoverPage(doc, {
+    documentType: "DEMONSTRATIVO DE PAGAMENTO",
+    documentNumber: filtros.prestador || "Consolidado",
+    entityName: `Operações: ${resumo.qtdOperacoes}`,
+    entitySubtitle: periodoStr,
+    date: fmtDate(new Date().toISOString()),
+    via: "Prestador",
   });
 
-  const finalY = (doc as any).lastAutoTable?.finalY || tableStartY;
+  let y = 85;
 
-  let resumoY = finalY + 6;
-  if (resumoY > pageHeight - 55) {
+  const drawContentPageHeader = (d: jsPDF, pg: typeof page, l: PdfLogo | null) => {
+    drawContentHeader(d, pg.pageWidth, pg.margin, l, {
+      title: "DEMONSTRATIVO DE PAGAMENTO OPERACIONAL",
+      subtitle: filtros.prestador ? `${filtros.prestador} — ${periodoStr}` : periodoStr,
+    });
+  };
+
+  let sumBase = 0;
+  let sumKm = 0;
+  let sumEspera = 0;
+  let sumPedagio = 0;
+  let sumReemb = 0;
+  let sumDesc = 0;
+  let sumLiquido = 0;
+  let sumAdiant = 0;
+  let sumConvenio = 0;
+
+  // Pré-calcula os totais para exibir no resumo
+  data.forEach((item) => {
+    const fn = item.financeiro || {};
+    const metadata = item.metadata?.financeiroPrestador || {};
+    const pTotals = item.metadata?.totals?.prestador || {};
+
+    sumBase += Number(item.custo_prestador || pTotals.valorBase || fn.valorBase || 0);
+    sumKm += Number(metadata.kmExcedente || 0);
+    sumEspera += Number(metadata.espera || 0);
+    sumPedagio += Number(metadata.pedagio || 0);
+    sumReemb += Number(metadata.valorReembolsoOutros || 0);
+    sumDesc += Number(item.descontos || metadata.descontos || 0);
+    sumLiquido += Number(item.valor_final_repasse || pTotals.total || fn.receitaLiquida || 0);
+    sumAdiant += Number(metadata.adiantamento || fn.adiantamento || 0);
+    sumConvenio += Number(metadata.combustivel || fn.combustivel || 0);
+  });
+
+  const subtotalAprovado = sumBase + sumKm + sumEspera + sumPedagio + sumReemb;
+
+  const metricValues = [
+    { label: "Operações", value: String(resumo.qtdOperacoes) },
+    { label: "Total Pendente", value: fmtBRL(resumo.pendencias) },
+    { label: "Valor Base Operações", value: fmtBRL(sumBase) },
+    { label: "KM Adicional", value: sumKm > 0 ? fmtBRL(sumKm) : "R$ 0,00" },
+    { label: "Espera", value: sumEspera > 0 ? fmtBRL(sumEspera) : "R$ 0,00" },
+    { label: "Pedágios", value: sumPedagio > 0 ? fmtBRL(sumPedagio) : "R$ 0,00" },
+    { label: "Reembolsos", value: sumReemb > 0 ? fmtBRL(sumReemb) : "R$ 0,00" },
+    { label: "Subtotal Aprovado", value: fmtBRL(subtotalAprovado), col: "right" as const },
+    { label: "Convênio Combustível", value: sumConvenio > 0 ? fmtBRL(sumConvenio) : "R$ 0,00", col: "right" as const },
+    { label: "Adiantamentos", value: sumAdiant > 0 ? fmtBRL(sumAdiant) : "R$ 0,00", col: "right" as const },
+    { label: "Descontos Diversos", value: sumDesc > 0 ? fmtBRL(sumDesc) : "R$ 0,00", col: "right" as const },
+    { label: "TOTAL LÍQUIDO A RECEBER", value: fmtBRL(sumLiquido), col: "right" as const }
+  ];
+  y = drawInfoBlock(doc, page.margin, y, page.contentWidth, "RESUMO DO PRESTADOR", metricValues);
+
+  // Tabela
+  y = drawSectionTitle(doc, page.margin, y, "DETALHAMENTO DAS OPERAÇÕES", page);
+  y += 2;
+
+
+  const rows = data.map((item) => {
+    const fn = item.financeiro || {};
+    const metadata = item.metadata?.financeiroPrestador || {};
+    const pTotals = item.metadata?.totals?.prestador || {};
+
+    const vBase = Number(item.custo_prestador || pTotals.valorBase || fn.valorBase || 0);
+    const vKm = Number(metadata.kmExcedente || 0);
+    const vEspera = Number(metadata.espera || 0);
+    const vPedagio = Number(metadata.pedagio || 0);
+    const vReemb = Number(metadata.valorReembolsoOutros || 0);
+    const vDesc = Number(item.descontos || metadata.descontos || 0);
+    const vLiquido = Number(item.valor_final_repasse || pTotals.total || fn.receitaLiquida || 0);
+    const vAdiant = Number(metadata.adiantamento || fn.adiantamento || 0);
+    const vConvenio = Number(metadata.combustivel || fn.combustivel || 0);
+
+    sumBase += vBase;
+    sumKm += vKm;
+    sumEspera += vEspera;
+    sumPedagio += vPedagio;
+    sumReemb += vReemb;
+    sumDesc += vDesc;
+    sumLiquido += vLiquido;
+    sumAdiant += vAdiant;
+    sumConvenio += vConvenio;
+
+    return [
+      fmtDate(item.data_finalizacao || item.created_at || item.data_escala || item.data),
+      String(item.numero || item.os_numero || "S/N").substring(0, 8),
+      item.enderecos?.[0]?.cidade || item.origem || "-",
+      item.enderecos?.[item.enderecos?.length - 1]?.cidade || item.destino || "-",
+      fmtBRL(vBase),
+      fmtBRL(vKm),
+      fmtBRL(vEspera),
+      fmtBRL(vPedagio),
+      fmtBRL(vReemb),
+      fmtBRL(vDesc),
+      fmtBRL(vLiquido)
+    ];
+  });
+
+  y = drawCorporateTable(doc, page, logo, {
+    startY: y,
+    columns: ["Data", "OS", "Origem", "Destino", "V. Base", "KM Extra", "Espera", "Pedágio", "Reemb.", "Desc.", "Líquido"],
+    rows,
+    fontSize: 6.5,
+    headerFontSize: 7,
+    columnWidths: { 0: 18, 1: 18, 4: 18, 5: 16, 6: 16, 7: 18, 8: 18, 9: 18, 10: 22 }, // No widths for 2 and 3, let them auto-fill
+    columnAligns: { 0: "center", 1: "center", 4: "right", 5: "right", 6: "right", 7: "right", 8: "right", 9: "right", 10: "right" },
+    onPageDraw: drawContentPageHeader,
+  });
+  y += 6;
+
+  // Composição financeira
+  if (y > 145) {
     doc.addPage();
-    resumoY = 46;
-    drawHeader();
+    y = 35;
+    drawContentPageHeader(doc, page, logo);
   }
 
-  doc.setFillColor(255, 247, 237);
-  doc.setDrawColor(254, 215, 170);
-  doc.roundedRect(margin, resumoY, pageWidth - margin * 2, 28, 2, 2, "FD");
+  const financeLines: FinancialLine[] = [
+    { label: "Valor Base", value: sumBase },
+  ];
+  if (sumKm > 0) financeLines.push({ label: "KM Adicional", value: sumKm });
+  if (sumEspera > 0) financeLines.push({ label: "Espera", value: sumEspera });
+  if (sumPedagio > 0) financeLines.push({ label: "Pedágio", value: sumPedagio });
+  if (sumReemb > 0) financeLines.push({ label: "Reembolso", value: sumReemb });
+  
+  financeLines.push({ label: "Subtotal", value: subtotalAprovado, isTotal: true });
 
-  doc.setFontSize(8.5);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(darkRGB[0], darkRGB[1], darkRGB[2]);
-  doc.text("RESUMO OPERACIONAL DE REPASSES", margin + 4, resumoY + 6);
+  if (sumConvenio > 0) financeLines.push({ label: "Convênio Combustível", value: -sumConvenio });
+  if (sumAdiant > 0) financeLines.push({ label: "Adiantamentos", value: -sumAdiant });
+  if (sumDesc > 0) financeLines.push({ label: "Descontos Diversos", value: -sumDesc });
 
-  doc.setFontSize(7.5);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Total de Repasses: ${fmtBRL(resumo.totalRepasses)}`, margin + 6, resumoY + 13);
-  doc.text(`Quantidade de Operações: ${resumo.qtdOperacoes}`, margin + 6, resumoY + 20);
-  doc.text(`Média por Operação: ${fmtBRL(resumo.mediaOperacional)}`, pageWidth / 3 + 4, resumoY + 13);
-  doc.text(`Valor Aprovado: ${fmtBRL(resumo.valorAprovado)}`, pageWidth / 3 + 4, resumoY + 20);
-  doc.text(`Total Pendente: ${fmtBRL(resumo.pendencias)}`, (pageWidth / 3) * 2 + 4, resumoY + 13);
+  financeLines.push({ label: "TOTAL LÍQUIDO A RECEBER", value: sumLiquido, isTotal: true, highlight: true });
 
-  doc.setFontSize(7);
-  doc.setFont("helvetica", "italic");
-  doc.setTextColor(100, 116, 139);
-  doc.text(
-    "Este demonstrativo refere-se exclusivamente à prestação de serviços autônomos de transporte contratados sob demanda, não configurando vínculo de qualquer outra natureza.",
-    pageWidth / 2,
-    pageHeight - 10,
-    { align: "center" }
+  drawFinancialComposition(doc, page.margin, y, page.contentWidth, "COMPOSIÇÃO DO PAGAMENTO", financeLines);
+
+  drawObservations(doc, page.margin, y + 40, page.contentWidth,
+    "Demonstrativo de pagamento operacional a prestadores de serviço de transporte autônomo. " +
+    "Valores sujeitos à confirmação de execução e documentação fiscal. CNPJ: 31.227.975/0001-80."
   );
 
-  doc.save("relatorio_repasses_prestadores.pdf");
+  drawContentFooter(doc, page.pageWidth, page.pageHeight, page.margin);
+  doc.save("demonstrativo_pagamento_prestadores.pdf");
 };
 
-/**
- * PDF de Fechamento de Faturamento Detalhado (enviado ao cliente).
- * NÃO inclui margem, custo interno, repasse ou resultado interno.
- */
+// ===================== FATURAMENTO DETALHADO =====================
+
 export const gerarPDFFaturamentoDetalhado = async (
   cliente: { nome: string; cnpj: string },
   periodo: string,
   operacoes: any[],
-  usuario: string = "Administrador"
+  usuario?: string
 ) => {
-  const logo = await getLogoWithFallback(true);
+  console.info("[PDF_REAL] gerarPDFFaturamentoDetalhado -> usando NOVO sistema profissional (foundation)");
+
   const doc = new jsPDF("landscape", "mm", "a4");
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 15;
-  const usableWidth = pageWidth - margin * 2;
+  const page = getPageSetup(doc, 12);
 
-  const fmtBRL = (v: number) =>
-    (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  const fmtData = (d: string) =>
-    d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "-";
+  const totalOperacoes = operacoes.length;
 
-  // Cálculos cliente-facing (sem custo/margem/repasse)
-  const subtotalFrete = operacoes.reduce((s, o) => s + (Number(o.valor_cliente) || 0), 0);
-  const totalPedagio = operacoes.reduce((s, o) => s + (Number(o.pedagio) || 0), 0);
-  const totalAjudante = operacoes.reduce((s, o) => s + (Number(o.ajudante) || 0), 0);
-  const totalAdicionaisOutros = operacoes.reduce((s, o) => s + (Number(o.adicionais) || 0), 0);
-  const totalAdicionais = totalPedagio + totalAjudante + totalAdicionaisOutros;
-  const totalDescontos = operacoes.reduce((s, o) => s + (Number(o.descontos) || 0), 0);
-  const totalLiquido = subtotalFrete + totalAdicionais - totalDescontos;
-
-  const drawHeader = () => {
-    doc.setFillColor(darkRGB[0], darkRGB[1], darkRGB[2]);
-    doc.rect(0, 0, pageWidth, 38, "F");
-
-    drawLogoSafe(doc, logo, {
-      x: margin,
-      y: 5,
-      maxWidth: 50,
-      maxHeight: 28,
-      align: "left",
-      valign: "middle",
-      onFallback: () => renderLogoTextFallback(doc, margin, 18, "CONEXÃO EXPRESS", true),
-    });
-
-    doc.setFontSize(7);
-    doc.setTextColor(200, 200, 200);
-    doc.setFont("helvetica", "normal");
-    doc.text(
-      `${empresaConfig.cnpj}  •  ${empresaConfig.telefone}  •  ${empresaConfig.email}`,
-      margin,
-      35
-    );
-
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(255, 255, 255);
-    doc.text("FECHAMENTO DE FATURAMENTO DETALHADO", pageWidth - margin, 15, { align: "right" });
-
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "normal");
-    doc.text("Demais taxas e adicionais discriminados por operação", pageWidth - margin, 21, { align: "right" });
-
-    const dataHora = new Date().toLocaleString("pt-BR");
-    doc.setFontSize(7);
-    doc.text(`Gerado em: ${dataHora} | Emissor: ${usuario}`, pageWidth - margin, 29, { align: "right" });
-    doc.text(`Período do Fechamento: ${periodo}`, pageWidth - margin, 34, { align: "right" });
-
-    doc.setDrawColor(primaryRGB[0], primaryRGB[1], primaryRGB[2]);
-    doc.setLineWidth(0.5);
-    doc.line(margin, 38, pageWidth - margin, 38);
+  const getValor = (o: any, ...campos: string[]): number => {
+    for (const c of campos) {
+      const v = Number(o[c]);
+      if (Number.isFinite(v) && v !== 0) return v;
+    }
+    return 0;
   };
 
-  drawHeader();
+  const KM_BASE_PADRAO = 200;
+  const subtotalFrete = operacoes.reduce((s, o) => s + getValor(o, "valor_cliente", "valorCliente", "valor_final", "valorFrete", "valor_total"), 0);
+  const totalPedagio = operacoes.reduce((s, o) => s + getValor(o, "pedagio", "valor_pedagio"), 0);
+  const totalAdicionais = operacoes.reduce((s, o) => s + getValor(o, "adicionais", "valorAdicional", "valor_espera", "ajudante"), 0);
+  const totalDescontos = operacoes.reduce((s, o) => s + getValor(o, "descontos", "valor_desconto"), 0);
+  const totalKM = operacoes.reduce((s, o) => s + getValor(o, "km_total", "kmTotal", "kmRodados"), 0);
+  const totalKMAdicional = operacoes.reduce((s, o) => {
+    const kmTotal = getValor(o, "km_total", "kmTotal", "kmRodados");
+    const kmBase = getValor(o, "km_base", "kmBase", "km_franquia") || KM_BASE_PADRAO;
+    return s + Math.max(0, kmTotal - kmBase);
+  }, 0);
+  const totalFaturado = subtotalFrete + totalPedagio + totalAdicionais - totalDescontos;
 
-  // Bloco cliente
-  let yPos = 44;
-  doc.setFillColor(lightBgRGB[0], lightBgRGB[1], lightBgRGB[2]);
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.2);
-  doc.roundedRect(margin, yPos, usableWidth, 18, 2, 2, "FD");
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(darkRGB[0], darkRGB[1], darkRGB[2]);
-  doc.text("DADOS DO CLIENTE CONTRATANTE", margin + 4, yPos + 5);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.setTextColor(51, 65, 85);
-  doc.text(`Razão Social: ${cliente.nome}`, margin + 4, yPos + 11);
-  doc.text(`CNPJ: ${cliente.cnpj}`, margin + 4, yPos + 15);
-  doc.text(`Qtd. de Operações Fechadas: ${operacoes.length}`, margin + 120, yPos + 11);
-  doc.text(`Status Faturamento: Aprovado p/ Faturamento`, margin + 120, yPos + 15);
-
-  // Cards (sem margem / custo / repasse)
-  yPos += 22;
-  const cardWidth = usableWidth / 4 - 3;
-  const cardNames = [
-    { label: "SUBTOTAL (FRETE BASE)", valor: fmtBRL(subtotalFrete), cor: [15, 26, 46], bg: [241, 245, 249] },
-    { label: "(+) TOTAL ADICIONAIS", valor: fmtBRL(totalAdicionais), cor: [16, 185, 129], bg: [240, 253, 250] },
-    { label: "(-) TOTAL DESCONTOS", valor: fmtBRL(totalDescontos), cor: [239, 68, 68], bg: [254, 242, 242] },
-    { label: "TOTAL LÍQUIDO", valor: fmtBRL(totalLiquido), cor: [249, 115, 22], bg: [255, 247, 237] },
-  ];
-
-  cardNames.forEach((c, idx) => {
-    const cx = margin + idx * (cardWidth + 4);
-    doc.setFillColor(c.bg[0], c.bg[1], c.bg[2]);
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(cx, yPos, cardWidth, 18, 1.5, 1.5, "FD");
-
-    doc.setFontSize(6.5);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(100, 116, 139);
-    doc.text(c.label, cx + 4, yPos + 5);
-
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(c.cor[0], c.cor[1], c.cor[2]);
-    doc.text(c.valor, cx + 4, yPos + 13);
+  // CAPA
+  const logo = await drawCoverPage(doc, {
+    documentType: "RELATORIO DE FATURAMENTO",
+    documentNumber: cliente.nome,
+    entityName: `CNPJ: ${cliente.cnpj}`,
+    entitySubtitle: periodo,
+    date: fmtDate(new Date().toISOString()),
+    status: `${totalOperacoes} operacoes`,
+    via: "Cliente",
   });
 
-  yPos += 24;
+  // PAGINA 1
+  let y = 85;
 
-  const linhas = operacoes.map((item) => {
+  const drawContentPageHeader = (d: jsPDF, pg: typeof page, l: PdfLogo | null) => {
+    drawContentHeader(d, pg.pageWidth, pg.margin, l, {
+      title: "RELATORIO OPERACIONAL DE FATURAMENTO",
+      subtitle: `${cliente.nome} — ${periodo}`,
+    });
+  };
+
+  // Metricas corporativas
+  const infoFields = [
+    { label: "Total de Operações", value: String(totalOperacoes) },
+    { label: "KM Rodados", value: `${totalKM} km` },
+    { label: "KM Adicional", value: `${totalKMAdicional} km` },
+    { label: "Pedágios", value: fmtBRL(totalPedagio), col: "right" as const },
+    { label: "Adicionais", value: fmtBRL(totalAdicionais), col: "right" as const },
+    { label: "Descontos", value: fmtBRL(totalDescontos), col: "right" as const },
+  ];
+  y = drawInfoBlock(doc, page.margin, y, page.contentWidth, "RESUMO OPERACIONAL", infoFields);
+
+  // Tabela
+  y = drawSectionTitle(doc, page.margin, y, "DETALHAMENTO DAS OPERACOES", page);
+  y += 2;
+
+  const rows = operacoes.map((item) => {
     const dataOS = item.data_finalizacao || item.created_at || item.data;
-    const vBase = Number(item.valor_cliente) || 0;
-    const vPedagio = Number(item.pedagio) || 0;
-    const vAjudante = Number(item.ajudante) || 0;
-    const vOutros = Number(item.adicionais) || 0;
-    const vAdic = vPedagio + vAjudante + vOutros;
-    const vDesc = Number(item.descontos) || 0;
-    const vLiquido = vBase + vAdic - vDesc;
+    const vBase = getValor(item, "valor_cliente", "valorCliente", "valor_final", "valorFrete", "valor_total");
+    const vPedagio = getValor(item, "pedagio", "valor_pedagio");
+    const vAdic = getValor(item, "adicionais", "valorAdicional", "ajudante", "valor_espera");
+    const vDesc = getValor(item, "descontos", "valor_desconto");
+    const kmTotal = getValor(item, "km_total", "kmTotal", "kmRodados");
+    const kmBase = getValor(item, "km_base", "kmBase", "km_franquia") || KM_BASE_PADRAO;
+    const kmAdic = Math.max(0, kmTotal - kmBase);
+    const vLiquido = vBase + vPedagio + vAdic - vDesc;
 
-    let origem = "-";
-    let destino = "-";
+    let origem = "-", destino = "-";
     if (item.enderecos && Array.isArray(item.enderecos) && item.enderecos.length > 0) {
-      origem = item.enderecos[0]?.cidade || item.enderecos[0]?.estado || "-";
-      destino = item.enderecos[item.enderecos.length - 1]?.cidade || item.enderecos[item.enderecos.length - 1]?.estado || "-";
-    } else {
-      origem = item.origem_endereco || "-";
-      destino = item.destino_endereco || "-";
+      origem = item.enderecos[0]?.cidade || "-";
+      destino = item.enderecos[item.enderecos.length - 1]?.cidade || "-";
     }
 
     return [
-      fmtData(dataOS),
       item.numero || item.os_numero || "-",
-      item.veiculo_tipo || "-",
-      `${origem} -> ${destino}`,
-      fmtBRL(vBase),
+      fmtDate(dataOS),
+      origem,
+      destino,
+      item.veiculo_placa || "-",
+      `${kmBase} km`,
+      `${kmAdic} km`,
       fmtBRL(vPedagio),
-      fmtBRL(vAjudante),
-      fmtBRL(vOutros),
+      fmtBRL(vAdic),
       fmtBRL(vDesc),
+      fmtBRL(vBase),
       fmtBRL(vLiquido),
     ];
   });
 
-  autoTable(doc, {
-    startY: yPos,
-    head: [["Data", "OS", "Veículo", "Rota", "Frete Base", "Pedágio", "Ajudante", "Outros Adic.", "Descontos", "Valor Líquido"]],
-    body: linhas,
-    theme: "striped",
-    headStyles: {
-      fillColor: [darkRGB[0], darkRGB[1], darkRGB[2]],
-      textColor: 255,
-      fontStyle: "bold",
-      fontSize: 7,
-      halign: "center",
-      valign: "middle",
-    },
-    bodyStyles: { fontSize: 6.5, textColor: [51, 65, 85], valign: "middle" },
-    columnStyles: {
-      0: { halign: "center", cellWidth: 16 },
-      1: { halign: "center", cellWidth: 16 },
-      2: { halign: "center", cellWidth: 18 },
-      3: { halign: "left", cellWidth: 55 },
-      4: { halign: "right", cellWidth: 22 },
-      5: { halign: "right", cellWidth: 20 },
-      6: { halign: "right", cellWidth: 20 },
-      7: { halign: "right", cellWidth: 20 },
-      8: { halign: "right", cellWidth: 20 },
-      9: { halign: "right", cellWidth: 22 },
-    },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-    margin: { top: yPos, right: margin, bottom: 40, left: margin },
-    didDrawPage: (data: any) => {
-      const pageNum = doc.internal.getNumberOfPages();
-      doc.setFontSize(6.5);
-      doc.setTextColor(grayRGB[0], grayRGB[1], grayRGB[2]);
-
-      doc.setDrawColor(primaryRGB[0], primaryRGB[1], primaryRGB[2]);
-      doc.setLineWidth(0.3);
-      doc.line(margin, pageHeight - 20, pageWidth - margin, pageHeight - 20);
-
-      doc.text(`Página ${pageNum}`, pageWidth / 2, pageHeight - 14, { align: "center" });
-      doc.text(`Emitido por Conexão Express - ${new Date().toLocaleString("pt-BR")}`, margin, pageHeight - 14);
-      doc.text(empresaConfig.nome, pageWidth - margin, pageHeight - 14, { align: "right" });
-
-      if (data.pageNumber > 1) drawHeader();
+  y = drawCorporateTable(doc, page, logo, {
+    startY: y,
+    columns: ["OS", "Data", "Origem", "Destino", "Placa", "KM Base", "KM Adic", "Pedágio", "Adicionais", "Descontos", "Valor Oper.", "Valor Final"],
+    rows,
+    fontSize: 7.5,
+    headerFontSize: 8,
+    columnWidths: { 0: 18, 1: 18, 4: 18, 5: 16, 6: 16, 7: 18, 8: 18, 9: 18, 10: 22, 11: 22 }, // No widths for 2 and 3, let them auto-fill
+    columnAligns: { 0: "center", 1: "center", 4: "center", 5: "center", 6: "center", 7: "right", 8: "right", 9: "right", 10: "right", 11: "right" },
+    onPageDraw: (d, pg, l) => {
+      drawContentPageHeader(d, pg, l);
     },
   });
+  y += 6;
 
-  const finalY = (doc as any).lastAutoTable?.finalY || yPos;
-
-  let signY = finalY + 8;
-  if (signY > pageHeight - 45) {
+  // Composicao
+  if (y > 145) {
     doc.addPage();
-    drawHeader();
-    signY = 46;
+    y = 35;
+    drawContentPageHeader(doc, page, logo);
   }
 
-  doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(margin, signY, usableWidth, 12, 1, 1, "FD");
-  doc.setFontSize(6.5);
-  doc.setFont("helvetica", "italic");
-  doc.setTextColor(100, 116, 139);
-  doc.text(
-    "Observações Comerciais: Os valores acima discriminados representam o resumo operacional e financeiro consolidado do período. O faturamento será processado conforme regras contratuais. Favor retornar este demonstrativo assinado em até 48 horas em caso de divergências operacionais.",
-    margin + 4,
-    signY + 5,
-    { maxWidth: usableWidth - 8 }
+  const financeLines: FinancialLine[] = [
+    { label: "Valor da Operacao (Frete)", value: subtotalFrete },
+  ];
+  if (totalPedagio > 0) financeLines.push({ label: "Pedagios", value: totalPedagio, indent: true });
+  if (totalAdicionais > 0) financeLines.push({ label: "Adicionais", value: totalAdicionais, indent: true });
+  if (totalDescontos > 0) financeLines.push({ label: "Descontos", value: totalDescontos, indent: true });
+  financeLines.push({ label: "TOTAL FATURADO", value: totalFaturado, isTotal: true, highlight: true });
+
+  drawFinancialComposition(doc, page.margin, y, page.contentWidth, "COMPOSICAO FINANCEIRA", financeLines);
+
+  drawObservations(doc, page.margin, y + 40, page.contentWidth,
+    "Este relatorio reflete os dados reais da escala operacional e adicionais do periodo. " +
+    "Em caso de divergencias, manifestar-se em ate 48 horas uteis para ajustes no fechamento do faturamento."
   );
 
-  signY += 18;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.setTextColor(51, 65, 85);
+  drawContentFooter(doc, page.pageWidth, page.pageHeight, page.margin);
 
-  doc.line(margin + 20, signY, margin + 100, signY);
-  doc.text("CONEXÃO EXPRESS TRANSPORTES LTDA", margin + 60, signY + 4, { align: "center" });
-  doc.text("Responsável Financeiro", margin + 60, signY + 8, { align: "center" });
-
-  doc.line(pageWidth - margin - 100, signY, pageWidth - margin - 20, signY);
-  doc.text(cliente.nome.toUpperCase(), pageWidth - margin - 60, signY + 4, { align: "center" });
-  doc.text("Aceite Comercial / Assinatura do Cliente", pageWidth - margin - 60, signY + 8, { align: "center" });
-
-  const filename = `fechamento_detalhado_${cliente.nome.replace(/[^a-z0-9]/gi, "_").toLowerCase()}`;
+  const filename = `relatorio_operacional_${cliente.nome.replace(/[^a-z0-9]/gi, "_").toLowerCase()}.pdf`;
   doc.save(`${filename}.pdf`);
 };
+
+// Re-export headers/footers para compatibilidade com codigo legado
+
+export const drawHeaderNavy = (
+  doc: any,
+  logo: any,
+  pageWidth: number,
+  margin: number,
+  title: string,
+  subtitle: string | undefined,
+  dataHora: string,
+  periodo: string | undefined,
+  usuario: string | undefined
+) => {
+  drawContentHeader(doc, pageWidth, margin, logo ? { base64: logo.base64, naturalWidth: logo.naturalWidth || 1545, naturalHeight: logo.naturalHeight || 982 } : null, {
+    title,
+    subtitle: subtitle || periodo,
+  });
+};
+
+export function drawFooterLight(
+  doc: any,
+  pageWidth: number,
+  pageHeight: number,
+  margin: number,
+  _logo?: any
+) {
+  drawContentFooter(doc, pageWidth, pageHeight, margin);
+}
+
+export const drawFooterNavy = drawFooterLight;

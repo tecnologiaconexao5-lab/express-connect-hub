@@ -85,16 +85,7 @@ const canalConfig = {
   push: { icon: Smartphone, color: "text-blue-600" },
 };
 
-const defaultNotificacoes: Notificacao[] = [
-  { id: "1", titulo: "Entrega Concluída", mensagem: "OS-202610-1028 foi entregue com sucesso em São Paulo/SP", tipo: "entrega_concluida", canal: "whatsapp", prioridade: "baixa", lida: false, created_at: "2026-05-08T14:30:00", acao: "Ver OS" },
-  { id: "2", titulo: "Ocorrência Registrada", mensagem: "Atraso por trânsito na entrega OS-202610-1045", tipo: "ocorrencia", canal: "portal", prioridade: "alta", lida: false, created_at: "2026-05-08T13:15:00", acao: "Ver Ocorrência" },
-  { id: "3", titulo: "SLA em Risco", mensagem: "3 entregas com previsão para as próximas 2h podem atrasar", tipo: "atraso", canal: "portal", prioridade: "media", lida: false, created_at: "2026-05-08T12:00:00" },
-  { id: "4", titulo: "Comprovante Anexado", mensagem: "Foto e assinatura da entrega OS-202610-1033 disponíveis", tipo: "comprovante", canal: "whatsapp", prioridade: "baixa", lida: true, created_at: "2026-05-08T10:45:00", acao: "Ver Comprovante" },
-  { id: "5", titulo: "Boleto Vencendo", mensagem: "Fatura FAT-0046 vence em 5 dias - R$ 15.000,00", tipo: "boleto", canal: "email", prioridade: "media", lida: true, created_at: "2026-05-07T09:00:00", acao: "Ver Fatura" },
-  { id: "6", titulo: "Nova OS Criada", mensagem: "OS-202610-1060 criada com sucesso", tipo: "os_criada", canal: "portal", prioridade: "baixa", lida: true, created_at: "2026-05-07T08:30:00" },
-  { id: "7", titulo: "Motorista Atribuído", mensagem: "Carlos Silva foi designado para entrega OS-202610-1055", tipo: "motorista_definido", canal: "whatsapp", prioridade: "baixa", lida: true, created_at: "2026-05-06T16:20:00" },
-  { id: "8", titulo: "Coleta Iniciada", mensagem: "Coleta OS-202610-1040 em andamento", tipo: "coleta_iniciada", canal: "portal", prioridade: "baixa", lida: true, created_at: "2026-05-06T14:00:00" },
-];
+const defaultNotificacoes: Notificacao[] = [];
 
 export function PortalNotificacoes({ onAction }: PortalNotificacoesProps) {
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>(defaultNotificacoes);

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Plus, Building2, Wallet, ArrowRightLeft, Landmark, Check, AlertCircle,
   MoreHorizontal, Eye, Edit2, TrendingUp, TrendingDown, History,
@@ -19,34 +19,35 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Conta {
-  id: number;
+  id: string;
   nome: string;
   tipo: string;
   banco: string;
   agencia: string;
-  numeroConta: string;
+  numero_conta: string;
   digito: string;
   titular: string;
   saldo: number;
-  saldoInicial: number;
+  saldo_inicial: number;
   ativa: boolean;
   principal: boolean;
   empresa: string;
-  planoContas: string;
+  plano_contas: string;
   observacoes: string;
   cor: string;
 }
 
 interface Transferencia {
-  id: number;
+  id: string;
   dataHora: string;
   data: string;
-  contaOrigemId: number;
-  contaDestinoId: number;
+  contaOrigemId: string;
+  contaDestinoId: string;
   valor: number;
   taxa: number;
   historico: string;
@@ -54,36 +55,36 @@ interface Transferencia {
   nomeDestino: string;
 }
 
-// ─── Initial data ────────────────────────────────────────────────────────────
+// ─── Initial data (seed fallback) ────────────────────────────────────────────
 
-const CONTAS_INICIAIS: Conta[] = [
+const CONTAS_SEED: Omit<Conta, 'id'>[] = [
   {
-    id: 1, nome: "Conta Corrente Principal", tipo: "Conta Corrente",
-    banco: "Itaú Unibanco", agencia: "1234", numeroConta: "56789", digito: "0",
-    titular: "Express Connect Transportes LTDA", saldo: 145000.50, saldoInicial: 100000,
+    nome: "Conta Corrente Principal", tipo: "Conta Corrente",
+    banco: "Itaú Unibanco", agencia: "1234", numero_conta: "56789", digito: "0",
+    titular: "Express Connect Transportes LTDA", saldo: 145000.50, saldo_inicial: 100000,
     ativa: true, principal: true, empresa: "Matriz (SP)",
-    planoContas: "Disponibilidades", observacoes: "", cor: "#2563eb"
+    plano_contas: "Disponibilidades", observacoes: "", cor: "#2563eb"
   },
   {
-    id: 2, nome: "Conta Reserva / Impostos", tipo: "Conta Poupança",
-    banco: "Bradesco", agencia: "4321", numeroConta: "98765", digito: "4",
-    titular: "Express Connect Transportes LTDA", saldo: 85200.00, saldoInicial: 80000,
+    nome: "Conta Reserva / Impostos", tipo: "Conta Poupança",
+    banco: "Bradesco", agencia: "4321", numero_conta: "98765", digito: "4",
+    titular: "Express Connect Transportes LTDA", saldo: 85200.00, saldo_inicial: 80000,
     ativa: true, principal: false, empresa: "Matriz (SP)",
-    planoContas: "Reservas", observacoes: "Reserva para tributos", cor: "#7c3aed"
+    plano_contas: "Reservas", observacoes: "Reserva para tributos", cor: "#7c3aed"
   },
   {
-    id: 3, nome: "Cartão Corporativo Digital", tipo: "Conta Digital",
-    banco: "Nubank", agencia: "0001", numeroConta: "11223344", digito: "5",
-    titular: "Express Connect Hub", saldo: 12500.00, saldoInicial: 10000,
+    nome: "Cartão Corporativo Digital", tipo: "Conta Digital",
+    banco: "Nubank", agencia: "0001", numero_conta: "11223344", digito: "5",
+    titular: "Express Connect Hub", saldo: 12500.00, saldo_inicial: 10000,
     ativa: true, principal: false, empresa: "Matriz (SP)",
-    planoContas: "Disponibilidades", observacoes: "", cor: "#8b5cf6"
+    plano_contas: "Disponibilidades", observacoes: "", cor: "#8b5cf6"
   },
   {
-    id: 4, nome: "Caixa Interno — Pequenos Gastos", tipo: "Caixa Físico",
-    banco: "—", agencia: "—", numeroConta: "—", digito: "—",
-    titular: "Financeiro Interno", saldo: 1250.75, saldoInicial: 2000,
+    nome: "Caixa Interno — Pequenos Gastos", tipo: "Caixa Físico",
+    banco: "—", agencia: "—", numero_conta: "—", digito: "—",
+    titular: "Financeiro Interno", saldo: 1250.75, saldo_inicial: 2000,
     ativa: true, principal: false, empresa: "Matriz (SP)",
-    planoContas: "Caixa Geral", observacoes: "Reposição mensal: R$ 2.000", cor: "#0891b2"
+    plano_contas: "Caixa Geral", observacoes: "Reposição mensal: R$ 2.000", cor: "#0891b2"
   },
 ];
 
@@ -102,9 +103,9 @@ const fmtHora = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hou
 // ─── Form blank states ────────────────────────────────────────────────────────
 
 const NOVA_CONTA_BLANK = {
-  nome: "", tipo: "", banco: "", agencia: "", numeroConta: "", digito: "",
-  titular: "", saldoInicial: 0, ativa: true, principal: false,
-  empresa: "Matriz (SP)", planoContas: "Disponibilidades", observacoes: "", cor: "#2563eb"
+  nome: "", tipo: "", banco: "", agencia: "", numero_conta: "", digito: "",
+  titular: "", saldo_inicial: 0, ativa: true, principal: false,
+  empresa: "Matriz (SP)", plano_contas: "Disponibilidades", observacoes: "", cor: "#2563eb"
 };
 
 const TRANSFERENCIA_BLANK = {
@@ -115,9 +116,11 @@ const TRANSFERENCIA_BLANK = {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ContasBancarias() {
-  const [contas, setContas] = useState<Conta[]>(CONTAS_INICIAIS);
+  const [contas, setContas] = useState<Conta[]>([]);
   const [historico, setHistorico] = useState<Transferencia[]>([]);
   const [busca, setBusca] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Modais
   const [showNovaConta, setShowNovaConta] = useState(false);
@@ -135,6 +138,44 @@ export default function ContasBancarias() {
   const [errosConta, setErrosConta] = useState<Record<string, string>>({});
   const [errosTransf, setErrosTransf] = useState<Record<string, string>>({});
 
+  // ── Fetch contas from Supabase ──
+  const fetchContas = async () => {
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      const { data, error } = await supabase
+        .from("contas_financeiras")
+        .select("*")
+        .order("nome");
+
+      if (error) {
+        if (error.code === "42P01") {
+          setFetchError("Tabela de contas financeiras não encontrada no banco de dados.");
+          setContas([]);
+          return;
+        }
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        setContas([]);
+        return;
+      }
+
+      setContas(data as Conta[]);
+    } catch (e: any) {
+      console.error("[ContasBancarias] Erro ao buscar contas:", e?.message || e);
+      setFetchError("Erro ao carregar contas do banco de dados.");
+      setContas([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchContas();
+  }, []);
+
   // ── Computed ──
   const saldoTotal = contas.filter(c => c.ativa).reduce((a, c) => a + c.saldo, 0);
   const contasAtivas = contas.filter(c => c.ativa).length;
@@ -151,10 +192,9 @@ export default function ContasBancarias() {
     if (!novaConta.tipo) erros.tipo = "Selecione o tipo de conta";
     if (!novaConta.banco.trim()) erros.banco = "Informe a instituição financeira";
     if (!novaConta.titular.trim()) erros.titular = "Informe o titular da conta";
-    // Verificar duplicidade pelo nome
     const nomeTrim = novaConta.nome.trim().toLowerCase();
     const duplicado = contas.some(c =>
-      c.nome.toLowerCase() === nomeTrim && c.id !== (contaEditando?.id ?? -1)
+      c.nome.toLowerCase() === nomeTrim && c.id !== (contaEditando?.id ?? "")
     );
     if (duplicado) erros.nome = "Já existe uma conta com este nome";
     setErrosConta(erros);
@@ -173,9 +213,8 @@ export default function ContasBancarias() {
     if (transferencia.taxa < 0) erros.taxa = "Taxa não pode ser negativa";
     if (!transferencia.data) erros.data = "Informe a data da transferência";
 
-    // Verificar saldo
     if (transferencia.contaOrigemId && transferencia.valor > 0) {
-      const origem = contas.find(c => c.id === parseInt(transferencia.contaOrigemId));
+      const origem = contas.find(c => c.id === transferencia.contaOrigemId);
       const totalSair = transferencia.valor + (transferencia.taxa || 0);
       if (origem && origem.saldo < totalSair) {
         erros.valor = `Saldo insuficiente. Disponível: ${fmtBRL(origem.saldo)}`;
@@ -186,84 +225,118 @@ export default function ContasBancarias() {
     return Object.keys(erros).length === 0;
   };
 
-  // ── Salvar conta ──
+  // ── Salvar conta (criar/editar no Supabase) ──
   const handleSalvarConta = async () => {
     if (!validarConta()) return;
     try {
       setIsSubmittingConta(true);
-      await new Promise(r => setTimeout(r, 700));
 
       if (contaEditando) {
-        setContas(prev => prev.map(c =>
-          c.id === contaEditando.id
-            ? { ...c, ...novaConta, id: c.id, saldo: c.saldo }
-            : c
-        ));
+        const { error } = await supabase
+          .from("contas_financeiras")
+          .update({
+            nome: novaConta.nome.trim(),
+            tipo: novaConta.tipo,
+            banco: novaConta.banco.trim(),
+            agencia: novaConta.agencia || "—",
+            numero_conta: novaConta.numero_conta || "—",
+            digito: novaConta.digito || "—",
+            titular: novaConta.titular.trim(),
+            ativa: novaConta.ativa,
+            principal: novaConta.principal,
+            empresa: novaConta.empresa || "Matriz (SP)",
+            plano_contas: novaConta.plano_contas || "Disponibilidades",
+            observacoes: novaConta.observacoes,
+            cor: novaConta.cor || "#2563eb",
+          })
+          .eq("id", contaEditando.id);
+
+        if (error) throw error;
+
+        if (novaConta.principal) {
+          await supabase
+            .from("contas_financeiras")
+            .update({ principal: false })
+            .neq("id", contaEditando.id)
+            .eq("principal", true);
+        }
+
         toast.success("Conta atualizada com sucesso!");
       } else {
-        // Se marcada como principal, desmarcar as outras
         if (novaConta.principal) {
-          setContas(prev => prev.map(c => ({ ...c, principal: false })));
+          await supabase
+            .from("contas_financeiras")
+            .update({ principal: false })
+            .eq("principal", true);
         }
-        const nova: Conta = {
-          id: Date.now(),
-          nome: novaConta.nome.trim(),
-          tipo: novaConta.tipo,
-          banco: novaConta.banco.trim(),
-          agencia: novaConta.agencia || "—",
-          numeroConta: novaConta.numeroConta || "—",
-          digito: novaConta.digito || "—",
-          titular: novaConta.titular.trim(),
-          saldo: novaConta.saldoInicial,
-          saldoInicial: novaConta.saldoInicial,
-          ativa: novaConta.ativa,
-          principal: novaConta.principal,
-          empresa: novaConta.empresa || "Matriz (SP)",
-          planoContas: novaConta.planoContas || "Disponibilidades",
-          observacoes: novaConta.observacoes,
-          cor: novaConta.cor || "#2563eb",
-        };
-        setContas(prev => [...prev, nova]);
+
+        const { error } = await supabase
+          .from("contas_financeiras")
+          .insert([{
+            nome: novaConta.nome.trim(),
+            tipo: novaConta.tipo,
+            banco: novaConta.banco.trim(),
+            agencia: novaConta.agencia || "—",
+            numero_conta: novaConta.numero_conta || "—",
+            digito: novaConta.digito || "—",
+            titular: novaConta.titular.trim(),
+            saldo: novaConta.saldo_inicial,
+            saldo_inicial: novaConta.saldo_inicial,
+            ativa: novaConta.ativa,
+            principal: novaConta.principal,
+            empresa: novaConta.empresa || "Matriz (SP)",
+            plano_contas: novaConta.plano_contas || "Disponibilidades",
+            observacoes: novaConta.observacoes,
+            cor: novaConta.cor || "#2563eb",
+          }]);
+
+        if (error) throw error;
         toast.success("Conta cadastrada com sucesso!");
       }
+
       setShowNovaConta(false);
       setContaEditando(null);
       setNovaConta({ ...NOVA_CONTA_BLANK });
       setErrosConta({});
-    } catch (e) {
-      toast.error("Erro ao salvar conta. Tente novamente.");
+      await fetchContas();
+    } catch (e: any) {
+      console.error("[ContasBancarias] Erro ao salvar conta:", e?.message || e);
+      toast.error(`Erro ao salvar conta: ${e?.message || "Tente novamente."}`);
     } finally {
       setIsSubmittingConta(false);
     }
   };
 
-  // ── Transferir ──
+  // ── Transferir entre contas ──
   const handleTransferir = async () => {
     if (!validarTransferencia()) return;
     try {
       setIsSubmittingTransf(true);
-      await new Promise(r => setTimeout(r, 800));
 
-      const origemId = parseInt(transferencia.contaOrigemId);
-      const destinoId = parseInt(transferencia.contaDestinoId);
+      const origem = contas.find(c => c.id === transferencia.contaOrigemId)!;
+      const destino = contas.find(c => c.id === transferencia.contaDestinoId)!;
       const totalSair = transferencia.valor + (transferencia.taxa || 0);
 
-      const origem = contas.find(c => c.id === origemId)!;
-      const destino = contas.find(c => c.id === destinoId)!;
+      const { error: errOrigem } = await supabase
+        .from("contas_financeiras")
+        .update({ saldo: origem.saldo - totalSair })
+        .eq("id", origem.id);
 
-      setContas(prev => prev.map(c => {
-        if (c.id === origemId) return { ...c, saldo: c.saldo - totalSair };
-        if (c.id === destinoId) return { ...c, saldo: c.saldo + transferencia.valor };
-        return c;
-      }));
+      if (errOrigem) throw errOrigem;
 
-      // Registrar no histórico
+      const { error: errDestino } = await supabase
+        .from("contas_financeiras")
+        .update({ saldo: destino.saldo + transferencia.valor })
+        .eq("id", destino.id);
+
+      if (errDestino) throw errDestino;
+
       const novaTransf: Transferencia = {
-        id: Date.now(),
+        id: crypto.randomUUID(),
         dataHora: new Date().toISOString(),
         data: transferencia.data,
-        contaOrigemId: origemId,
-        contaDestinoId: destinoId,
+        contaOrigemId: origem.id,
+        contaDestinoId: destino.id,
         valor: transferencia.valor,
         taxa: transferencia.taxa || 0,
         historico: transferencia.historico || "Transferência entre contas",
@@ -276,8 +349,11 @@ export default function ContasBancarias() {
       setTransferencia({ ...TRANSFERENCIA_BLANK });
       setErrosTransf({});
       toast.success(`Transferência de ${fmtBRL(transferencia.valor)} realizada com sucesso!`);
-    } catch (e) {
-      toast.error("Erro ao realizar transferência. Tente novamente.");
+
+      await fetchContas();
+    } catch (e: any) {
+      console.error("[ContasBancarias] Erro na transferência:", e?.message || e);
+      toast.error(`Erro ao transferir: ${e?.message || "Tente novamente."}`);
     } finally {
       setIsSubmittingTransf(false);
     }
@@ -287,26 +363,50 @@ export default function ContasBancarias() {
     setContaEditando(conta);
     setNovaConta({
       nome: conta.nome, tipo: conta.tipo, banco: conta.banco,
-      agencia: conta.agencia, numeroConta: conta.numeroConta, digito: conta.digito,
-      titular: conta.titular, saldoInicial: conta.saldo,
+      agencia: conta.agencia, numero_conta: conta.numero_conta, digito: conta.digito,
+      titular: conta.titular, saldo_inicial: conta.saldo,
       ativa: conta.ativa, principal: conta.principal,
-      empresa: conta.empresa, planoContas: conta.planoContas,
+      empresa: conta.empresa, plano_contas: conta.plano_contas,
       observacoes: conta.observacoes, cor: conta.cor
     });
     setShowNovaConta(true);
   };
 
-  const handleToggleAtiva = (id: number) => {
-    setContas(prev => prev.map(c =>
-      c.id === id ? { ...c, ativa: !c.ativa } : c
-    ));
+  const handleToggleAtiva = async (id: string) => {
     const conta = contas.find(c => c.id === id);
-    toast.success(`Conta ${conta?.ativa ? "desativada" : "ativada"} com sucesso.`);
+    if (!conta) return;
+    try {
+      const { error } = await supabase
+        .from("contas_financeiras")
+        .update({ ativa: !conta.ativa })
+        .eq("id", id);
+
+      if (error) throw error;
+      toast.success(`Conta ${conta.ativa ? "desativada" : "ativada"} com sucesso.`);
+      await fetchContas();
+    } catch (e: any) {
+      toast.error(`Erro ao ${conta.ativa ? "desativar" : "ativar"} conta.`);
+    }
   };
 
-  const handleSetPrincipal = (id: number) => {
-    setContas(prev => prev.map(c => ({ ...c, principal: c.id === id })));
-    toast.success("Conta principal atualizada.");
+  const handleSetPrincipal = async (id: string) => {
+    try {
+      await supabase
+        .from("contas_financeiras")
+        .update({ principal: false })
+        .eq("principal", true);
+
+      const { error } = await supabase
+        .from("contas_financeiras")
+        .update({ principal: true })
+        .eq("id", id);
+
+      if (error) throw error;
+      toast.success("Conta principal atualizada.");
+      await fetchContas();
+    } catch (e: any) {
+      toast.error("Erro ao definir conta principal.");
+    }
   };
 
   const fecharModalConta = () => {
@@ -322,9 +422,8 @@ export default function ContasBancarias() {
     setErrosTransf({});
   };
 
-  // Conta origem selecionada (para feedback de saldo)
   const origemSelecionada = transferencia.contaOrigemId
-    ? contas.find(c => c.id === parseInt(transferencia.contaOrigemId))
+    ? contas.find(c => c.id === transferencia.contaOrigemId)
     : null;
   const totalSairTransf = (transferencia.valor || 0) + (transferencia.taxa || 0);
 
@@ -345,7 +444,6 @@ export default function ContasBancarias() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {/* Histórico */}
           <Button variant="outline" className="gap-2 h-9" onClick={() => setShowHistorico(true)}>
             <History className="w-4 h-4" />
             Histórico
@@ -356,7 +454,6 @@ export default function ContasBancarias() {
             )}
           </Button>
 
-          {/* Transferência */}
           <Button
             variant="outline"
             className="gap-2 h-9 border-indigo-200 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300"
@@ -366,7 +463,6 @@ export default function ContasBancarias() {
             Transferir
           </Button>
 
-          {/* Nova conta */}
           <Button
             className="gap-2 h-9 bg-indigo-600 hover:bg-indigo-700 text-white"
             onClick={() => { setContaEditando(null); setNovaConta({ ...NOVA_CONTA_BLANK }); setShowNovaConta(true); }}
@@ -379,7 +475,6 @@ export default function ContasBancarias() {
 
       {/* KPI cards de saldo */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Saldo total */}
         <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-lg p-5 col-span-1">
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
           <p className="text-xs font-semibold text-indigo-200 uppercase tracking-wider mb-2">Saldo Consolidado</p>
@@ -387,7 +482,6 @@ export default function ContasBancarias() {
           <p className="text-xs text-indigo-200 mt-2">{contasAtivas} conta{contasAtivas !== 1 ? "s" : ""} ativa{contasAtivas !== 1 ? "s" : ""}</p>
         </div>
 
-        {/* Maior saldo */}
         <div className="relative overflow-hidden rounded-xl border bg-card shadow-sm p-5 hover:shadow-md transition-all">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-400 to-green-500" />
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -404,7 +498,6 @@ export default function ContasBancarias() {
           })()}
         </div>
 
-        {/* Transferências realizadas */}
         <div className="relative overflow-hidden rounded-xl border bg-card shadow-sm p-5 hover:shadow-md transition-all">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-400 to-purple-500" />
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -432,100 +525,123 @@ export default function ContasBancarias() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/30 hover:bg-muted/30">
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase pl-5">Conta</TableHead>
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase">Banco</TableHead>
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase">Ag / Conta</TableHead>
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase">Titular</TableHead>
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase">Empresa</TableHead>
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-right pr-5">Saldo</TableHead>
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-center">Status</TableHead>
-                <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-right pr-4">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {contasFiltradas.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
-                    Nenhuma conta encontrada.
-                  </TableCell>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm">Carregando contas...</p>
+              </div>
+            </div>
+          ) : fetchError ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <AlertCircle className="w-10 h-10 text-red-400 mb-3" />
+              <p className="text-sm font-medium text-red-500">{fetchError}</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={fetchContas}>
+                Tentar novamente
+              </Button>
+            </div>
+          ) : contas.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+              <Landmark className="w-12 h-12 mb-3 opacity-20" />
+              <p className="text-sm font-medium">Nenhuma conta cadastrada.</p>
+              <p className="text-xs mt-1">Cadastre uma conta para lançar pagamentos.</p>
+              <Button
+                variant="outline"
+                className="mt-4 gap-1.5"
+                onClick={() => { setContaEditando(null); setNovaConta({ ...NOVA_CONTA_BLANK }); setShowNovaConta(true); }}
+              >
+                <Plus className="w-3.5 h-3.5" /> Cadastrar Primeira Conta
+              </Button>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase pl-5">Conta</TableHead>
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase">Banco</TableHead>
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase">Ag / Conta</TableHead>
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase">Titular</TableHead>
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase">Empresa</TableHead>
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-right pr-5">Saldo</TableHead>
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-center">Status</TableHead>
+                  <TableHead className="text-xs font-semibold text-muted-foreground uppercase text-right pr-4">Ações</TableHead>
                 </TableRow>
-              )}
-              {contasFiltradas.map(conta => (
-                <TableRow key={conta.id} className={`hover:bg-muted/20 transition-colors ${!conta.ativa ? "opacity-50" : ""}`}>
-                  <TableCell className="pl-5 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: conta.cor }} />
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-sm text-foreground">{conta.nome}</span>
-                          {conta.principal && (
-                            <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-                          )}
+              </TableHeader>
+              <TableBody>
+                {contasFiltradas.map(conta => (
+                  <TableRow key={conta.id} className={`hover:bg-muted/20 transition-colors ${!conta.ativa ? "opacity-50" : ""}`}>
+                    <TableCell className="pl-5 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: conta.cor }} />
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-sm text-foreground">{conta.nome}</span>
+                            {conta.principal && (
+                              <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+                            )}
+                          </div>
+                          <Badge variant="outline" className={`text-[10px] font-medium px-1.5 py-0 mt-0.5 ${TIPO_CONTA_CORES[conta.tipo] ?? "bg-gray-100 text-gray-600"}`}>
+                            {conta.tipo}
+                          </Badge>
                         </div>
-                        <Badge variant="outline" className={`text-[10px] font-medium px-1.5 py-0 mt-0.5 ${TIPO_CONTA_CORES[conta.tipo] ?? "bg-gray-100 text-gray-600"}`}>
-                          {conta.tipo}
-                        </Badge>
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm font-medium">{conta.banco}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {conta.agencia !== "—" ? `${conta.agencia} / ` : ""}{conta.numeroConta}{conta.digito !== "—" ? `-${conta.digito}` : ""}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">{conta.titular}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{conta.empresa}</TableCell>
-                  <TableCell className="text-right pr-5 font-black text-sm">
-                    <span className={conta.saldo < 0 ? "text-red-600" : "text-foreground"}>
-                      {fmtBRL(conta.saldo)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Badge
-                      variant="outline"
-                      className={conta.ativa
-                        ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 text-[11px]"
-                        : "bg-gray-100 text-gray-500 border-gray-200 text-[11px]"}
-                    >
-                      {conta.ativa ? "Ativa" : "Inativa"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right pr-4">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost" size="sm"
-                        className="h-7 w-7 p-0 hover:bg-indigo-50 text-indigo-600"
-                        title="Editar"
-                        onClick={() => handleEditarConta(conta)}
+                    </TableCell>
+                    <TableCell className="text-sm font-medium">{conta.banco}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {conta.agencia !== "—" ? `${conta.agencia} / ` : ""}{conta.numero_conta}{conta.digito !== "—" ? `-${conta.digito}` : ""}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">{conta.titular}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{conta.empresa}</TableCell>
+                    <TableCell className="text-right pr-5 font-black text-sm">
+                      <span className={conta.saldo < 0 ? "text-red-600" : "text-foreground"}>
+                        {fmtBRL(conta.saldo)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge
+                        variant="outline"
+                        className={conta.ativa
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 text-[11px]"
+                          : "bg-gray-100 text-gray-500 border-gray-200 text-[11px]"}
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost" size="sm"
-                        className={`h-7 w-7 p-0 ${conta.ativa ? "hover:bg-red-50 text-red-500" : "hover:bg-emerald-50 text-emerald-600"}`}
-                        title={conta.ativa ? "Desativar" : "Ativar"}
-                        onClick={() => handleToggleAtiva(conta.id)}
-                      >
-                        {conta.ativa ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}
-                      </Button>
-                      {!conta.principal && conta.ativa && (
+                        {conta.ativa ? "Ativa" : "Inativa"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right pr-4">
+                      <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost" size="sm"
-                          className="h-7 w-7 p-0 hover:bg-amber-50 text-amber-500"
-                          title="Definir como principal"
-                          onClick={() => handleSetPrincipal(conta.id)}
+                          className="h-7 w-7 p-0 hover:bg-indigo-50 text-indigo-600"
+                          title="Editar"
+                          onClick={() => handleEditarConta(conta)}
                         >
-                          <Star className="w-3.5 h-3.5" />
+                          <Edit2 className="w-3.5 h-3.5" />
                         </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                        <Button
+                          variant="ghost" size="sm"
+                          className={`h-7 w-7 p-0 ${conta.ativa ? "hover:bg-red-50 text-red-500" : "hover:bg-emerald-50 text-emerald-600"}`}
+                          title={conta.ativa ? "Desativar" : "Ativar"}
+                          onClick={() => handleToggleAtiva(conta.id)}
+                        >
+                          {conta.ativa ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}
+                        </Button>
+                        {!conta.principal && conta.ativa && (
+                          <Button
+                            variant="ghost" size="sm"
+                            className="h-7 w-7 p-0 hover:bg-amber-50 text-amber-500"
+                            title="Definir como principal"
+                            onClick={() => handleSetPrincipal(conta.id)}
+                          >
+                            <Star className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
@@ -600,8 +716,8 @@ export default function ContasBancarias() {
                     type="number"
                     min="0"
                     step="0.01"
-                    value={novaConta.saldoInicial || ""}
-                    onChange={e => setNovaConta(p => ({ ...p, saldoInicial: Number(e.target.value) }))}
+                    value={novaConta.saldo_inicial || ""}
+                    onChange={e => setNovaConta(p => ({ ...p, saldo_inicial: Number(e.target.value) }))}
                     placeholder="0,00"
                     className="h-10 font-mono text-indigo-700 dark:text-indigo-400 font-bold"
                     disabled={!!contaEditando}
@@ -669,8 +785,8 @@ export default function ContasBancarias() {
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Número da Conta</Label>
                   <Input
-                    value={novaConta.numeroConta}
-                    onChange={e => setNovaConta(p => ({ ...p, numeroConta: e.target.value }))}
+                    value={novaConta.numero_conta}
+                    onChange={e => setNovaConta(p => ({ ...p, numero_conta: e.target.value }))}
                     placeholder="00000"
                     className="h-10 font-mono"
                   />
@@ -687,12 +803,11 @@ export default function ContasBancarias() {
                 </div>
               </div>
 
-              {/* Preview */}
               {novaConta.banco && (
                 <div className="p-3 rounded-lg bg-muted/50 border text-sm">
                   <p className="text-xs text-muted-foreground mb-1 font-semibold uppercase tracking-wide">Dados bancários</p>
                   <p className="font-mono font-medium">
-                    {novaConta.banco}{novaConta.agencia ? ` · Ag: ${novaConta.agencia}` : ""}{novaConta.numeroConta ? ` · C/C: ${novaConta.numeroConta}${novaConta.digito ? `-${novaConta.digito}` : ""}` : ""}
+                    {novaConta.banco}{novaConta.agencia ? ` · Ag: ${novaConta.agencia}` : ""}{novaConta.numero_conta ? ` · C/C: ${novaConta.numero_conta}${novaConta.digito ? `-${novaConta.digito}` : ""}` : ""}
                   </p>
                 </div>
               )}
@@ -715,7 +830,7 @@ export default function ContasBancarias() {
 
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Plano de Contas</Label>
-                  <Select value={novaConta.planoContas} onValueChange={v => setNovaConta(p => ({ ...p, planoContas: v }))}>
+                  <Select value={novaConta.plano_contas} onValueChange={v => setNovaConta(p => ({ ...p, plano_contas: v }))}>
                     <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Disponibilidades">Disponibilidades</SelectItem>
@@ -805,7 +920,6 @@ export default function ContasBancarias() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            {/* Origem */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 Conta de Origem <span className="text-red-500">*</span>
@@ -819,7 +933,7 @@ export default function ContasBancarias() {
                 </SelectTrigger>
                 <SelectContent>
                   {contas.filter(c => c.ativa).map(c => (
-                    <SelectItem key={c.id} value={c.id.toString()}>
+                    <SelectItem key={c.id} value={c.id}>
                       <span className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: c.cor }} />
                         {c.nome} — <span className="font-mono text-xs">{fmtBRL(c.saldo)}</span>
@@ -831,14 +945,12 @@ export default function ContasBancarias() {
               {errosTransf.origem && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errosTransf.origem}</p>}
             </div>
 
-            {/* Seta visual */}
             <div className="flex items-center justify-center">
               <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-full text-xs font-medium text-muted-foreground">
                 <ChevronRight className="w-4 h-4" /> Transferir para
               </div>
             </div>
 
-            {/* Destino */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 Conta de Destino <span className="text-red-500">*</span>
@@ -851,8 +963,8 @@ export default function ContasBancarias() {
                   <SelectValue placeholder="Selecione a conta de destino" />
                 </SelectTrigger>
                 <SelectContent>
-                  {contas.filter(c => c.ativa && c.id.toString() !== transferencia.contaOrigemId).map(c => (
-                    <SelectItem key={c.id} value={c.id.toString()}>
+                  {contas.filter(c => c.ativa && c.id !== transferencia.contaOrigemId).map(c => (
+                    <SelectItem key={c.id} value={c.id}>
                       <span className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: c.cor }} />
                         {c.nome}
@@ -864,7 +976,6 @@ export default function ContasBancarias() {
               {errosTransf.destino && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errosTransf.destino}</p>}
             </div>
 
-            {/* Valor + Taxa */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -895,7 +1006,6 @@ export default function ContasBancarias() {
               </div>
             </div>
 
-            {/* Data + Histórico */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -919,7 +1029,6 @@ export default function ContasBancarias() {
               </div>
             </div>
 
-            {/* Resumo financeiro */}
             {transferencia.valor > 0 && (
               <div className={`p-3 rounded-lg border text-sm space-y-1 ${
                 origemSelecionada && origemSelecionada.saldo < totalSairTransf
@@ -980,7 +1089,7 @@ export default function ContasBancarias() {
               Histórico de Transferências
             </DialogTitle>
             <DialogDescription>
-              Registro de todas as transferências entre contas realizadas nesta sessão.
+              Registro de todas as transferências entre contas realizadas.
             </DialogDescription>
           </DialogHeader>
 

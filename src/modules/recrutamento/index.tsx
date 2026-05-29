@@ -4,7 +4,7 @@ import { PaginaOperacoes } from './pages/PaginaOperacoes'
 import { PaginaNovaOperacao } from './pages/PaginaNovaOperacao'
 import { PaginaPrestadores } from './pages/PaginaPrestadores'
 import { useRecrutamentoStore } from './store/recrutamentoStore'
-import { useRecrutamentoRealtime } from './hooks/useRecrutamentoRealtime'
+import { usePrestadoresRealtime } from './hooks/useRecrutamentoRealtime'
 import { PageHeader } from './components/design-system/PageHeader'
 import { PremiumCard, PremiumCardHeader, PremiumCardTitle, PremiumCardContent } from './components/design-system/PremiumCard'
 import { PremiumBadge } from './components/design-system/PremiumBadge'
@@ -12,6 +12,7 @@ import { MetricCard } from './components/design-system/MetricCard'
 import { EmptyState } from './components/design-system/EmptyState'
 import { KanbanBoard } from './components/kanban/KanbanBoard'
 import { EnterpriseKanbanBoard } from './components/enterprise-kanban/EnterpriseKanbanBoard'
+import { PrestadoresAptos } from './components/enterprise-kanban/PrestadoresAptos'
 import { PrestadorCard } from './components/prestadores/PrestadorCard'
 import { ScoreMeter } from './components/score/ScoreMeter'
 import { CentralDocumentos } from './components/documentos/CentralDocumentos'
@@ -24,13 +25,15 @@ import { CrmLogistico } from './components/crm/CrmLogistico'
 import { BancoTalentos } from './components/talentos/BancoTalentos'
 import { useOperacoes } from './hooks/useOperacoes'
 import { usePrestadores } from './hooks/usePrestadores'
+import { prestadoresService } from './services/prestadoresService'
 import { documentosService } from './services/documentosService'
 import { automacoesService } from './services/automacoesService'
 import { matchService } from './services/matchService'
 import { crmService } from './services/crmService'
+import { enterpriseKanbanService } from './components/enterprise-kanban/enterpriseKanbanService'
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Truck, LayoutDashboard, FileText, Bot, Award, Users, HeartHandshake, MessageSquare, Sparkles, Columns3 } from 'lucide-react'
+import { Truck, LayoutDashboard, FileText, Bot, Award, Users, HeartHandshake, MessageSquare, Sparkles, Columns3, CheckCircle } from 'lucide-react'
 import type { DocumentoPrestador, AutomacaoRegra, StatusDocumento, CrmInteracao, TalentosCandidato } from './types/recrutamento'
 
 export {
@@ -40,7 +43,7 @@ export {
   PaginaNovaOperacao,
   PaginaPrestadores,
   useRecrutamentoStore,
-  useRecrutamentoRealtime,
+  usePrestadoresRealtime,
   PageHeader,
   PremiumCard,
   PremiumCardHeader,
@@ -81,64 +84,79 @@ export {
   TalentosCandidato,
 }
 
-const ALL_CRIADOS = [
-  'Ana Clara Oliveira',
-  'Bruno Santos Lima',
-  'Carlos Eduardo Pereira',
-  'Daniela Souza Costa',
-  'Eduardo Almeida Neto',
-  'Fernanda Lima Rocha',
-  'Gabriel Barbosa Santos',
-  'Helena Martins Dias',
-  'Igor Costa Ribeiro',
-  'Julia Oliveira Campos',
-]
-
-const ALL_CANAIS = ['whatsapp', 'indicacao', 'site', 'anuncio'] as const
-const ALL_VEICULOS = ['Van', 'Truck', 'Carreta', 'VUC', 'Bitrem', 'Toco', '3/4']
-const ALL_REGIODAGENS = ['São Paulo', 'Rio de Janeiro', 'Minas Gerais', 'Paraná', 'Santa Catarina', 'Rio Grande do Sul', 'Bahia', 'Pernambuco', 'Ceará', 'Goiás']
-
-function generateMockPrestadorId(): string {
-  return `mock_pre_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+const STAGE_TO_STATUS: Record<string, TalentosCandidato['status']> = {
+  novo_cadastro: 'novo',
+  em_analise: 'em_analise',
+  documentacao_pendente: 'em_analise',
+  em_validacao: 'em_analise',
+  entrevista: 'em_analise',
+  em_treinamento: 'em_analise',
+  aprovado: 'aprovado',
+  ativo: 'agregado',
+  bloqueado: 'bloqueado',
+  reprovado: 'bloqueado',
 }
 
-function makeMock(id: string): TalentosCandidato {
-  return {
-    id,
-    nome: ALL_CRIADOS[Math.floor(Math.random() * ALL_CRIADOS.length)],
-    telefone: `(11) 9${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`,
-    email: `${Math.random().toString(36).slice(2, 6)}@email.com`,
-    tipoVeiculo: ALL_VEICULOS[Math.floor(Math.random() * ALL_VEICULOS.length)],
-    regiao: ALL_REGIODAGENS[Math.floor(Math.random() * ALL_REGIODAGENS.length)],
-    experiencia: `${Math.floor(3 + Math.random() * 15)} anos`,
-    score: Math.floor(40 + Math.random() * 55),
-    status: Math.random() > 0.7 ? 'agregado' : Math.random() > 0.5 ? 'em_analise' : 'novo',
-    canalCaptacao: ALL_CANAIS[Math.floor(Math.random() * ALL_CANAIS.length)],
-    dataContato: new Date(Date.now() - Math.floor(Math.random() * 30) * 86400000).toISOString(),
-    ultimoContato: new Date(Date.now() - Math.floor(Math.random() * 7) * 86400000).toISOString(),
-    observacoes: '',
+function extractOrigem(tags: string[]): string {
+  const known = ['whatsapp', 'indicacao', 'site', 'anuncio', 'fretebras', 'facebook', 'linkedin', 'manual', 'outro']
+  for (const tag of tags) {
+    const normalized = tag.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    if (known.includes(normalized)) return tag
   }
+  return 'manual'
 }
-
-function generateMockCandidatos(count = 20): TalentosCandidato[] {
-  return Array.from({ length: count }, (_, i) => makeMock(`tal_${i}_${Date.now()}`))
-}
-
-const MOCK_TALENTOS = generateMockCandidatos()
 
 export function RecrutamentoModule() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { currentSection, setCurrentSection } = useRecrutamentoStore()
-  const { operacoes, prestadores } = useRecrutamentoStore()
+  const { operacoes, prestadores, setPrestadores } = useRecrutamentoStore()
+
+  usePrestadoresRealtime(useCallback(async () => {
+    const data = await prestadoresService.listar()
+    setPrestadores(data)
+  }, [setPrestadores]))
   const [documentos, setDocumentos] = useState<DocumentoPrestador[]>([])
   const [automacoes, setAutomacoes] = useState<AutomacaoRegra[]>([])
   const [interacoesCrm, setInteracoesCrm] = useState<CrmInteracao[]>([])
+  const [talentos, setTalentos] = useState<TalentosCandidato[]>([])
+  const [talentosLoading, setTalentosLoading] = useState(false)
 
   useEffect(() => {
     documentosService.listarPendentes().then(setDocumentos)
     automacoesService.listar().then(setAutomacoes)
     crmService.listar().then(setInteracoesCrm)
   }, [])
+
+  const carregarTalentos = useCallback(async () => {
+    setTalentosLoading(true)
+    try {
+      const candidates = await enterpriseKanbanService.listar()
+      const mapped: TalentosCandidato[] = candidates.map(c => ({
+        id: c.id,
+        nome: c.nome,
+        telefone: c.telefone,
+        email: c.email || '',
+        tipoVeiculo: c.veiculo,
+        regiao: `${c.cidade}, ${c.uf}`,
+        experiencia: '',
+        score: c.score,
+        status: STAGE_TO_STATUS[c.stage] ?? 'novo',
+        canalCaptacao: extractOrigem(c.tags) as TalentosCandidato['canalCaptacao'],
+        dataContato: c.dataEntrada,
+        ultimoContato: c.dataAtualizacao,
+        observacoes: c.observacoesIA || '',
+      }))
+      setTalentos(mapped)
+    } catch {
+      setTalentos([])
+    } finally {
+      setTalentosLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    carregarTalentos()
+  }, [carregarTalentos])
 
   const handleCrmRefresh = useCallback(async () => {
     const list = await crmService.listar()
@@ -148,7 +166,7 @@ export function RecrutamentoModule() {
   useEffect(() => {
     const sectionParam = searchParams.get('section')
     if (sectionParam) {
-      const validSections = ['dashboard', 'pipeline-kanban', 'operacoes', 'nova-operacao', 'prestadores', 'crm', 'documentos', 'ia', 'onboarding', 'score', 'automacoes', 'portal', 'talentos']
+      const validSections = ['dashboard', 'pipeline-kanban', 'operacoes', 'nova-operacao', 'prestadores', 'crm', 'documentos', 'ia', 'onboarding', 'score', 'automacoes', 'portal', 'talentos', 'operacionais']
       if (validSections.includes(sectionParam)) {
         setCurrentSection(sectionParam as any)
       }
@@ -307,6 +325,19 @@ export function RecrutamentoModule() {
         )
       }
 
+      case 'operacionais': {
+        return (
+          <div className="space-y-6">
+            <PageHeader
+              icon={<CheckCircle className="w-5 h-5 text-primary" />}
+              title="Prestadores Aptos"
+              description="Prestadores operacionalmente aptos — prontos para alocação na Escala/Torre"
+            />
+            <PrestadoresAptos />
+          </div>
+        )
+      }
+
       case 'talentos': {
         return (
           <div className="space-y-6">
@@ -315,7 +346,21 @@ export function RecrutamentoModule() {
               title="Banco de Talentos"
               description="Relação completa de candidatos e potenciais prestadores"
             />
-            <BancoTalentos candidatos={MOCK_TALENTOS} />
+            {talentosLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="rounded-xl border border-border/60 bg-card p-4 animate-pulse">
+                    <div className="space-y-3">
+                      <div className="h-4 w-32 bg-muted rounded" />
+                      <div className="h-3 w-24 bg-muted rounded" />
+                      <div className="h-3 w-28 bg-muted rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <BancoTalentos candidatos={talentos} />
+            )}
           </div>
         )
       }

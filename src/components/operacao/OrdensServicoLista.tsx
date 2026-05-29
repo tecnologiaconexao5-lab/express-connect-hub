@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, Navigation, LocateFixed } from "lucide-react";
+import { Search, Plus, Filter, Edit, Eye, AlertTriangle, Truck, MapPin, Trash2, Calendar, Clock, ChevronDown, CheckCircle2, Navigation, LocateFixed, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { OrdemServico, OSStatus, STATUS_CORES } from "./osTypes";
+import { OrdemServico, obterStatusGlobalOS } from "./osTypes";
+import { STATUS_GLOBAL_INFO, obterClasseBadgeGlobal, STATUS_FILTRO_OPCOES } from "./statusGlobal";
+import { obterClasseBadgeDivergencia, obterLabelDivergencia } from "@/services/escala/syncDiagnostico";
 import OrdemServicoForm from "./OrdemServicoForm";
 import OrdemServicoPreview from "./OrdemServicoPreview";
 import { fromOSRow, OSRow } from "@/lib/dbMappers";
@@ -48,6 +50,7 @@ const OrdensServicoLista = () => {
   const [osParaExcluir, setOsParaExcluir] = useState<OrdemServico | null>(null);
   const [senhaAdmin, setSenhaAdmin] = useState("");
   const [excluindo, setExcluindo] = useState(false);
+  const [syncStatusMap, setSyncStatusMap] = useState<Record<string, { label: string; classe: string }>>({});
 
   useEffect(() => {
     fetchOrdens();
@@ -100,6 +103,36 @@ const OrdensServicoLista = () => {
         throw error;
       }
       if (data && data.length > 0) {
+        const osIds = data.map((item: any) => item.id).filter(Boolean);
+        const syncMap: Record<string, { label: string; classe: string }> = {};
+
+        if (osIds.length > 0) {
+          const { data: alocacoes } = await supabase
+            .from("alocacoes_escala")
+            .select("ordem_servico_id, prestador_id, tipo_veiculo")
+            .in("ordem_servico_id", osIds);
+
+          if (alocacoes) {
+            alocacoes.forEach((alc: any) => {
+              syncMap[alc.ordem_servico_id] = {
+                label: "Sincronizada",
+                classe: obterClasseBadgeDivergencia("sincronizada"),
+              };
+            });
+          }
+        }
+
+        data.forEach((item: any) => {
+          if (!syncMap[item.id]) {
+            syncMap[item.id] = {
+              label: "Sem Escala",
+              classe: obterClasseBadgeDivergencia("os_sem_escala"),
+            };
+          }
+        });
+
+        setSyncStatusMap(syncMap);
+
         const normalizados = (data as any[]).map((item) => {
           const os = fromOSRow(item);
           return {
@@ -110,6 +143,7 @@ const OrdensServicoLista = () => {
         setOrdens(normalizados as OrdemServico[]);
       } else {
         setOrdens([]);
+        setSyncStatusMap({});
       }
     } catch (e: any) {
       if (e.code !== "42P01") toast.error("Erro ao buscar ordens de serviço.");
@@ -155,7 +189,7 @@ const OrdensServicoLista = () => {
       (os.prestador || "").toLowerCase().includes(searchLower) ||
       (os.veiculoPlaca || "").toLowerCase().includes(searchLower);
 
-    const matchStatus = filtroStatus === "todos" || os.status === filtroStatus;
+    const matchStatus = filtroStatus === "todos" || obterStatusGlobalOS(os.status) === filtroStatus;
     const matchCliente = filtroCliente === "todos" || os.cliente === filtroCliente;
     const matchTipo = filtroTipo === "todos" || os.tipoOperacao === filtroTipo;
     const matchTipoVeiculo = filtroTipoVeiculo === "todos" || (os.veiculoTipo || "").toLowerCase() === (filtroTipoVeiculo || "todos").toLowerCase();
@@ -206,7 +240,17 @@ const OrdensServicoLista = () => {
 
     try {
       setExcluindo(true);
-      const { error } = await supabase.from("ordens_servico").delete().eq("id", osParaExcluir.id);
+      const osId = osParaExcluir.id;
+
+      // Limpar registros vinculados antes de excluir a OS
+      await Promise.allSettled([
+        supabase.from("alocacoes_escala").delete().eq("ordem_servico_id", osId),
+        supabase.from("financeiro_receber").delete().eq("os_id", osId),
+        supabase.from("pagamentos_prestadores").delete().eq("os_id", osId),
+        supabase.from("composicao_financeira_os").delete().eq("os_id", osId),
+      ]);
+
+      const { error } = await supabase.from("ordens_servico").delete().eq("id", osId);
       if (error) throw error;
       
       toast.success(`OS ${osParaExcluir.numero} excluída com sucesso.`);
@@ -261,8 +305,8 @@ const OrdensServicoLista = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos os Status</SelectItem>
-                  {Object.entries(STATUS_CORES).map(([key, value]) => (
-                    <SelectItem key={key} value={key}>{value.label}</SelectItem>
+                  {STATUS_FILTRO_OPCOES.map((op) => (
+                    <SelectItem key={op.value} value={op.value}>{op.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -398,13 +442,19 @@ const OrdensServicoLista = () => {
                   <TableHead className="text-[10px] uppercase font-bold">Carga</TableHead>
                   <TableHead className="text-[10px] uppercase font-bold">Prestador / Placa</TableHead>
                   <TableHead className="text-[10px] uppercase font-bold">Status</TableHead>
+                  <TableHead className="text-[10px] uppercase font-bold">Sinc</TableHead>
                   <TableHead className="text-[10px] uppercase font-bold">Prazo</TableHead>
                   <TableHead className="text-right text-[10px] uppercase font-bold">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={10} className="text-center py-12">Carregando ordens de serviço...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center py-16">
+                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                      <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                      <p className="font-medium">Carregando ordens de serviço...</p>
+                    </div>
+                  </TableCell></TableRow>
                 ) : filtradas.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={10} className="text-center py-20">
@@ -460,13 +510,22 @@ const OrdensServicoLista = () => {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge className={`${STATUS_CORES[os.status]?.twClass || "bg-gray-100 text-gray-800"} text-[9px] uppercase font-bold py-0.5 px-2`}>
-                          {STATUS_CORES[os.status]?.label || os.status}
+                        <Badge className={`${obterClasseBadgeGlobal(os.status, "preenchido")} text-[9px] uppercase font-bold py-0.5 px-2`}>
+                          {STATUS_GLOBAL_INFO[obterStatusGlobalOS(os.status)].label}
                         </Badge>
                         {(os.dataProgramada || os.previsaoInicio) && (
                           <div className="mt-1 flex items-center gap-0.5 text-[9px] font-bold text-blue-600 uppercase">
                             <Clock className="w-2.5 h-2.5" /> Agendado
                           </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {os.id && syncStatusMap[os.id] ? (
+                          <Badge className={`${syncStatusMap[os.id].classe} text-[8px] font-bold py-0 px-1.5`}>
+                            {syncStatusMap[os.id].label}
+                          </Badge>
+                        ) : (
+                          <span className="text-[9px] text-slate-400">—</span>
                         )}
                       </TableCell>
                       <TableCell>

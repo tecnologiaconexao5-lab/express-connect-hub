@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { Operacao, Prestador, MatchOperacao, MetricasRecrutamento, StatusOperacao, StatusPrestador } from '../types/recrutamento'
 
 export type ViewMode = 'grid' | 'list' | 'kanban'
-export type Section = 'dashboard' | 'pipeline-kanban' | 'operacoes' | 'nova-operacao' | 'prestadores' | 'crm' | 'documentos' | 'ia' | 'onboarding' | 'score' | 'automacoes' | 'portal' | 'talentos'
+export type Section = 'dashboard' | 'pipeline-kanban' | 'operacoes' | 'nova-operacao' | 'prestadores' | 'crm' | 'documentos' | 'ia' | 'onboarding' | 'score' | 'automacoes' | 'portal' | 'talentos' | 'operacionais'
 
 interface RecrutamentoState {
   currentSection: Section

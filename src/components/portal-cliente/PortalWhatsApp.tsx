@@ -33,19 +33,15 @@ const tipoConfig = {
   aviso: { icon: FileText, color: "text-slate-600 bg-slate-100", label: "Aviso" },
 };
 
-const defaultMensagens: MensagemWhatsApp[] = [
-  { id: "1", destinatario: "João Silva Santos", telefone: "(11) 99999-8888", mensagem: "Sua entrega OS-202610-1028 está a caminho! 🚚 Acompanhe em: https://rastreio.conexaoexpress.com/abc123", tipo: "rastreio", status: "lida", dataEnvio: "2026-05-08T14:30:00", osReferencia: "OS-202610-1028", linkRastreio: "https://rastreio.conexaoexpress.com/abc123" },
-  { id: "2", destinatario: "Maria Oliveira", telefone: "(11) 98888-7777", mensagem: "📦 Seu pedido foi entregue! Assinatura registrada por: Carlos Manager. Muito obrigado pela preferência!", tipo: "comprovante", status: "lida", dataEnvio: "2026-05-08T13:45:00", osReferencia: "OS-202610-1028" },
-  { id: "3", destinatario: "Pedro Santos", telefone: "(41) 97777-6666", mensagem: "✅ Sua OS-202610-1033 foi confirmada! Previsão de entrega: 15/05/2026", tipo: "confirmacao", status: "entregue", dataEnvio: "2026-05-07T10:00:00", osReferencia: "OS-202610-1033" },
-  { id: "4", destinatario: "Ricardo Costa", telefone: "(71) 9999-0000", mensagem: "⚠️ Atenção: Sua entrega OS-202610-1015 está com atraso. Estamos tomando medidas para resolver.", tipo: "alerta", status: "lida", dataEnvio: "2026-05-06T16:00:00", osReferencia: "OS-202610-1015" },
-  { id: "5", destinatario: "Ana Paula", telefone: "(81) 4444-5555", mensagem: "📋 Lembrete: Sua coleta OS-202610-1040 está agendada para amanhã às 08:00.", tipo: "aviso", status: "entregue", dataEnvio: "2026-05-05T18:00:00", osReferencia: "OS-202610-1040" },
-  { id: "6", destinatario: "Carlos Manager", telefone: "(31) 3333-4444", mensagem: "🔗 Link de rastreamento: https://rastreio.conexaoexpress.com/xyz789 - Use para acompanhar sua entrega em tempo real", tipo: "rastreio", status: "enviada", dataEnvio: "2026-05-08T15:00:00", osReferencia: "OS-202610-1060", linkRastreio: "https://rastreio.conexaoexpress.com/xyz789" },
-];
+const defaultMensagens: MensagemWhatsApp[] = [];
 
 export function PortalWhatsApp({ onVerMensagem }: PortalWhatsAppProps) {
   const mensagensEnviadas = defaultMensagens.length;
   const mensagensLidas = defaultMensagens.filter(m => m.status === "lida" || m.status === "entregue").length;
-  const taxaLeitura = Math.round((mensagensLidas / mensagensEnviadas) * 100);
+  const taxaLeitura = mensagensEnviadas > 0 ? Math.round((mensagensLidas / mensagensEnviadas) * 100) : 0;
+  const qtdRastreio = defaultMensagens.filter(m => m.tipo === "rastreio").length;
+  const qtdComprovante = defaultMensagens.filter(m => m.tipo === "comprovante").length;
+  const qtdPendentes = defaultMensagens.filter(m => m.status === "enviada").length;
 
   return (
     <div className="space-y-6">
@@ -90,21 +86,21 @@ export function PortalWhatsApp({ onVerMensagem }: PortalWhatsAppProps) {
         <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
           <CardContent className="p-4 text-center">
             <MapPin className="w-6 h-6 mx-auto text-purple-600 mb-2" />
-            <p className="text-2xl font-bold text-[#111827]">{mensagensEnviadas - 2}</p>
+            <p className="text-2xl font-bold text-[#111827]">{qtdRastreio}</p>
             <p className="text-xs text-[#64748B]">Rastreio</p>
           </CardContent>
         </Card>
         <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
           <CardContent className="p-4 text-center">
             <Image className="w-6 h-6 mx-auto text-cyan-600 mb-2" />
-            <p className="text-2xl font-bold text-[#111827]">1</p>
+            <p className="text-2xl font-bold text-[#111827]">{qtdComprovante}</p>
             <p className="text-xs text-[#64748B]">Comprovantes</p>
           </CardContent>
         </Card>
         <Card className="bg-white border-[#E5E7EB] shadow-sm rounded-2xl">
           <CardContent className="p-4 text-center">
             <Clock className="w-6 h-6 mx-auto text-orange-600 mb-2" />
-            <p className="text-2xl font-bold text-[#111827]">2</p>
+            <p className="text-2xl font-bold text-[#111827]">{qtdPendentes}</p>
             <p className="text-xs text-[#64748B]">Pendentes</p>
           </CardContent>
         </Card>

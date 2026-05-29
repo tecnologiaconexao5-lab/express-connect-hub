@@ -36,6 +36,8 @@ const DEFAULT_FILTERS: KanbanFilter = {
   scoreMax: 100,
   prioridade: [],
   statusDocumental: [],
+  statusOperacional: [],
+  disponibilidade: [],
   validadeCNH: [],
   tags: [],
   cidade: '',

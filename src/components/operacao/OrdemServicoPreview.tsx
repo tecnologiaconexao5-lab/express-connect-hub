@@ -7,24 +7,16 @@ import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { gerarMensagemWhatsAppOS, generatePDFCliente, generatePDFPrestador } from "@/lib/pdfGenerator";
+import { enviarMensagem as WhatsAppEnviar } from "@/services/integracoes/whatsappService";
 import type { OrdemServico, OSEndereco, OSCarga, OSStatus } from "./osTypes";
-import { STATUS_CORES } from "./osTypes";
+import { STATUS_CORES, obterStatusGlobalOS } from "./osTypes";
+import { STATUS_GLOBAL_INFO } from "./statusGlobal";
 import { supabase } from "@/lib/supabase";
 
 interface Props {
   os: OrdemServico;
   onVoltar: () => void;
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  rascunho: "Rascunho",
-  agendada: "Agendada",
-  em_coleta: "Em Coleta",
-  em_transporte: "Em Transporte",
-  em_entrega: "Em Entrega",
-  finalizada: "Finalizada",
-  cancelada: "Cancelada"
-};
 
 export default function OrdemServicoPreview({ os, onVoltar }: Props) {
   const copiarWhatsApp = () => {
@@ -52,9 +44,13 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
       
       const telefone = prestadorData.telefone.replace(/\D/g, "");
       const msg = gerarMensagemWhatsAppOS(os);
+      const result = await WhatsAppEnviar(telefone, msg);
       
-      toast.success(`WhatsApp será enviado para ${prestadorData.telefone}`);
-      console.log("[WhatsApp] Enviando para:", telefone, "mensagem:", msg);
+      if (result.ok) {
+        toast.success(`WhatsApp enviado para ${prestadorData.telefone}`);
+      } else {
+        toast.error(`Falha ao enviar: ${result.error || "Erro desconhecido"}`);
+      }
     } catch (e: any) {
       toast.error("Erro ao enviar WhatsApp: " + e.message);
     }
@@ -74,8 +70,10 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
   };
 
   const getStatusBadge = (status?: string) => {
+    const globalStatus = obterStatusGlobalOS(status || "rascunho");
+    const label = STATUS_GLOBAL_INFO[globalStatus]?.label || status || "Rascunho";
     const cores = STATUS_CORES[status as OSStatus];
-    return <Badge className={cores?.twClass || "bg-gray-500"}>{STATUS_LABELS[status || "rascunho"]}</Badge>;
+    return <Badge className={cores?.twClass || "bg-gray-500"}>{label}</Badge>;
   };
 
   return (
@@ -95,7 +93,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
           <Button variant="outline" onClick={enviarWhatsAppPrestador}>
             <Send className="w-4 h-4 mr-2" /> Enviar WhatsApp
           </Button>
-          <Button variant="outline" onClick={() => toast.success("OS Duplicada!")}>
+          <Button variant="outline" onClick={() => toast.info("Duplicação de OS em desenvolvimento")}>
             <CopyPlus className="w-4 h-4 mr-2" /> Duplicar OS
           </Button>
           <Button variant="outline" onClick={() => generatePDFCliente(os)}>
@@ -163,7 +161,7 @@ export default function OrdemServicoPreview({ os, onVoltar }: Props) {
                   <p className="font-semibold">{os.veiculoCarroceria || "—"}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Carroceria</p>
+                  <p className="text-xs text-muted-foreground">Térmica</p>
                   <p className="font-semibold">{os.veiculoTermica || "seco"}</p>
                 </div>
               </div>

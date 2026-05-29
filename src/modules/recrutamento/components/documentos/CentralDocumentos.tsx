@@ -11,6 +11,7 @@ import { MetricCard } from '../design-system/MetricCard'
 import { EmptyState } from '../design-system/EmptyState'
 import { StatusDot } from '../design-system/StatusDot'
 import { documentosService } from '../../services/documentosService'
+import { prestadoresService } from '../../services/prestadoresService'
 import { useRecrutamentoStore } from '../../store/recrutamentoStore'
 import { cn, statusDocumentoColor, statusLabel, formatDate } from '../../utils/cn'
 import type { DocumentoPrestador, StatusDocumento, TipoDocumento } from '../../types/recrutamento'
@@ -20,7 +21,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { toast } from 'sonner'
 
 interface CentralDocumentosProps {
-  documentos: DocumentoPrestador[]
+  documentos?: DocumentoPrestador[]
   prestadorNome?: string
   onStatusChange?: (docId: string, status: StatusDocumento, obs?: string) => void
 }
@@ -36,59 +37,20 @@ const TIPO_DOC_OPTIONS: { value: TipoDocumento; label: string }[] = [
   { value: 'certificado_curso_mopp', label: 'MOPP' },
 ]
 
-export function CentralDocumentos({ documentos: propDocs, onStatusChange }: CentralDocumentosProps) {
-  const { prestadores } = useRecrutamentoStore()
-  const [allDocs, setAllDocs] = useState<DocumentoPrestador[]>([])
+const TIPO_DOC_LABELS: Record<string, string> = {}
+TIPO_DOC_OPTIONS.forEach(o => { TIPO_DOC_LABELS[o.value] = o.label })
+
+export function CentralDocumentos({ onStatusChange }: CentralDocumentosProps) {
+  const { prestadores, setPrestadores } = useRecrutamentoStore()
   const [buscaPrestador, setBuscaPrestador] = useState('')
   const [buscaDoc, setBuscaDoc] = useState('')
   const [selectedPrestadorId, setSelectedPrestadorId] = useState<string | null>(null)
   
-  // Add manual doc modal state
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [newDocType, setNewDocType] = useState<TipoDocumento>('cnh')
   const [newDocValidade, setNewDocValidade] = useState('')
   const [newDocFile, setNewDocFile] = useState('')
   const [salvando, setSalvando] = useState(false)
-
-  // Load and seed docs if needed
-  const loadDocs = async () => {
-    const list = await documentosService.listarTodos()
-    setAllDocs(list)
-  }
-
-  useEffect(() => {
-    loadDocs()
-  }, [])
-
-  // Auto-seed documents for demo purposes if empty
-  useEffect(() => {
-    if (prestadores.length > 0) {
-      documentosService.listarTodos().then((docs) => {
-        if (docs.length === 0) {
-          const types: TipoDocumento[] = ['cnh', 'crlv', 'antt']
-          const statuses: StatusDocumento[] = ['aprovado', 'pendente', 'vencido', 'em_analise', 'validando']
-          
-          let count = 0
-          prestadores.forEach((p) => {
-            types.forEach((type, idx) => {
-              documentosService.adicionar({
-                prestadorId: p.id,
-                tipo: type,
-                status: statuses[(p.nome.charCodeAt(0) + idx) % statuses.length],
-                nomeArquivo: `${type}_${p.nome.toLowerCase().replace(/\s+/g, '_')}.pdf`,
-                dataValidade: new Date(Date.now() + (idx === 2 ? -15 : 120) * 86400000).toISOString(),
-              }).then(() => {
-                count++
-                if (count === prestadores.length * types.length) {
-                  loadDocs()
-                }
-              })
-            })
-          })
-        }
-      })
-    }
-  }, [prestadores])
 
   // Select first prestador by default
   useEffect(() => {
@@ -110,32 +72,45 @@ export function CentralDocumentos({ documentos: propDocs, onStatusChange }: Cent
 
   const prestadorDocs = useMemo(() => {
     if (!selectedPrestadorId) return []
-    return allDocs.filter(d => 
-      d.prestadorId === selectedPrestadorId &&
-      (d.tipo.toLowerCase().includes(buscaDoc.toLowerCase()) || d.nomeArquivo.toLowerCase().includes(buscaDoc.toLowerCase()))
+    return (selectedPrestador?.documentos ?? []).filter(d => 
+      d.tipo.toLowerCase().includes(buscaDoc.toLowerCase()) || d.nomeArquivo.toLowerCase().includes(buscaDoc.toLowerCase())
     )
-  }, [allDocs, selectedPrestadorId, buscaDoc])
+  }, [selectedPrestador, buscaDoc])
 
   const metricas = useMemo(() => {
     return documentosService.obterMetricas(prestadorDocs)
   }, [prestadorDocs])
 
   const handleStatusChange = async (docId: string, status: StatusDocumento, obs?: string) => {
+    if (!selectedPrestador) return
     try {
-      await documentosService.atualizarStatus(docId, status, 'Admin', obs)
+      const novosDocs = (selectedPrestador.documentos ?? []).map(doc => {
+        if (doc.id === docId) {
+          return {
+            ...doc,
+            status,
+            dataAprovacao: status === 'aprovado' || status === 'reprovado' ? new Date().toISOString() : doc.dataAprovacao,
+            aprovadoPor: 'Admin',
+            observacao: obs ?? doc.observacao,
+          }
+        }
+        return doc
+      })
+      await prestadoresService.atualizar(selectedPrestador.id, { documentos: novosDocs })
+      const reloaded = await prestadoresService.listar()
+      setPrestadores(reloaded)
       toast.success(`Status do documento atualizado para: ${statusLabel[status] || status}`)
-      await loadDocs()
       if (onStatusChange) {
         onStatusChange(docId, status, obs)
       }
-    } catch (e) {
+    } catch {
       toast.error('Erro ao atualizar status do documento')
     }
   }
 
   const handleManualAdd = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedPrestadorId) return
+    if (!selectedPrestador || !selectedPrestadorId) return
     if (!newDocFile.trim()) {
       toast.error('Nome do arquivo ou anexo é obrigatório')
       return
@@ -143,18 +118,28 @@ export function CentralDocumentos({ documentos: propDocs, onStatusChange }: Cent
 
     setSalvando(true)
     try {
-      await documentosService.adicionar({
+      const novoDoc: DocumentoPrestador = {
+        id: `doc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         prestadorId: selectedPrestadorId,
         tipo: newDocType,
         status: 'pendente',
+        url: '',
         nomeArquivo: newDocFile,
+        dataEnvio: new Date().toISOString(),
         dataValidade: newDocValidade ? new Date(newDocValidade).toISOString() : '',
-      })
+        dataAprovacao: '',
+        aprovadoPor: '',
+        observacao: '',
+        versao: 1,
+      }
+      const documentosAtualizados = [...(selectedPrestador.documentos ?? []), novoDoc]
+      await prestadoresService.atualizar(selectedPrestadorId, { documentos: documentosAtualizados })
+      const reloaded = await prestadoresService.listar()
+      setPrestadores(reloaded)
       toast.success('Documento adicionado com sucesso!')
       setAddModalOpen(false)
       setNewDocFile('')
       setNewDocValidade('')
-      await loadDocs()
     } catch {
       toast.error('Erro ao adicionar documento')
     } finally {
@@ -165,15 +150,14 @@ export function CentralDocumentos({ documentos: propDocs, onStatusChange }: Cent
   const handleWhatsAppRequest = (docType: string) => {
     if (!selectedPrestador) return
     const whatsappContato = selectedPrestador.contatos.find(c => c.tipo === 'whatsapp' || c.tipo === 'telefone')
-    const fone = whatsappContato ? whatsappContato.valor : '(11) 99999-9999'
+    const fone = whatsappContato ? whatsappContato.valor.replace(/\D/g, '') : ''
+    const mensagem = encodeURIComponent(`Olá ${selectedPrestador.nome}, precisamos do envio do seu documento (${statusLabel[docType as TipoDocumento] || docType}) para ativação cadastral.`)
     
-    toast.success(
-      `Solicitação WhatsApp enviada com sucesso!`,
-      {
-        description: `[MOCK WHATSAPP] Enviado para ${fone}: "Olá ${selectedPrestador.nome}, precisamos do envio urgente do seu documento (${statusLabel[docType as TipoDocumento] || docType}) para ativação cadastral."`,
-        duration: 5000,
-      }
-    )
+    if (fone) {
+      window.open(`https://wa.me/55${fone}?text=${mensagem}`, '_blank')
+    } else {
+      toast.info('Contato WhatsApp não cadastrado para este prestador')
+    }
   }
 
   return (
@@ -196,8 +180,9 @@ export function CentralDocumentos({ documentos: propDocs, onStatusChange }: Cent
 
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {filteredPrestadores.map((p) => {
-              const count = allDocs.filter(d => d.prestadorId === p.id).length
-              const pend = allDocs.filter(d => d.prestadorId === p.id && d.status === 'pendente').length
+              const docsDoPrestador = (p.documentos ?? []) as DocumentoPrestador[]
+              const count = docsDoPrestador.length
+              const pend = docsDoPrestador.filter(d => d.status === 'pendente' || d.status === 'vencido').length
               const isSelected = p.id === selectedPrestadorId
 
               return (
@@ -304,7 +289,7 @@ export function CentralDocumentos({ documentos: propDocs, onStatusChange }: Cent
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-semibold text-foreground uppercase">
-                                {statusLabel[doc.tipo] || doc.tipo}
+                                {TIPO_DOC_LABELS[doc.tipo] || doc.tipo}
                               </span>
                               <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-medium border', statusDocumentoColor[doc.status])}>
                                 <StatusDot status={doc.status} />

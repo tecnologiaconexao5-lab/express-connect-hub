@@ -22,8 +22,11 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import logoBundledLight from "@/assets/logo-conexao-light.webp";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { gerarPDFRepassePrestador, gerarPDFFaturamentoDetalhado } from "@/utils/pdfRelatorioOperacional";
 import {
   buscarDadosPagamentoPrestador,
   buscarClientesAtivos,
@@ -31,6 +34,55 @@ import {
 } from "@/services/relatorios/relatorioService";
 
 const fmtFin = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+const detectBase64Format = (base64: string) => {
+  if (base64.startsWith("data:image/webp")) return "WEBP";
+  if (base64.startsWith("data:image/jpeg") || base64.startsWith("data:image/jpg")) return "JPEG";
+  return "PNG";
+};
+
+const getImageDimensions = (base64: string): Promise<{ w: number; h: number }> =>
+  new Promise((resolve) => {
+    if (typeof window === "undefined" || typeof Image === "undefined") {
+      resolve({ w: 0, h: 0 });
+      return;
+    }
+    const img = new Image();
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => resolve({ w: 0, h: 0 });
+    img.src = base64;
+  });
+
+const drawLogoPreserved = (
+  doc: any,
+  base64: string | null,
+  dimensions: { w: number; h: number },
+  x: number,
+  y: number,
+  maxWidth: number,
+  maxHeight: number,
+  onFallback: () => void
+) => {
+  if (!base64 || dimensions.w === 0 || dimensions.h === 0) {
+    onFallback();
+    return;
+  }
+
+  const ratio = dimensions.w / dimensions.h;
+  let width = maxWidth;
+  let height = width / ratio;
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * ratio;
+  }
+
+  const drawY = y + (maxHeight - height) / 2;
+  try {
+    doc.addImage(base64, detectBase64Format(base64), x, drawY, width, height, undefined, "FAST");
+  } catch {
+    onFallback();
+  }
+};
 
 interface OS {
   id: number;
@@ -99,57 +151,96 @@ interface PrestadorLinha {
 }
 
 const carregarLogoBase64 = async (): Promise<string | null> => {
-  try {
-    const response = await fetch('/logo-oficial-conexao.png');
-    if (response.ok) {
-      const blob = await response.blob();
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
+  const sources = [
+    '/logos/logo-conexao-oficial.png'
+  ];
+
+  for (const source of sources) {
+    try {
+      const response = await fetch(source);
+      if (response.ok) {
+        const blob = await response.blob();
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch (e) {
+      console.warn(`Logo não encontrado em ${source}:`, e);
     }
-  } catch (e) {
-    console.warn("Logo não encontrado:", e);
   }
+
   return null;
 };
 
 const generateExtratoPDF = async (data: OS[], filtros: any) => {
-  const doc = new jsPDF();
+  const doc = new jsPDF("landscape", "mm", "a4");
   const logo = await carregarLogoBase64();
+  const logoDimensions = logo ? await getImageDimensions(logo) : { w: 0, h: 0 };
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 12;
+  const dataHora = new Date().toLocaleString("pt-BR");
+
+  const usableWidth = pageWidth - margin * 2;
+
+  const drawHeader = () => {
+    doc.setFillColor(15, 26, 46);
+    doc.rect(0, 0, pageWidth, 40, "F");
+    if (logo) {
+      drawLogoPreserved(doc, logo, logoDimensions, margin, 8, 85, 25, () => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(22);
+        doc.setTextColor(255, 255, 255);
+        doc.text("CX", margin, 20);
+      });
+    } else {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(22);
+      doc.setTextColor(255, 255, 255);
+      doc.text("CX", margin, 20);
+    }
+    doc.setFontSize(7);
+    doc.setTextColor(200, 200, 200);
+    doc.setFont("helvetica", "normal");
+    doc.text("12.345.678/0001-90  •  (11) 4000-1234  •  financeiro@conexaoexpress.com.br", margin, 36);
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(255, 255, 255);
+    doc.text("EXTRATO OPERACIONAL", pageWidth - margin, 15, { align: "right" });
+    doc.setFontSize(7);
+    doc.text(`Gerado em: ${dataHora}`, pageWidth - margin, 22, { align: "right" });
+    doc.setDrawColor(249, 115, 22);
+    doc.setLineWidth(0.6);
+    doc.line(margin, 40, pageWidth - margin, 40);
+  };
   
-  doc.setFillColor(15, 26, 46);
-  doc.rect(0, 0, 220, 30, "F");
-  
-  doc.setTextColor(255, 255, 255);
-  
-  if (logo) {
-    doc.addImage(logo, "PNG", 14, 8, 36, 12);
-  } else {
-    doc.setFontSize(20);
-    doc.text("CONEXÃO EXPRESS", 14, 18);
-  }
-  
-  doc.setFontSize(12);
-  doc.text("EXTRATO OPERACIONAL", 14, 26);
-  
-  doc.setTextColor(100);
-  doc.setFontSize(9);
-  doc.text(`Data de emissão: ${new Date().toLocaleDateString("pt-BR")}`, 14, 38);
-  
-  doc.setDrawColor(249, 115, 22);
-  doc.setLineWidth(0.5);
-  doc.line(14, 42, 196, 42);
+  drawHeader();
   
   doc.setTextColor(60);
-  doc.setFontSize(10);
-  doc.text("Filtros Aplicados:", 14, 50);
-  doc.setFontSize(9);
-  if (filtros.cliente && filtros.cliente !== "todos") doc.text(`• Cliente: ${filtros.cliente}`, 14, 56);
-  if (filtros.prestador && filtros.prestador !== "todos") doc.text(`• Prestador: ${filtros.prestador}`, 14, 62);
-  if (filtros.status && filtros.status !== "todos") doc.text(`• Status: ${filtros.status}`, 14, 68);
-  if (filtros.dataInicio && filtros.dataFim) doc.text(`• Período: ${filtros.dataInicio} a ${filtros.dataFim}`, 14, 74);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "italic");
+  let yInfo = 46;
+  const filtrosText: string[] = [];
+  if (filtros.cliente && filtros.cliente !== "todos") filtrosText.push(`Cliente: ${filtros.cliente}`);
+  if (filtros.prestador && filtros.prestador !== "todos") filtrosText.push(`Prestador: ${filtros.prestador}`);
+  if (filtros.status && filtros.status !== "todos") filtrosText.push(`Status: ${filtros.status}`);
+  if (filtros.dataInicio && filtros.dataFim) filtrosText.push(`Período: ${filtros.dataInicio} a ${filtros.dataFim}`);
+  
+  if (filtrosText.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(15, 26, 46);
+    doc.text("Filtros Aplicados:", margin, yInfo);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100, 116, 139);
+    doc.text(filtrosText.join("  •  "), margin + 28, yInfo);
+    yInfo += 6;
+  }
+  
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.2);
+  doc.line(margin, yInfo, pageWidth - margin, yInfo);
 
   const tableData = data.map(os => [
     os.numero,
@@ -165,24 +256,37 @@ const generateExtratoPDF = async (data: OS[], filtros: any) => {
   ]);
 
   autoTable(doc, {
-    startY: 80,
+    startY: yInfo + 4,
     head: [["OS", "Data", "Cliente", "Prestador", "Origem", "Destino", "Status", "Valor", "Custo", "Margem"]],
     body: tableData,
     theme: "striped",
-    headStyles: { fillColor: [15, 26, 46], textColor: 255, fontSize: 8 },
-    bodyStyles: { fontSize: 7 },
+    headStyles: { fillColor: [15, 26, 46], textColor: 255, fontSize: 7.5, halign: "center", valign: "middle" },
+    bodyStyles: { fontSize: 7, textColor: [51, 65, 85], valign: "middle" },
     columnStyles: {
-      0: { cellWidth: 12 },
+      0: { cellWidth: 22, halign: "center" },
       1: { cellWidth: 18 },
-      2: { cellWidth: 25 },
-      3: { cellWidth: 25 },
-      4: { cellWidth: 22 },
-      5: { cellWidth: 22 },
-      6: { cellWidth: 18 },
-      7: { cellWidth: 18, halign: "right" },
-      8: { cellWidth: 18, halign: "right" },
-      9: { cellWidth: 15, halign: "right" },
-    }
+      2: { cellWidth: 38 },
+      3: { cellWidth: 38 },
+      4: { cellWidth: 30 },
+      5: { cellWidth: 30 },
+      6: { cellWidth: 20, halign: "center" },
+      7: { cellWidth: 22, halign: "right" },
+      8: { cellWidth: 22, halign: "right" },
+      9: { cellWidth: 18, halign: "right" },
+    },
+    margin: { top: yInfo + 4, right: margin, bottom: 40, left: margin },
+    didDrawPage: (data: any) => {
+      const pageNum = doc.internal.getNumberOfPages();
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      doc.setDrawColor(249, 115, 22);
+      doc.setLineWidth(0.3);
+      doc.line(margin, pageHeight - 20, pageWidth - margin, pageHeight - 20);
+      doc.text(`Página ${pageNum}`, pageWidth / 2, pageHeight - 14, { align: "center" });
+      doc.text(`Emitido por Conexão Express - ${dataHora}`, margin, pageHeight - 14);
+      doc.text("Conexão Express Transportes LTDA", pageWidth - margin, pageHeight - 14, { align: "right" });
+      if (data.pageNumber > 1) drawHeader();
+    },
   });
 
   const finalY = (doc as any).lastAutoTable.finalY + 10;
@@ -190,195 +294,72 @@ const generateExtratoPDF = async (data: OS[], filtros: any) => {
   const totalReceita = data.reduce((acc, os) => acc + os.valorCliente, 0);
   const totalCusto = data.reduce((acc, os) => acc + os.custoPrestador, 0);
   const totalMargem = data.reduce((acc, os) => acc + os.margem, 0);
-  const margemMedia = (totalMargem / totalReceita) * 100;
+  const margemMedia = totalReceita > 0 ? (totalMargem / totalReceita) * 100 : 0;
 
-  doc.setFillColor(249, 250, 251);
-  doc.rect(14, finalY, 182, 25, "F");
-  
-  doc.setFontSize(10);
-  doc.setTextColor(15, 26, 46);
-  doc.text("TOTAIS", 18, finalY + 8);
-  
-  doc.setFontSize(9);
-  doc.setTextColor(100);
-  doc.text(`Total de OS: ${data.length}`, 18, finalY + 15);
-  doc.text(`Receita Total: ${fmtFin(totalReceita)}`, 18, finalY + 21);
-  doc.text(`Custo Total: ${fmtFin(totalCusto)}`, 80, finalY + 15);
-  doc.text(`Margem Total: ${fmtFin(totalMargem)}`, 80, finalY + 21);
-  doc.setTextColor(22, 163, 74);
-  doc.text(`Margem Média: ${margemMedia.toFixed(1)}%`, 140, finalY + 18);
+  let totY = finalY;
+  if (totY > pageHeight - 50) {
+    doc.addPage();
+    drawHeader();
+    totY = 48;
+  }
 
-  doc.setFontSize(8);
-  doc.setTextColor(150);
-  doc.text("Documento gerado automaticamente pelo Sistema Conexão Express", 105, 285, { align: "center" });
+  const summaryW = usableWidth / 4 - 4;
+  [
+    { label: "TOTAL OS", valor: `${data.length}`, bg: [239, 246, 255] },
+    { label: "RECEITA TOTAL", valor: fmtFin(totalReceita), bg: [255, 247, 237] },
+    { label: "CUSTO TOTAL", valor: fmtFin(totalCusto), bg: [254, 242, 242] },
+    { label: "MARGEM MÉDIA", valor: `${margemMedia.toFixed(1)}%`, bg: [236, 253, 245] },
+  ].forEach((c, idx) => {
+    const cx = margin + idx * (summaryW + 5);
+    doc.setFillColor(c.bg[0], c.bg[1], c.bg[2]);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(cx, totY, summaryW, 18, 2, 2, "FD");
+    doc.setFontSize(6);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(100, 116, 139);
+    doc.text(c.label, cx + 4, totY + 6);
+    doc.setFontSize(9.5);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(15, 26, 46);
+    doc.text(c.valor, cx + 4, totY + 14);
+  });
+
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "italic");
+  doc.setTextColor(148, 163, 184);
+  doc.text("Documento gerado automaticamente pelo Sistema Conexão Express", pageWidth / 2, pageHeight - 10, { align: "center" });
 
   doc.save("extrato_operacional.pdf");
 };
 
-const generateFaturamentoPDF = async (cliente: Cliente) => {
-  const doc = new jsPDF();
-  const logo = await carregarLogoBase64();
-  
-  // Top orange border (Conexão Express primary accent color)
-  doc.setFillColor(249, 115, 22); // Orange
-  doc.rect(0, 0, 220, 4, "F");
-  
-  // Render logo or fallback text
-  if (logo) {
-    doc.addImage(logo, "PNG", 14, 10, 45, 15);
-  } else {
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(15, 26, 46); // Navy
-    doc.setFontSize(16);
-    doc.text("CONEXÃO EXPRESS", 14, 20);
-    doc.setFontSize(8);
-    doc.setTextColor(120);
-    doc.text("TRANSPORTES & LOGÍSTICA", 14, 24);
-  }
-  
-  // Document title and metadata
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(15, 26, 46);
-  doc.setFontSize(14);
-  doc.text("FATURAMENTO ENTERPRISE", 115, 20, { align: "left" });
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(100);
-  doc.setFontSize(8.5);
-  doc.text(`Data de Emissão: ${new Date().toLocaleDateString("pt-BR")}`, 115, 25);
-  doc.text(`Período de Referência: Mensal / Fechamento`, 115, 29);
-  
-  // Divider
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.5);
-  doc.line(14, 34, 196, 34);
-  
-  // Customer details block (Premium Card Style)
-  doc.setFillColor(248, 250, 252);
-  doc.rect(14, 40, 90, 36, "F");
-  doc.setDrawColor(226, 232, 240);
-  doc.rect(14, 40, 90, 36, "S");
-  
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(15, 26, 46);
-  doc.setFontSize(9.5);
-  doc.text("DADOS DO CLIENTE", 18, 46);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Razão Social: ${cliente.nome}`, 18, 53);
-  doc.text(`CNPJ: ${cliente.cnpj || "N/A"}`, 18, 60);
-  doc.text(`Status de Faturamento: Ativo`, 18, 67);
-  
-  // Executive summary
-  doc.setFillColor(15, 26, 46); // Navy
-  doc.rect(110, 40, 86, 36, "F");
-  
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
-  doc.text("RESUMO FINANCEIRO", 116, 46);
-  
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.text(`Faturamento Bruto: ${fmtFin(cliente.totalFaturado)}`, 116, 53);
-  doc.text(`Operações Faturadas: ${cliente.operacoes.length}`, 116, 60);
-  doc.text(`Custo Operacional: ${fmtFin(cliente.operacoes.reduce((sum, o) => sum + o.custoPrestador, 0))}`, 116, 67);
-  
-  // Table operations mapping
-  const tableData = cliente.operacoes.map(os => {
-    const diaria = os.diaria ?? 400;
-    const kmTotal = os.kmTotal ?? 0;
-    const kmFranquia = 200;
-    const kmExcedente = Math.max(kmTotal - kmFranquia, 0);
-    const vlrKm = os.valorKm ?? 2.50;
-    const vlrTotal = diaria + (kmExcedente * vlrKm);
-    
-    return [
-      os.numero,
-      os.data ? new Date(os.data).toLocaleDateString("pt-BR") : "",
-      os.origem,
-      os.destino,
-      os.prestador,
-      os.placa || "-",
-      `${kmTotal} km`,
-      fmtFin(diaria),
-      fmtFin(vlrTotal)
-    ];
-  });
-  
-  // Elegante table layout
-  autoTable(doc, {
-    startY: 82,
-    head: [["OS", "Data", "Origem", "Destino", "Motorista", "Placa", "KM", "Diária", "Total"]],
-    body: tableData,
-    theme: "striped",
-    headStyles: { 
-      fillColor: [15, 26, 46], 
-      textColor: 255, 
-      fontSize: 8.5, 
-      fontStyle: "bold",
-      halign: "left"
-    },
-    bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85] },
-    columnStyles: {
-      6: { halign: "center" },
-      7: { halign: "right" },
-      8: { halign: "right" }
-    }
-  });
-  
-  let finalY = (doc as any).lastAutoTable.finalY + 10;
-  
-  // If we run out of vertical space, push to next page
-  if (finalY > 230) {
-    doc.addPage();
-    finalY = 20;
-  }
-  
-  // Totals card
-  const totalCustoVal = cliente.operacoes.reduce((sum, o) => sum + o.custoPrestador, 0);
-  const totalReceitaVal = cliente.totalFaturado;
-  const totalMargemVal = totalReceitaVal - totalCustoVal;
-  const margemValPct = totalReceitaVal > 0 ? (totalMargemVal / totalReceitaVal) * 100 : 0;
-  
-  doc.setFillColor(248, 250, 252);
-  doc.rect(14, finalY, 182, 22, "F");
-  doc.setDrawColor(226, 232, 240);
-  doc.rect(14, finalY, 182, 22, "S");
-  
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(15, 26, 46);
-  doc.setFontSize(9);
-  doc.text("CONSOLIDAÇÃO DE VALORES", 18, finalY + 6);
-  
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Receita Total: ${fmtFin(totalReceitaVal)}`, 18, finalY + 14);
-  doc.text(`Repasse Parceiro: ${fmtFin(totalCustoVal)}`, 80, finalY + 14);
-  doc.text(`Resultado Conexão: ${fmtFin(totalMargemVal)} (${margemValPct.toFixed(1)}%)`, 140, finalY + 14);
-  
-  finalY += 32;
-  
-  // Signatures
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(100);
-  
-  doc.line(14, finalY + 10, 90, finalY + 10);
-  doc.text("Assinatura Faturador Operacional", 52, finalY + 15, { align: "center" });
-  doc.text("Conexão Express Transportes", 52, finalY + 19, { align: "center" });
-  
-  doc.line(110, finalY + 10, 196, finalY + 10);
-  doc.text("Assinatura Gestor Responsável", 153, finalY + 15, { align: "center" });
-  doc.text(cliente.nome, 153, finalY + 19, { align: "center" });
-  
-  // Footer text
-  doc.setFontSize(7.5);
-  doc.setTextColor(148, 163, 184);
-  doc.text("Este relatório operacional serve como instrumento para conciliação financeira de faturamento consolidado.", 105, 282, { align: "center" });
-  
-  doc.save(`faturamento_${cliente.nome.replace(/\s/g, "_")}.pdf`);
+
+const generateFaturamentoPDF = async (
+  cliente: Cliente,
+  filtros: { dataInicio: string; dataFim: string }
+) => {
+  const opFormatadas = cliente.operacoes.map(o => ({
+    numero: o.numero || o.numeroOc || o.id,
+    data: o.data || "",
+    veiculo_tipo: o.tipoVeiculo || o.tipo_veiculo || "-",
+    enderecos: [
+      { cidade: o.origem || "Base" },
+      { cidade: o.destino || "Destino" }
+    ],
+    valor_frete: o.valorCliente || 0,
+    diaria: o.diaria || 0,
+    km_adicional: (o.kmExcedente || 0) * (o.valorKm || 0)
+  }));
+
+  const periodo = (filtros.dataInicio || filtros.dataFim) 
+    ? `${filtros.dataInicio ? new Date(filtros.dataInicio).toLocaleDateString("pt-BR") : "Início"} até ${filtros.dataFim ? new Date(filtros.dataFim).toLocaleDateString("pt-BR") : "Fim"}`
+    : "Período Geral";
+
+  await gerarPDFFaturamentoDetalhado(
+    { nome: cliente.nome, cnpj: cliente.cnpj },
+    periodo,
+    opFormatadas,
+    "Administrador"
+  );
 };
 
 const generateExcelFaturamentoCliente = (cliente: Cliente) => {
@@ -524,366 +505,42 @@ const generateRelatorioPrestadoresPDF = async (
   prestadorNome: string,
   dataInicio: string,
   dataFim: string,
-  resumo: { totalOps: number; valorBruto: number; valorPago: number; saldoPendente: number; mediaEntrega: number }
+  resumo: { totalOps: number; valorBruto: number; valorPago: number; saldoPendente: number; mediaEntrega: number },
+  prestadorInfo?: { cpfCnpj: string; tipo: string }
 ) => {
-  const doc = new jsPDF();
-  const logo = await carregarLogoBase64();
+  const dataFormatada = linhas.map(l => ({
+    data_finalizacao: l.dataColeta,
+    numero: l.os,
+    veiculo_tipo: l.tipoVeiculo,
+    enderecos: [{ cidade: l.origem }, { cidade: l.destino }],
+    custo_prestador: l.valorPrestador,
+    adicionais: 0,
+    descontos: 0,
+    valor_final_repasse: l.valorPrestador,
+    status_pagamento: "pago"
+  }));
 
-  doc.setFillColor(15, 26, 46);
-  doc.rect(0, 0, 210, 35, "F");
-  doc.setTextColor(255, 255, 255);
-  if (logo) {
-    doc.addImage(logo, "PNG", 14, 8, 36, 12);
-  } else {
-    doc.setFontSize(18);
-    doc.text("CONEXÃO EXPRESS", 14, 18);
-  }
-  doc.setFontSize(10);
-  doc.text("RELATÓRIO DE PRESTADORES — PARCEIRO OPERACIONAL", 14, 28);
+  const filtrosFake = {
+    prestador: prestadorNome || "Todos (Geral)",
+    dataInicial: dataInicio,
+    dataFinal: dataFim
+  };
 
-  doc.setTextColor(100);
-  doc.setFontSize(8);
-  let y = 42;
-  doc.text(`Data de emissão: ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}`, 14, y);
-  y += 6;
-  if (prestadorNome) {
-    doc.text(`Prestador: ${prestadorNome}`, 14, y);
-    y += 5;
-  }
-  if (dataInicio && dataFim) {
-    doc.text(`Período: ${new Date(dataInicio).toLocaleDateString("pt-BR")} até ${new Date(dataFim).toLocaleDateString("pt-BR")}`, 14, y);
-    y += 5;
-  }
+  const resumoFake = {
+    totalRepasses: resumo.valorPago,
+    qtdOperacoes: linhas.length,
+    mediaOperacional: linhas.length > 0 ? (resumo.valorPago / linhas.length) : 0,
+    pendencias: resumo.saldoPendente || 0,
+    valorAprovado: resumo.valorPago
+  };
 
-  doc.setDrawColor(249, 115, 22);
-  doc.setLineWidth(0.5);
-  doc.line(14, y + 2, 196, y + 2);
-  y += 6;
-
-  doc.setFillColor(249, 250, 251);
-  doc.rect(14, y, 182, 28, "F");
-  doc.setFontSize(9);
-  doc.setTextColor(15, 26, 46);
-  doc.text("RESUMO FINANCEIRO", 18, y + 6);
-  doc.setTextColor(80);
-  doc.setFontSize(8);
-  doc.text(`Total de Operações: ${resumo.totalOps}`, 18, y + 13);
-  doc.text(`Valor Bruto (Frete): ${fmtFin(resumo.valorBruto)}`, 18, y + 19);
-  doc.text(`Valor Pago ao Prestador: ${fmtFin(resumo.valorPago)}`, 18, y + 25);
-  doc.text(`Saldo Pendente: ${fmtFin(resumo.saldoPendente)}`, 110, y + 13);
-  doc.text(`Média por Entrega: ${fmtFin(resumo.mediaEntrega)}`, 110, y + 19);
-
-  const tableStart = y + 32;
-  const columns = [
-    "OS", "Cliente", "Origem", "Destino", "Data Coleta", "Data Entrega",
-    "Valor Frete", "Valor Prest.", "Margem", "Status Fin.", "Tipo Veículo"
-  ];
-  const body = linhas.map(l => [
-    l.os, l.cliente, l.origem, l.destino, l.dataColeta, l.dataEntrega,
-    fmtFin(l.valorFrete), fmtFin(l.valorPrestador),
-    l.margemPct >= 0 ? `${l.margemPct.toFixed(1)}%` : "-",
-    l.statusFinanceiro, l.tipoVeiculo
-  ]);
-
-  autoTable(doc, {
-    startY: tableStart,
-    head: [columns],
-    body,
-    theme: "striped",
-    headStyles: { fillColor: [15, 26, 46], textColor: 255, fontSize: 7 },
-    bodyStyles: { fontSize: 6.5 },
-    styles: { cellPadding: 1.5 },
-    columnStyles: {
-      0: { cellWidth: 14 },
-      1: { cellWidth: 20 },
-      2: { cellWidth: 16 },
-      3: { cellWidth: 16 },
-      4: { cellWidth: 16 },
-      5: { cellWidth: 16 },
-      6: { cellWidth: 16, halign: "right" },
-      7: { cellWidth: 16, halign: "right" },
-      8: { cellWidth: 12, halign: "right" },
-      9: { cellWidth: 14 },
-      10: { cellWidth: 14 },
-    },
-  });
-
-  const finalY = (doc as any).lastAutoTable.finalY + 8;
-
-  doc.setFillColor(15, 26, 46);
-  doc.rect(14, finalY, 182, 16, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(8);
-  doc.text("TOTALIZADORES", 18, finalY + 5);
-  doc.setFontSize(7);
-  doc.text(`Total Operações: ${linhas.length}`, 18, finalY + 11);
-  doc.text(`Valor Bruto: ${fmtFin(resumo.valorBruto)}`, 60, finalY + 11);
-  doc.text(`Valor Pago: ${fmtFin(resumo.valorPago)}`, 105, finalY + 11);
-  doc.text(`Saldo Pendente: ${fmtFin(resumo.saldoPendente)}`, 145, finalY + 11);
-
-  doc.setFontSize(7);
-  doc.setTextColor(130);
-  doc.text(
-    "Documento gerado automaticamente pelo Sistema Conexão Express — Relatório de Parceiro Operacional",
-    105, 278, { align: "center" }
+  await gerarPDFRepassePrestador(
+    dataFormatada,
+    filtrosFake,
+    resumoFake,
+    "Administrador"
   );
-  doc.text("Este documento não representa vínculo empregatício. O prestador é parceiro operacional autônomo (PJ/MEI).", 105, 283, { align: "center" });
-
-  doc.save(`relatorio_prestador_${prestadorNome ? prestadorNome.replace(/\s/g, "_") : "geral"}.pdf`);
 };
-
-const DVL_MOCK_OS: OS[] = [
-  {
-    id: 90001,
-    numero: "OS-DVL-1001",
-    data: "2026-05-10",
-    cliente: "DVL DISTRIBUIDORA",
-    prestador: "Carlos Silva",
-    origem: "São Paulo",
-    destino: "Guarulhos",
-    status: "Finalizado",
-    valorCliente: 550.00,
-    custoPrestador: 385.00,
-    margem: 165.00,
-    margemPct: 30.0,
-    placa: "ABC-1234",
-    tipoVeiculo: "VUC",
-    horarioChegada: "07:30",
-    horarioSaida: "16:45",
-    diaria: 400.00,
-    kmTotal: 120,
-    kmExcedente: 20,
-    valorKm: 2.50,
-    observacao: "Entrega de autopeças concluída dentro do SLA.",
-    obs: "Comprovante anexado no portal.",
-    numeroOc: "OC-2026-001"
-  },
-  {
-    id: 90002,
-    numero: "OS-DVL-1002",
-    data: "2026-05-11",
-    cliente: "DVL DISTRIBUIDORA",
-    prestador: "Marcos Oliveira",
-    origem: "São Paulo",
-    destino: "Campinas",
-    status: "Finalizado",
-    valorCliente: 750.00,
-    custoPrestador: 525.00,
-    margem: 225.00,
-    margemPct: 30.0,
-    placa: "XYZ-9876",
-    tipoVeiculo: "Truck",
-    horarioChegada: "08:00",
-    horarioSaida: "18:30",
-    diaria: 500.00,
-    kmTotal: 200,
-    kmExcedente: 100,
-    valorKm: 2.50,
-    observacao: "Carga fracionada para centro de distribuição.",
-    obs: "Aguardando canhoto assinado.",
-    numeroOc: "OC-2026-002"
-  },
-  {
-    id: 90003,
-    numero: "OS-DVL-1003",
-    data: "2026-05-12",
-    cliente: "DVL DISTRIBUIDORA",
-    prestador: "Jose Santos",
-    origem: "São Bernardo",
-    destino: "Santos",
-    status: "Finalizado",
-    valorCliente: 620.00,
-    custoPrestador: 434.00,
-    margem: 186.00,
-    margemPct: 30.0,
-    placa: "MNO-4567",
-    tipoVeiculo: "Toco",
-    horarioChegada: "07:15",
-    horarioSaida: "16:00",
-    diaria: 450.00,
-    kmTotal: 168,
-    kmExcedente: 68,
-    valorKm: 2.50,
-    observacao: "Entrega de paletes no porto sem filas.",
-    obs: "Tudo certo.",
-    numeroOc: "OC-2026-003"
-  },
-  {
-    id: 90004,
-    numero: "OS-DVL-1004",
-    data: "2026-05-13",
-    cliente: "DVL DISTRIBUIDORA",
-    prestador: "Rogerio Lima",
-    origem: "São Paulo",
-    destino: "Sorocaba",
-    status: "Finalizado",
-    valorCliente: 680.00,
-    custoPrestador: 476.00,
-    margem: 204.00,
-    margemPct: 30.0,
-    placa: "DEF-5678",
-    tipoVeiculo: "VUC",
-    horarioChegada: "08:30",
-    horarioSaida: "17:15",
-    diaria: 400.00,
-    kmTotal: 212,
-    kmExcedente: 112,
-    valorKm: 2.50,
-    observacao: "Carga urgente de componentes eletrônicos.",
-    obs: "Entrega prioritária realizada.",
-    numeroOc: "OC-2026-004"
-  },
-  {
-    id: 90005,
-    numero: "OS-DVL-1005",
-    data: "2026-05-14",
-    cliente: "DVL DISTRIBUIDORA",
-    prestador: "Andre Souza",
-    origem: "São Paulo",
-    destino: "Jundiaí",
-    status: "Finalizado",
-    valorCliente: 500.00,
-    custoPrestador: 350.00,
-    margem: 150.00,
-    margemPct: 30.0,
-    placa: "GHI-9012",
-    tipoVeiculo: "Fiorino",
-    horarioChegada: "07:45",
-    horarioSaida: "15:30",
-    diaria: 350.00,
-    kmTotal: 160,
-    kmExcedente: 60,
-    valorKm: 2.50,
-    observacao: "Entrega expressa de embalagens.",
-    obs: "Documento digitalizado.",
-    numeroOc: "OC-2026-005"
-  },
-  {
-    id: 90006,
-    numero: "OS-DVL-1006",
-    data: "2026-05-15",
-    cliente: "DVL DISTRIBUIDORA",
-    prestador: "Carlos Silva",
-    origem: "São Paulo",
-    destino: "São José dos Campos",
-    status: "Finalizado",
-    valorCliente: 700.00,
-    custoPrestador: 490.00,
-    margem: 210.00,
-    margemPct: 30.0,
-    placa: "ABC-1234",
-    tipoVeiculo: "VUC",
-    horarioChegada: "08:15",
-    horarioSaida: "18:00",
-    diaria: 400.00,
-    kmTotal: 220,
-    kmExcedente: 120,
-    valorKm: 2.50,
-    observacao: "Rota com múltiplos pontos de parada.",
-    obs: "Excesso de tempo na segunda entrega.",
-    numeroOc: "OC-2026-006"
-  },
-  {
-    id: 90007,
-    numero: "OS-DVL-1007",
-    data: "2026-05-16",
-    cliente: "DVL DISTRIBUIDORA",
-    prestador: "Marcos Oliveira",
-    origem: "São Paulo",
-    destino: "Guarulhos",
-    status: "Finalizado",
-    valorCliente: 550.00,
-    custoPrestador: 385.00,
-    margem: 165.00,
-    margemPct: 30.0,
-    placa: "XYZ-9876",
-    tipoVeiculo: "Truck",
-    horarioChegada: "07:50",
-    horarioSaida: "16:10",
-    diaria: 500.00,
-    kmTotal: 120,
-    kmExcedente: 20,
-    valorKm: 2.50,
-    observacao: "Coleta reversa de devoluções.",
-    obs: "NF de devolução anexada.",
-    numeroOc: "OC-2026-007"
-  },
-  {
-    id: 90008,
-    numero: "OS-DVL-1008",
-    data: "2026-05-17",
-    cliente: "DVL DISTRIBUIDORA",
-    prestador: "Jose Santos",
-    origem: "São Bernardo",
-    destino: "Barueri",
-    status: "Finalizado",
-    valorCliente: 580.00,
-    custoPrestador: 406.00,
-    margem: 174.00,
-    margemPct: 30.0,
-    placa: "MNO-4567",
-    tipoVeiculo: "Toco",
-    horarioChegada: "07:00",
-    horarioSaida: "15:45",
-    diaria: 450.00,
-    kmTotal: 152,
-    kmExcedente: 52,
-    valorKm: 2.50,
-    observacao: "Entrega em condomínio logístico.",
-    obs: "SLA cumprido com sucesso.",
-    numeroOc: "OC-2026-008"
-  },
-  {
-    id: 90009,
-    numero: "OS-DVL-1009",
-    data: "2026-05-18",
-    cliente: "DVL DISTRIBUIDORA",
-    prestador: "Rogerio Lima",
-    origem: "São Paulo",
-    destino: "Guarujá",
-    status: "Finalizado",
-    valorCliente: 720.00,
-    custoPrestador: 504.00,
-    margem: 216.00,
-    margemPct: 30.0,
-    placa: "DEF-5678",
-    tipoVeiculo: "VUC",
-    horarioChegada: "08:00",
-    horarioSaida: "19:00",
-    diaria: 400.00,
-    kmTotal: 228,
-    kmExcedente: 128,
-    valorKm: 2.50,
-    observacao: "Faturamento excedente authorized pela torre.",
-    obs: "Aprovado pelo gestor DVL.",
-    numeroOc: "OC-2026-009"
-  },
-  {
-    id: 90010,
-    numero: "OS-DVL-1010",
-    data: "2026-05-19",
-    cliente: "DVL DISTRIBUIDORA",
-    prestador: "Andre Souza",
-    origem: "São Paulo",
-    destino: "Campinas",
-    status: "Finalizado",
-    valorCliente: 650.00,
-    custoPrestador: 455.00,
-    margem: 195.00,
-    margemPct: 30.0,
-    placa: "GHI-9012",
-    tipoVeiculo: "Fiorino",
-    horarioChegada: "07:30",
-    horarioSaida: "16:20",
-    diaria: 350.00,
-    kmTotal: 220,
-    kmExcedente: 120,
-    valorKm: 2.50,
-    observacao: "Entrega em distribuidor regional.",
-    obs: "Sem divergências.",
-    numeroOc: "OC-2026-010"
-  }
-];
 
 export default function RelatoriosEnterprise() {
   const [view, setView] = useState("extrato");
@@ -916,7 +573,11 @@ export default function RelatoriosEnterprise() {
 
   useEffect(() => {
     async function loadData() {
-      const { data: osData } = await supabase.from("ordens_servico").select("*").order("data", { ascending: false });
+      const [{ data: osData }, { data: escalaData }] = await Promise.all([
+        supabase.from("ordens_servico").select("*").order("data", { ascending: false }),
+        supabase.from("alocacoes_escala").select("*").order("data_escala", { ascending: false })
+      ]);
+
       const fmtdOS: OS[] = (osData || []).map(o => {
          const margem = (o.valor_cliente || 0) - (o.custo_prestador || 0);
          const margemPct = o.valor_cliente > 0 ? (margem / o.valor_cliente) * 100 : 0;
@@ -947,12 +608,44 @@ export default function RelatoriosEnterprise() {
          };
       });
 
-      const allOS = [...DVL_MOCK_OS, ...fmtdOS];
+      const fmtdEscala: OS[] = (escalaData || []).map(o => {
+         const valorFrete = o.valor_frete || o.metadata?.totals?.cliente?.total || o.valor_fixo || 0;
+         const valorRepasse = o.valor_repasse || o.metadata?.totals?.prestador?.total || o.valor_fixo || 0;
+         const margem = valorFrete - valorRepasse;
+         const margemPct = valorFrete > 0 ? (margem / valorFrete) * 100 : 0;
+         return {
+           id: o.id,
+           numero: `ESC-${o.id}`,
+           data: o.data_escala || o.created_at || "",
+           cliente: o.cliente_id || o.cliente_nome || "Avulso",
+           prestador: o.prestador_id || o.prestador_nome || "Não alocado",
+           origem: "Base",
+           destino: "Rota",
+           status: o.status || "Pendente",
+           valorCliente: valorFrete,
+           custoPrestador: valorRepasse,
+           margem: margem,
+           margemPct: margemPct,
+           placa: o.placa || "-",
+           tipoVeiculo: o.tipo_veiculo || "-",
+           horarioChegada: "-",
+           horarioSaida: "-",
+           diaria: o.valor_fixo || 0,
+           kmTotal: o.km_realizados || 0,
+           kmExcedente: 0,
+           valorKm: 0,
+           observacao: o.observacoes || "-",
+           obs: "-",
+           numeroOc: ""
+         };
+      });
+
+      const allOS = [...fmtdOS, ...fmtdEscala].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
       setRelatorioOS(allOS);
 
       const { data: cliData } = await supabase.from("clientes").select("*");
       const fmtdCli: Cliente[] = (cliData || []).map(c => {
-         const ops = allOS.filter(o => o.cliente === c.nome_fantasia || o.cliente === c.razao_social);
+         const ops = allOS.filter(o => o.cliente === c.nome_fantasia || o.cliente === c.razao_social || String(c.id) === o.cliente);
          return {
             id: c.id,
             nome: c.nome_fantasia || c.razao_social || "",
@@ -964,18 +657,6 @@ export default function RelatoriosEnterprise() {
          };
       });
 
-      // Inject DVL Distributor if not present
-      if (!fmtdCli.some(c => c.nome.toUpperCase().includes("DVL DISTRIBUIDORA"))) {
-        fmtdCli.unshift({
-          id: 9999,
-          nome: "DVL DISTRIBUIDORA",
-          cnpj: "12.345.678/0001-90",
-          totalFaturado: DVL_MOCK_OS.reduce((sum, o) => sum + o.valorCliente, 0),
-          diarias: 10,
-          contratosFixos: 0,
-          operacoes: DVL_MOCK_OS
-        });
-      }
       setRelatorioClientes(fmtdCli);
 
       const { data: prestData } = await supabase.from("prestadores").select("*");
@@ -1011,52 +692,71 @@ export default function RelatoriosEnterprise() {
   }, []);
 
   useEffect(() => {
-    async function loadPrestadoresDetalhes() {
+    function loadPrestadoresDetalhes() {
       setLoadingPrestadores(true);
       try {
-        const filtroPag: FiltrosPagamento = {};
-        if (filtrosPrestador.dataInicio) filtroPag.dataInicial = filtrosPrestador.dataInicio;
-        if (filtrosPrestador.dataFim) filtroPag.dataFinal = filtrosPrestador.dataFim;
-        if (filtrosPrestador.prestadorId !== "todos") {
-          const nome = prestadorNomeMap[filtrosPrestador.prestadorId];
-          if (nome) filtroPag.prestador = nome;
+        if (!relatorioOS || relatorioOS.length === 0) {
+          setPrestadoresLinhas([]);
+          setLoadingPrestadores(false);
+          return;
         }
-        const dados = await buscarDadosPagamentoPrestador(filtroPag);
-        setPrestadoresOps(dados);
 
-        const linhas: PrestadorLinha[] = dados.map((o: any) => {
-          const valorFrete = Number(o.valor_cliente) || 0;
-          const valorPrestador = Number(o.custo_prestador) || 0;
-          const margem = valorFrete - valorPrestador;
-          const margemPct = valorFrete > 0 ? (margem / valorFrete) * 100 : 0;
-          const enderecos = o.enderecos || [];
+        let ops = relatorioOS;
+
+        if (filtrosPrestador.dataInicio) {
+          ops = ops.filter(o => {
+            const dateStr = o.data ? o.data.split('T')[0] : "";
+            return dateStr >= filtrosPrestador.dataInicio;
+          });
+        }
+        if (filtrosPrestador.dataFim) {
+          ops = ops.filter(o => {
+            const dateStr = o.data ? o.data.split('T')[0] : "";
+            return dateStr <= filtrosPrestador.dataFim;
+          });
+        }
+
+        if (filtrosPrestador.prestadorId !== "todos") {
+           const nomePrestadorSelecionado = prestadorNomeMap[filtrosPrestador.prestadorId];
+           ops = ops.filter(o => {
+             return String(o.prestador) === String(filtrosPrestador.prestadorId) || 
+                    String(o.prestador) === nomePrestadorSelecionado;
+           });
+        }
+
+        if (filtrosPrestador.clienteId !== "todos") {
+           const nomeClienteMap = clientesOptions.find(c => String(c.value) === String(filtrosPrestador.clienteId))?.label;
+           ops = ops.filter(o => {
+              return String(o.cliente) === String(filtrosPrestador.clienteId) ||
+                     String(o.cliente) === nomeClienteMap;
+           });
+        }
+
+        setPrestadoresOps(ops);
+
+        const linhas: PrestadorLinha[] = ops.map((o: any) => {
+          let cNome = o.cliente;
+          const opt = clientesOptions.find(c => String(c.value) === String(o.cliente));
+          if (opt) cNome = opt.label;
+
           return {
-            os: o.numero || `OS-${o.id}`,
-            cliente: o.cliente_nome || o.cliente || "Avulso",
-            origem: enderecos[0]?.cidade || o.origem_endereco || "N/A",
-            destino: enderecos[enderecos.length - 1]?.cidade || o.destino_endereco || "N/A",
-            dataColeta: o.created_at ? new Date(o.created_at).toLocaleDateString("pt-BR") : "-",
-            dataEntrega: o.data_finalizacao ? new Date(o.data_finalizacao).toLocaleDateString("pt-BR") : "-",
-            valorFrete,
-            valorPrestador,
-            margem,
-            margemPct,
-            statusFinanceiro: o.status_pagamento === "pago" ? "Pago" : o.status_pagamento === "parcial" ? "Parcial" : "Pendente",
-            tipoVeiculo: o.veiculo_tipo || "-",
+            os: o.numero,
+            cliente: cNome || "Avulso",
+            origem: o.origem || "N/A",
+            destino: o.destino || "N/A",
+            dataColeta: o.data ? new Date(o.data).toLocaleDateString("pt-BR") : "-",
+            dataEntrega: o.data ? new Date(o.data).toLocaleDateString("pt-BR") : "-",
+            valorFrete: o.valorCliente || 0,
+            valorPrestador: o.custoPrestador || 0,
+            margem: o.margem || 0,
+            margemPct: o.margemPct || 0,
+            statusFinanceiro: "Pendente",
+            tipoVeiculo: o.tipoVeiculo || "-",
             ocorrencia: "",
           };
         });
 
-        if (filtrosPrestador.clienteId !== "todos") {
-          const cliId = Number(filtrosPrestador.clienteId);
-          const fmtd = linhas.filter(l => {
-            const os = dados.find((d: any) => d.numero === l.os);
-            return os && os.cliente_id === cliId;
-          });
-          setPrestadoresLinhas(fmtd);
-        } else {
-          setPrestadoresLinhas(linhas);
-        }
+        setPrestadoresLinhas(linhas);
       } catch (e) {
         console.error("Erro ao carregar detalhes prestadores:", e);
         setPrestadoresLinhas([]);
@@ -1064,7 +764,7 @@ export default function RelatoriosEnterprise() {
       setLoadingPrestadores(false);
     }
     loadPrestadoresDetalhes();
-  }, [filtrosPrestador, prestadorNomeMap]);
+  }, [filtrosPrestador, relatorioOS, prestadorNomeMap, clientesOptions]);
 
   const clientesUnicos = Array.from(new Set(relatorioOS.map(o => o.cliente).filter(Boolean)));
   const prestadoresUnicos = Array.from(new Set(relatorioOS.map(o => o.prestador).filter(Boolean)));
@@ -1388,7 +1088,7 @@ export default function RelatoriosEnterprise() {
                     <Download className="w-4 h-4" />
                     Gerar Excel Cliente
                   </Button>
-                  <Button onClick={async () => await generateFaturamentoPDF(clienteSelecionado)} className="gap-2 bg-orange-500 hover:bg-orange-600">
+                  <Button onClick={async () => await generateFaturamentoPDF(clienteSelecionado, { dataInicio: filtros.dataInicio, dataFim: filtros.dataFim })} className="gap-2 bg-orange-500 hover:bg-orange-600">
                     <Download className="w-4 h-4" />
                     Gerar PDF
                   </Button>
@@ -1601,36 +1301,93 @@ export default function RelatoriosEnterprise() {
             <p className="text-sm text-muted-foreground">
               {loadingPrestadores ? "Carregando..." : `${prestadoresLinhas.length} operações encontradas`}
             </p>
-            <Button disabled={loadingPrestadores || prestadoresLinhas.length === 0}
-              onClick={async () => {
-                const prestNome = filtrosPrestador.prestadorId !== "todos"
-                  ? (prestadoresOptions.find(o => o.value === filtrosPrestador.prestadorId)?.label || "")
-                  : "";
-                const totalOps = prestadoresLinhas.length;
-                const valorBruto = prestadoresLinhas.reduce((s, l) => s + l.valorFrete, 0);
-                const valorPago = prestadoresLinhas.reduce((s, l) => s + l.valorPrestador, 0);
-                await generateRelatorioPrestadoresPDF(
-                  prestadoresLinhas.filter(l => {
+            <div className="flex items-center gap-2">
+              <Button disabled={loadingPrestadores || prestadoresLinhas.length === 0}
+                onClick={() => {
+                  const prestObj = filtrosPrestador.prestadorId !== "todos"
+                    ? relatorioPrestadores.find(p => String(p.id) === String(filtrosPrestador.prestadorId))
+                    : undefined;
+                  const prestNome = prestObj?.nome || "Todos os Prestadores";
+                  
+                  const filtrados = prestadoresLinhas.filter(l => {
                     if (filtrosPrestador.statusFinanceiro !== "todos" && l.statusFinanceiro.toLowerCase() !== filtrosPrestador.statusFinanceiro) return false;
                     if (filtrosPrestador.tipoOperacao !== "todos") return false;
                     return true;
-                  }),
-                  prestNome,
-                  filtrosPrestador.dataInicio,
-                  filtrosPrestador.dataFim,
-                  {
-                    totalOps,
-                    valorBruto,
-                    valorPago,
-                    saldoPendente: prestadoresLinhas.filter(l => l.statusFinanceiro === "Pendente").reduce((s, l) => s + l.valorFrete, 0),
-                    mediaEntrega: totalOps > 0 ? valorPago / totalOps : 0,
+                  });
+
+                  if (filtrados.length === 0) {
+                    toast.warning("Nenhuma operação encontrada para este prestador e período.");
+                    return;
                   }
-                );
-              }}
-              className="gap-2 bg-orange-500 hover:bg-orange-600">
-              <Download className="w-4 h-4" />
-              Gerar PDF
-            </Button>
+
+                  let txt = `*RELATÓRIO DE REPASSE - CONEXÃO EXPRESS*\n`;
+                  txt += `*Parceiro:* ${prestNome}\n`;
+                  if (filtrosPrestador.dataInicio && filtrosPrestador.dataFim) {
+                    txt += `*Período:* ${new Date(filtrosPrestador.dataInicio + 'T00:00:00').toLocaleDateString('pt-BR')} até ${new Date(filtrosPrestador.dataFim + 'T00:00:00').toLocaleDateString('pt-BR')}\n`;
+                  }
+                  txt += `\n*RESUMO FINANCEIRO*\n`;
+                  txt += `• Total Operações: ${filtrados.length}\n`;
+                  txt += `• Valor Total Líquido a Pagar: ${fmtFin(filtrados.reduce((s, l) => s + l.valorPrestador, 0))}\n\n`;
+                  txt += `*DETALHAMENTO*\n`;
+                  filtrados.forEach((l) => {
+                    txt += `OS: ${l.os} | Data: ${l.dataColeta}\n`;
+                    txt += `Rota: ${l.origem} -> ${l.destino}\n`;
+                    txt += `Valor Líquido: ${fmtFin(l.valorPrestador)}\n`;
+                    txt += `------------------------\n`;
+                  });
+                  txt += `\n_Documento gerado pelo sistema Conexão Express_`;
+                  
+                  navigator.clipboard.writeText(txt).then(() => {
+                    toast.success("Resumo copiado para o WhatsApp com sucesso!");
+                  }).catch(() => {
+                    toast.error("Falha ao copiar resumo.");
+                  });
+                }}
+                className="gap-2 bg-emerald-500 hover:bg-emerald-600">
+                Copiar WhatsApp
+              </Button>
+              <Button disabled={loadingPrestadores || prestadoresLinhas.length === 0}
+                onClick={async () => {
+                  const prestObj = filtrosPrestador.prestadorId !== "todos"
+                    ? relatorioPrestadores.find(p => String(p.id) === String(filtrosPrestador.prestadorId))
+                    : undefined;
+                  const prestNome = prestObj?.nome || "";
+                    
+                  const filtrados = prestadoresLinhas.filter(l => {
+                    if (filtrosPrestador.statusFinanceiro !== "todos" && l.statusFinanceiro.toLowerCase() !== filtrosPrestador.statusFinanceiro) return false;
+                    if (filtrosPrestador.tipoOperacao !== "todos") return false;
+                    return true;
+                  });
+
+                  if (filtrados.length === 0) {
+                    toast.warning("Nenhuma operação encontrada para este prestador e período.");
+                    return;
+                  }
+
+                  const totalOps = filtrados.length;
+                  const valorBruto = filtrados.reduce((s, l) => s + l.valorFrete, 0);
+                  const valorPago = filtrados.reduce((s, l) => s + l.valorPrestador, 0);
+                  
+                  await generateRelatorioPrestadoresPDF(
+                    filtrados,
+                    prestNome,
+                    filtrosPrestador.dataInicio,
+                    filtrosPrestador.dataFim,
+                    {
+                      totalOps,
+                      valorBruto,
+                      valorPago,
+                      saldoPendente: filtrados.filter(l => l.statusFinanceiro === "Pendente").reduce((s, l) => s + l.valorFrete, 0),
+                      mediaEntrega: totalOps > 0 ? valorPago / totalOps : 0,
+                    },
+                    prestObj ? { cpfCnpj: prestObj.cpfCnpj, tipo: prestObj.tipo } : undefined
+                  );
+                }}
+                className="gap-2 bg-orange-500 hover:bg-orange-600">
+                <Download className="w-4 h-4" />
+                Gerar PDF
+              </Button>
+            </div>
           </div>
 
           <Card>

@@ -54,6 +54,7 @@ interface LancamentoPagar {
   // Identificação
   favorecidoNome: string;
   favorecidoCnpjCpf: string;
+  isLegadoPrestador?: boolean;
   documentoNF: string;
   tipoDocumento: string; // NF, Fatura, Recibo, Boleto, Guia
   // Classificação
@@ -402,6 +403,7 @@ export default function ContasPagar() {
           id: r.id,
           favorecidoNome: r.fornecedor || "",
           favorecidoCnpjCpf: r.fornecedor_documento || "",
+          isLegadoPrestador: !!(r.prestador_id || r.prestador),
           documentoNF: r.documento || r.fatura || "",
           tipoDocumento: r.tipo_documento || "NF",
           categoria: r.categoria || "",
@@ -680,7 +682,14 @@ export default function ContasPagar() {
                     <p className="text-[10px] text-muted-foreground">{l.tipoDocumento}</p>
                   </TableCell>
                   <TableCell className="py-3">
-                    <p className="font-semibold text-sm max-w-[200px] truncate" title={l.favorecidoNome}>{l.favorecidoNome}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-semibold text-sm max-w-[160px] truncate" title={l.favorecidoNome}>{l.favorecidoNome}</p>
+                      {l.isLegadoPrestador && (
+                        <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200 text-[9px] px-1 py-0 font-bold">
+                          Legado Prestador
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-[10px] text-muted-foreground font-mono">{l.favorecidoCnpjCpf || "—"}</p>
                   </TableCell>
                   <TableCell className="py-3">
