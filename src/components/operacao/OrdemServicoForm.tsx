@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Save, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Upload, X, Download, File, FilePlus, Check, Route, AlertTriangle, Calculator, Clock, ChevronDown, CheckCircle2, MessageCircle, Copy as CopyIcon, Send, Eye, DollarSign } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft, Save, Plus, Trash2, Calendar, Shield, CreditCard, FileText, Truck, MapPin, CheckCircle, Package, Lightbulb, Upload, X, Download, File, FilePlus, Check, Route, AlertTriangle, Calculator, Clock, ChevronDown, CheckCircle2, MessageCircle, Copy as CopyIcon, Send, Eye, DollarSign, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { sincronizarComEscala, sincronizarFinanceiroOS } from "@/services/ordemServicoService";
@@ -36,6 +38,10 @@ import { disparaEventoAutomacao } from "@/services/integracoes/automacaoCentralS
 import { registrarLog } from "@/services/integracoes/integrationLogger";
 import { enviarWebhookWhatsAppOSCriada } from "@/services/integracoes/whatsAppOSService";
 import { enviarWhatsAppAutomatico } from "@/services/whatsappAutomation";
+import { gerarRascunhoCte } from "@/services/fiscal/cteService";
+import { gerarRascunhoMdfe } from "@/services/fiscal/mdfeService";
+import { gerarRascunhoNfse } from "@/services/fiscal/nfseService";
+import { buscarCodigoIbge } from "@/services/fiscal/ibgeService";
 import {
   gerarMensagemOSCriada,
   gerarMensagemOSAtualizada,
@@ -122,6 +128,78 @@ const calcularValorAutomatico = (tabela: TabelaValorRow | null, distanciaKm: num
   };
 };
 
+type FiscalClassification = {
+  tipo: 'Municipal' | 'Intermunicipal' | 'Interestadual' | 'Indefinido';
+  exigeNFSe: boolean;
+  exigeCTe: boolean;
+  exigeMDFe: boolean;
+};
+
+const classificarFiscalmente = (enderecos: OSEndereco[]): FiscalClassification => {
+  const origem = enderecos.find(e => e.tipo === 'coleta' && e.cidade?.trim() && e.estado?.trim());
+  const destino = [...enderecos].reverse().find(e => e.tipo === 'entrega' && e.cidade?.trim() && e.estado?.trim());
+  
+  if (!origem || !destino) {
+    return { tipo: 'Indefinido', exigeNFSe: false, exigeCTe: false, exigeMDFe: false };
+  }
+  
+  const mesmaCidade = origem.cidade!.trim().toLowerCase() === destino.cidade!.trim().toLowerCase();
+  const mesmaUF = origem.estado!.trim().toLowerCase() === destino.estado!.trim().toLowerCase();
+  
+  if (mesmaUF && mesmaCidade) {
+    return { tipo: 'Municipal', exigeNFSe: true, exigeCTe: false, exigeMDFe: false };
+  }
+  
+  if (mesmaUF && !mesmaCidade) {
+    return { tipo: 'Intermunicipal', exigeNFSe: false, exigeCTe: true, exigeMDFe: false };
+  }
+  
+  return { tipo: 'Interestadual', exigeNFSe: false, exigeCTe: true, exigeMDFe: true };
+};
+
+const FISCAL_TIPO_CORES: Record<FiscalClassification['tipo'], string> = {
+  Municipal: 'bg-green-100 text-green-800 border-green-300',
+  Intermunicipal: 'bg-blue-100 text-blue-800 border-blue-300',
+  Interestadual: 'bg-purple-100 text-purple-800 border-purple-300',
+  Indefinido: 'bg-gray-100 text-gray-500 border-gray-300',
+};
+
+type FiscalDocTipo = 'NFSe' | 'CTe' | 'MDFe';
+
+const validarPendenciasFiscais = (
+  tipo: FiscalDocTipo,
+  data: OrdemServico,
+  enderecos: OSEndereco[]
+): string[] => {
+  const pendencias: string[] = [];
+  const origem = enderecos.find(e => e.tipo === 'coleta' && e.cidade?.trim() && e.estado?.trim());
+  const destino = [...enderecos].reverse().find(e => e.tipo === 'entrega' && e.cidade?.trim() && e.estado?.trim());
+
+  if (!data.cliente?.trim()) pendencias.push('Cliente/tomador não informado');
+  if (!data.valorCliente || data.valorCliente <= 0) pendencias.push('Valor do frete/serviço não informado');
+  if (!origem?.cidade?.trim()) pendencias.push('Cidade de origem não informada');
+  if (!origem?.estado?.trim()) pendencias.push('UF de origem não informada');
+  if (!destino?.cidade?.trim()) pendencias.push('Cidade de destino não informada');
+  if (!destino?.estado?.trim()) pendencias.push('UF de destino não informada');
+
+  if (tipo === 'NFSe') {
+    if (!origem?.cidade?.trim()) pendencias.push('Município de prestação não definido');
+  }
+
+  if (tipo === 'CTe') {
+    if (!data.prestador?.trim()) pendencias.push('Prestador/motorista não informado');
+    if (!data.veiculoPlaca?.trim() && !data.veiculoTipo?.trim()) pendencias.push('Veículo não informado (placa ou tipo)');
+    if (!data.valorCliente || data.valorCliente <= 0) pendencias.push('Base de cálculo do ICMS não informada (valor do frete zerado)');
+  }
+
+  if (tipo === 'MDFe') {
+    if (!data.prestador?.trim()) pendencias.push('Prestador/motorista não informado');
+    if (!data.veiculoPlaca?.trim()) pendencias.push('Placa do veículo não informada');
+  }
+
+  return pendencias;
+};
+
 interface SugestaoVeiculo { tipo: string; motivo: string; }
 
 interface DocumentoOS {
@@ -192,6 +270,15 @@ const OrdemServicoForm = ({ os, modo, onVoltar, onSalvar }: Props) => {
   const [escalaVinculada, setEscalaVinculada] = useState(false);
   const [diagnosticoEscala, setDiagnosticoEscala] = useState<DiagnosticoSincronizacao | null>(null);
   const [financeiroSincronizado, setFinanceiroSincronizado] = useState(false);
+  const [gerandoNFSe, setGerandoNFSe] = useState(false);
+  const [gerandoCTe, setGerandoCTe] = useState(false);
+  const [gerandoMDFe, setGerandoMDFe] = useState(false);
+  const [docFiscalExistente, setDocFiscalExistente] = useState<{ nfse: boolean; nfseId?: string; cte: boolean; cteId?: string; mdfe: boolean; mdfeId?: string }>({ nfse: false, cte: false, mdfe: false });
+  const [pendenciasFiscais, setPendenciasFiscais] = useState<string[]>([]);
+  const [showFiscalPreview, setShowFiscalPreview] = useState(false);
+  const [simulandoFocus, setSimulandoFocus] = useState(false);
+  const [ibgePreview, setIbgePreview] = useState<{ origem?: string; destino?: string }>({});
+  const navigate = useNavigate();
 
 const calculaRotaEValor = async () => {
     try {
@@ -283,6 +370,42 @@ const calculaRotaEValor = async () => {
         setEscalaVinculada(false);
       });
     }
+  }, [data.id]);
+
+  useEffect(() => {
+    if (!data.id) {
+      setDocFiscalExistente({ nfse: false, cte: false, mdfe: false });
+      return;
+    }
+    (async () => {
+      try {
+        const [nfseRes, cteRes] = await Promise.all([
+          supabase.from("fiscal_nfse").select("id").eq("ordem_servico_id", data.id).in("status", ["rascunho", "processando", "autorizado"]).limit(1),
+          supabase.from("fiscal_ctes").select("id").eq("ordem_servico_id", data.id).in("status", ["rascunho", "processando", "autorizado"]).limit(1),
+        ]);
+        const nfse = !!(nfseRes.data && nfseRes.data.length > 0);
+        const nfseId = nfse ? nfseRes.data![0].id : undefined;
+        const cte = !!(cteRes.data && cteRes.data.length > 0);
+        const cteId = cte ? cteRes.data![0].id : undefined;
+        let mdfe = false;
+        let mdfeId: string | undefined;
+        if (cteRes.data && cteRes.data.length > 0) {
+          const cteLookupId = cteRes.data[0].id;
+          const { data: mdfeRes } = await supabase.from("fiscal_mdfes").select("id, metadata").in("status", ["rascunho", "processando", "autorizado"]);
+          const mdfeFound = (mdfeRes || []).find((m: any) => {
+            const vinculados: { cte_id: string }[] = m.metadata?.ctes_vinculados || [];
+            return vinculados.some((v) => v.cte_id === cteLookupId);
+          });
+          if (mdfeFound) {
+            mdfe = true;
+            mdfeId = mdfeFound.id;
+          }
+        }
+        setDocFiscalExistente({ nfse, nfseId, cte, cteId, mdfe, mdfeId });
+      } catch {
+        setDocFiscalExistente({ nfse: false, cte: false, mdfe: false });
+      }
+    })();
   }, [data.id]);
 
   const copiarWhatsApp = () => {
@@ -904,6 +1027,575 @@ const calculaRotaEValor = async () => {
                   </div>
                 </CardContent>
               </Card>
+
+              <Card className="border-none shadow-md rounded-2xl overflow-hidden">
+                <CardHeader className="bg-slate-50/50 border-b pb-4">
+                  <CardTitle className="text-base font-bold flex items-center gap-2"><Shield className="w-5 h-5 text-primary"/> Classificação Fiscal da OS</CardTitle>
+                </CardHeader>
+                <CardContent className="p-6">
+                  {(() => {
+                    const fiscal = classificarFiscalmente(data.enderecos || []);
+                    const origem = (data.enderecos || []).find(e => e.tipo === 'coleta' && e.cidade?.trim() && e.estado?.trim());
+                    const destino = [...(data.enderecos || [])].reverse().find(e => e.tipo === 'entrega' && e.cidade?.trim() && e.estado?.trim());
+                    return (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-semibold text-slate-700">Tipo:</span>
+                          <Badge className={`text-xs font-bold px-3 py-0.5 border ${FISCAL_TIPO_CORES[fiscal.tipo]}`}>
+                            {fiscal.tipo}
+                          </Badge>
+                          {fiscal.tipo === 'Indefinido' && (
+                            <span className="text-xs text-amber-600 italic">— preencha origem e destino</span>
+                          )}
+                        </div>
+                        {origem && destino && (
+                          <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg p-2">
+                            <MapPin className="w-3 h-3" />
+                            <span>{origem.cidade}/{origem.estado}</span>
+                            <span className="text-slate-300">→</span>
+                            <MapPin className="w-3 h-3" />
+                            <span>{destino.cidade}/{destino.estado}</span>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="flex items-center justify-between bg-slate-50 rounded-lg p-3 border border-slate-100">
+                            <span className="text-sm font-medium text-slate-600">NFS-e</span>
+                            {fiscal.exigeNFSe ? (
+                              docFiscalExistente.nfse ? (
+                                <Badge className="bg-emerald-200 text-emerald-800 border-emerald-300">Criada</Badge>
+                              ) : (
+                                <Badge className="bg-green-100 text-green-800 border-green-300">Sim</Badge>
+                              )
+                            ) : (
+                              <Badge className="bg-gray-100 text-gray-400 border-gray-200">Não</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between bg-slate-50 rounded-lg p-3 border border-slate-100">
+                            <span className="text-sm font-medium text-slate-600">CT-e</span>
+                            {fiscal.exigeCTe ? (
+                              docFiscalExistente.cte ? (
+                                <Badge className="bg-emerald-200 text-emerald-800 border-emerald-300">Criado</Badge>
+                              ) : (
+                                <Badge className="bg-blue-100 text-blue-800 border-blue-300">Sim</Badge>
+                              )
+                            ) : (
+                              <Badge className="bg-gray-100 text-gray-400 border-gray-200">Não</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between bg-slate-50 rounded-lg p-3 border border-slate-100">
+                            <span className="text-sm font-medium text-slate-600">MDF-e</span>
+                            {fiscal.exigeMDFe ? (
+                              docFiscalExistente.mdfe ? (
+                                <Badge className="bg-emerald-200 text-emerald-800 border-emerald-300">Criado</Badge>
+                              ) : (
+                                <Badge className="bg-purple-100 text-purple-800 border-purple-300">Sim</Badge>
+                              )
+                            ) : (
+                              <Badge className="bg-gray-100 text-gray-400 border-gray-200">Não</Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="pt-2 border-t">
+                          {fiscal.tipo === 'Indefinido' ? (
+                            <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 rounded-lg p-3 border border-amber-200">
+                              <AlertTriangle className="w-4 h-4" />
+                              <span>Preencha origem e destino para liberar ações fiscais.</span>
+                            </div>
+                          ) : (
+                          <div className="flex flex-wrap gap-2">
+                              {fiscal.exigeNFSe && (docFiscalExistente.nfse ? (
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                    onClick={() => navigate('/fiscal?tab=nfse')}
+                                  >
+                                    <Eye className="w-4 h-4 mr-2" /> Abrir NFS-e
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    className="border-slate-300 text-slate-600 hover:bg-slate-50"
+                                    disabled={simulandoFocus || !docFiscalExistente.nfseId}
+                                    onClick={async () => {
+                                      setSimulandoFocus(true);
+                                      try {
+                                        const { data: fnData, error: fnError } = await supabase.functions.invoke("focus-emissao", { body: { tipoDocumento: "nfse", documentoId: docFiscalExistente.nfseId } });
+                                        if (fnError) { toast.error(`Erro na simulação: ${fnError.message}`); return; }
+                                        toast.success(`Simulação Focus concluída: ${(fnData as any)?.mensagem || 'Modo simulado'}`);
+                                      } catch (e: any) {
+                                        toast.error("Erro ao chamar Edge Function: " + e.message);
+                                      } finally {
+                                        setSimulandoFocus(false);
+                                      }
+                                    }}
+                                  >
+                                    <Send className="w-4 h-4 mr-2" /> Simular Focus
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  variant="outline"
+                                  className="border-green-300 text-green-700 hover:bg-green-50"
+                                  disabled={readOnly || gerandoNFSe || !data.id}
+                                  onClick={async () => {
+                                    if (!data.id) { toast.warning("Salve a OS antes de gerar documentos fiscais."); return; }
+                                    const pendencias = validarPendenciasFiscais('NFSe', data, data.enderecos || []);
+                                    if (origem?.cidade && origem?.estado) {
+                                      const cod = await buscarCodigoIbge(origem.cidade, origem.estado);
+                                      if (!cod) pendencias.push(`Código IBGE não encontrado para ${origem.cidade}/${origem.estado}`);
+                                    }
+                                    if (pendencias.length > 0) {
+                                      setPendenciasFiscais(pendencias);
+                                      toast.warning('Existem pendências fiscais antes de gerar NFS-e.');
+                                      return;
+                                    }
+                                    setPendenciasFiscais([]);
+                                    setGerandoNFSe(true);
+                                    try {
+                                      const { data: existente } = await supabase
+                                        .from("fiscal_nfse")
+                                        .select("id")
+                                        .eq("ordem_servico_id", data.id!)
+                                        .in("status", ["rascunho", "processando", "autorizado"])
+                                        .limit(1);
+                                      if (existente && existente.length > 0) {
+                                        toast.warning("Já existe NFS-e para esta OS.");
+                                        return;
+                                      }
+                                      const result = await gerarRascunhoNfse({ origem: "os", origem_id: data.id!, municipio_prestacao: origem?.cidade || undefined, descricao_servico: "Transporte de Cargas" });
+                                      if (result.success) {
+                                        toast.success(`NFS-e rascunho criado com sucesso!`);
+                                        setPendenciasFiscais([]);
+                                        setDocFiscalExistente(p => ({ ...p, nfse: true, nfseId: (result as any).nfse?.id }));
+                                      } else {
+                                        toast.error(`Erro ao gerar NFS-e: ${result.error}`);
+                                      }
+                                    } catch (e: any) {
+                                      toast.error("Erro ao gerar NFS-e: " + e.message);
+                                    } finally {
+                                      setGerandoNFSe(false);
+                                    }
+                                  }}
+                                >
+                                  {gerandoNFSe ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+                                  {gerandoNFSe ? "Gerando..." : "Gerar NFS-e"}
+                                </Button>
+                              ))}
+                              {fiscal.exigeCTe && (docFiscalExistente.cte ? (
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                    onClick={() => navigate('/fiscal?tab=cte')}
+                                  >
+                                    <Eye className="w-4 h-4 mr-2" /> Abrir CT-e
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    className="border-slate-300 text-slate-600 hover:bg-slate-50"
+                                    disabled={simulandoFocus || !docFiscalExistente.cteId}
+                                    onClick={async () => {
+                                      setSimulandoFocus(true);
+                                      try {
+                                        const { data: fnData, error: fnError } = await supabase.functions.invoke("focus-emissao", { body: { tipoDocumento: "cte", documentoId: docFiscalExistente.cteId } });
+                                        if (fnError) { toast.error(`Erro na simulação: ${fnError.message}`); return; }
+                                        toast.success(`Simulação Focus concluída: ${(fnData as any)?.mensagem || 'Modo simulado'}`);
+                                      } catch (e: any) {
+                                        toast.error("Erro ao chamar Edge Function: " + e.message);
+                                      } finally {
+                                        setSimulandoFocus(false);
+                                      }
+                                    }}
+                                  >
+                                    <Send className="w-4 h-4 mr-2" /> Simular Focus
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  variant="outline"
+                                  className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                                  disabled={readOnly || gerandoCTe || !data.id}
+                                  onClick={async () => {
+                                    if (!data.id) { toast.warning("Salve a OS antes de gerar documentos fiscais."); return; }
+                                    const pendencias = validarPendenciasFiscais('CTe', data, data.enderecos || []);
+                                    if (origem?.cidade && origem?.estado) {
+                                      const cod = await buscarCodigoIbge(origem.cidade, origem.estado);
+                                      if (!cod) pendencias.push(`Código IBGE não encontrado para origem: ${origem.cidade}/${origem.estado}`);
+                                    }
+                                    if (destino?.cidade && destino?.estado) {
+                                      const cod = await buscarCodigoIbge(destino.cidade, destino.estado);
+                                      if (!cod) pendencias.push(`Código IBGE não encontrado para destino: ${destino.cidade}/${destino.estado}`);
+                                    }
+                                    if (pendencias.length > 0) {
+                                      setPendenciasFiscais(pendencias);
+                                      toast.warning('Existem pendências fiscais antes de gerar CT-e.');
+                                      return;
+                                    }
+                                    setPendenciasFiscais([]);
+                                    setGerandoCTe(true);
+                                    try {
+                                      const { data: existente } = await supabase
+                                        .from("fiscal_ctes")
+                                        .select("id")
+                                        .eq("ordem_servico_id", data.id!)
+                                        .in("status", ["rascunho", "processando", "autorizado"])
+                                        .limit(1);
+                                      if (existente && existente.length > 0) {
+                                        toast.warning("Já existe CT-e para esta OS.");
+                                        return;
+                                      }
+                                      const result = await gerarRascunhoCte(data.id!);
+                                      if (result.success) {
+                                        toast.success(`CT-e rascunho criado com sucesso!`);
+                                        setPendenciasFiscais([]);
+                                        setDocFiscalExistente(p => ({ ...p, cte: true, cteId: (result as any).cte?.id }));
+                                      } else {
+                                        toast.error(`Erro ao gerar CT-e: ${result.error}`);
+                                      }
+                                    } catch (e: any) {
+                                      toast.error("Erro ao gerar CT-e: " + e.message);
+                                    } finally {
+                                      setGerandoCTe(false);
+                                    }
+                                  }}
+                                >
+                                  {gerandoCTe ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+                                  {gerandoCTe ? "Gerando..." : "Gerar CT-e"}
+                                </Button>
+                              ))}
+                              {fiscal.exigeMDFe && (docFiscalExistente.mdfe ? (
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                                    onClick={() => navigate('/fiscal?tab=mdfe')}
+                                  >
+                                    <Eye className="w-4 h-4 mr-2" /> Abrir MDF-e
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    className="border-slate-300 text-slate-600 hover:bg-slate-50"
+                                    disabled={simulandoFocus || !docFiscalExistente.mdfeId}
+                                    onClick={async () => {
+                                      setSimulandoFocus(true);
+                                      try {
+                                        const { data: mdfeData } = await supabase
+                                          .from("fiscal_mdfes")
+                                          .select("metadata")
+                                          .eq("id", docFiscalExistente.mdfeId)
+                                          .single();
+                                        const vinculados: any[] = mdfeData?.metadata?.ctes_vinculados || [];
+                                        const semChave = vinculados.filter((v: any) => !v.chave_acesso || v.status !== "autorizado");
+                                        if (semChave.length > 0) {
+                                          toast.warning("MDF-e ainda não pode ser emitido: CT-e sem chave de acesso autorizada.");
+                                          return;
+                                        }
+                                        const { data: fnData, error: fnError } = await supabase.functions.invoke("focus-emissao", { body: { tipoDocumento: "mdfe", documentoId: docFiscalExistente.mdfeId } });
+                                        if (fnError) { toast.error(`Erro na simulação: ${fnError.message}`); return; }
+                                        toast.success(`Simulação Focus concluída: ${(fnData as any)?.mensagem || 'Modo simulado'}`);
+                                      } catch (e: any) {
+                                        toast.error("Erro ao chamar Edge Function: " + e.message);
+                                      } finally {
+                                        setSimulandoFocus(false);
+                                      }
+                                    }}
+                                  >
+                                    <Send className="w-4 h-4 mr-2" /> Simular Focus
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  variant="outline"
+                                  className="border-purple-300 text-purple-700 hover:bg-purple-50"
+                                  disabled={readOnly || gerandoMDFe || !data.id}
+                                  onClick={async () => {
+                                    if (!data.id) { toast.warning("Salve a OS antes de gerar documentos fiscais."); return; }
+                                    const pendencias = validarPendenciasFiscais('MDFe', data, data.enderecos || []);
+                                    if (pendencias.length > 0) {
+                                      setPendenciasFiscais(pendencias);
+                                      toast.warning('Existem pendências fiscais antes de gerar MDF-e.');
+                                      return;
+                                    }
+                                    setPendenciasFiscais([]);
+                                    setGerandoMDFe(true);
+                                    try {
+                                      const { data: ctes } = await supabase
+                                        .from("fiscal_ctes")
+                                        .select("id")
+                                        .eq("ordem_servico_id", data.id!)
+                                        .eq("status", "rascunho");
+                                      if (!ctes || ctes.length === 0) {
+                                        toast.warning("Gere o CT-e antes do MDF-e.");
+                                        return;
+                                      }
+                                      const cteIds = ctes.map((c: any) => c.id);
+                                      const { data: mdfesAtivos } = await supabase
+                                        .from("fiscal_mdfes")
+                                        .select("id, metadata")
+                                        .in("status", ["rascunho", "processando", "autorizado"]);
+                                      const jaExiste = (mdfesAtivos || []).some((m: any) => {
+                                        const vinculados: { cte_id: string }[] = m.metadata?.ctes_vinculados || [];
+                                        return vinculados.some((v) => cteIds.includes(v.cte_id));
+                                      });
+                                      if (jaExiste) {
+                                        toast.warning("Já existe MDF-e para esta OS.");
+                                        return;
+                                      }
+                                      const result = await gerarRascunhoMdfe(cteIds);
+                                      if (result.success) {
+                                        toast.success(`MDF-e rascunho criado com sucesso!`);
+                                        setPendenciasFiscais([]);
+                                        setDocFiscalExistente(p => ({ ...p, mdfe: true, mdfeId: (result as any).mdfe?.id }));
+                                      } else {
+                                        toast.error(`Erro ao gerar MDF-e: ${result.error}`);
+                                      }
+                                    } catch (e: any) {
+                                      toast.error("Erro ao gerar MDF-e: " + e.message);
+                                    } finally {
+                                      setGerandoMDFe(false);
+                                    }
+                                  }}
+                                >
+                                  {gerandoMDFe ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+                                  {gerandoMDFe ? "Gerando..." : "Gerar MDF-e"}
+                                </Button>
+                              ))}
+                            </div>
+                          )}
+                          <div className="mt-2 pt-2 border-t border-slate-100">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-slate-500 hover:text-slate-700"
+                              onClick={async () => {
+                                const orig = (data.enderecos || []).find(e => e.tipo === 'coleta' && e.cidade?.trim() && e.estado?.trim());
+                                const dest = [...(data.enderecos || [])].reverse().find(e => e.tipo === 'entrega' && e.cidade?.trim() && e.estado?.trim());
+                                const [codOrig, codDest] = await Promise.all([
+                                  orig?.cidade && orig?.estado ? buscarCodigoIbge(orig.cidade, orig.estado) : null,
+                                  dest?.cidade && dest?.estado ? buscarCodigoIbge(dest.cidade, dest.estado) : null,
+                                ]);
+                                setIbgePreview({ origem: codOrig || undefined, destino: codDest || undefined });
+                                setShowFiscalPreview(true);
+                              }}
+                            >
+                              <FileText className="w-4 h-4 mr-2" /> Pré-visualizar Fiscal
+                            </Button>
+                          </div>
+                          {pendenciasFiscais.length > 0 && (
+                            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <AlertTriangle className="w-4 h-4 text-amber-600" />
+                                <span className="text-sm font-semibold text-amber-800">Pendências para emissão fiscal</span>
+                              </div>
+                              <ul className="space-y-1">
+                                {pendenciasFiscais.map((p, i) => (
+                                  <li key={i} className="text-xs text-amber-700 flex items-start gap-1.5">
+                                    <span className="text-amber-400 mt-0.5">●</span>
+                                    {p}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </CardContent>
+              </Card>
+
+              <Dialog open={showFiscalPreview} onOpenChange={setShowFiscalPreview}>
+                <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+                  {(() => {
+                    const fiscal = classificarFiscalmente(data.enderecos || []);
+                    const origem = (data.enderecos || []).find(e => e.tipo === 'coleta' && e.cidade?.trim() && e.estado?.trim());
+                    const destino = [...(data.enderecos || [])].reverse().find(e => e.tipo === 'entrega' && e.cidade?.trim() && e.estado?.trim());
+                    const docsExigidos: string[] = [];
+                    if (fiscal.exigeNFSe) docsExigidos.push('NFS-e');
+                    if (fiscal.exigeCTe) docsExigidos.push('CT-e');
+                    if (fiscal.exigeMDFe) docsExigidos.push('MDF-e');
+
+                    const payloadPreview = {
+                      tipo_fiscal: fiscal.tipo,
+                      documentos_exigidos: docsExigidos,
+                      emitente_cliente: data.cliente || null,
+                      valor: data.valorCliente || 0,
+                      tipo_operacao: data.tipoOperacao || null,
+                      prestador: data.prestador || null,
+                      veiculo: {
+                        placa: data.veiculoPlaca || null,
+                        tipo: data.veiculoTipo || null,
+                      },
+                      cfop: (data as any).cfopPadraoCliente || null,
+                      icms: data.valorCliente > 0 ? {
+                        base_calculo: data.valorCliente,
+                        aliquota: 12,
+                        valor: parseFloat((data.valorCliente * 0.12).toFixed(2)),
+                      } : null,
+                      modal: "01",
+                      tipo_servico: 0,
+                      carga: data.carga ? {
+                        tipo: data.carga.tipo,
+                        descricao: data.carga.descricao,
+                        peso: data.carga.peso,
+                        volumes: data.carga.volumes,
+                      } : null,
+                      origem: origem ? { cidade: origem.cidade, estado: origem.estado, endereco: origem.endereco, codigo_ibge: ibgePreview.origem || null } : null,
+                      destino: destino ? { cidade: destino.cidade, estado: destino.estado, endereco: destino.endereco, codigo_ibge: ibgePreview.destino || null } : null,
+                      tomador_indicador_ie: "9",
+                      ctes_vinculados_status: docFiscalExistente.cte ? (docFiscalExistente.cteId ? "rascunho (sem chave)" : "indisponivel") : null,
+                    };
+
+                    return (
+                      <>
+                        <DialogHeader>
+                          <DialogTitle className="flex items-center gap-2">
+                            <Shield className="w-5 h-5" /> Pré-visualização Fiscal da OS
+                          </DialogTitle>
+                          <DialogDescription>
+                            Payload interno preparado para emissão futura (Focus NFe desligado)
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                          <div>
+                            <span className="text-sm font-semibold text-blue-800">Focus NFe desligado</span>
+                            <p className="text-xs text-blue-600 mt-0.5">
+                              A emissão real será feita via backend / Edge Function, nunca pelo frontend.
+                              Nenhum token, certificado ou chave de API trafega pelo navegador.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          {pendenciasFiscais.length > 0 && (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <AlertTriangle className="w-4 h-4 text-amber-600" />
+                                <span className="text-sm font-semibold text-amber-800">
+                                  Payload incompleto — corrija as pendências antes de gerar
+                                </span>
+                              </div>
+                              <ul className="space-y-1">
+                                {pendenciasFiscais.map((p, i) => (
+                                  <li key={i} className="text-xs text-amber-700 flex items-start gap-1.5">
+                                    <span className="text-amber-400 mt-0.5">●</span> {p}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Tipo Fiscal</span>
+                              <p className={`text-sm font-bold ${fiscal.tipo === 'Indefinido' ? 'text-slate-400' : fiscal.tipo === 'Municipal' ? 'text-green-700' : fiscal.tipo === 'Intermunicipal' ? 'text-blue-700' : 'text-purple-700'}`}>
+                                {fiscal.tipo}
+                              </p>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Documentos Exigidos</span>
+                              <p className="text-sm font-bold text-slate-700">
+                                {docsExigidos.length > 0 ? docsExigidos.join(' + ') : 'Nenhum definido'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Cliente / Tomador</span>
+                              <p className="text-sm text-slate-700">{data.cliente || '—'}</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Indicador IE</span>
+                              <p className="text-sm text-slate-700">9 — Não Contribuinte</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Valor</span>
+                              <p className="text-sm font-bold text-slate-700">R$ {(data.valorCliente || 0).toFixed(2)}</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Origem</span>
+                              <p className="text-sm text-slate-700">{origem ? `${origem.cidade}/${origem.estado}` : '—'}</p>
+                              {ibgePreview.origem && <p className="text-[10px] text-slate-400">IBGE: {ibgePreview.origem}</p>}
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Destino</span>
+                              <p className="text-sm text-slate-700">{destino ? `${destino.cidade}/${destino.estado}` : '—'}</p>
+                              {ibgePreview.destino && <p className="text-[10px] text-slate-400">IBGE: {ibgePreview.destino}</p>}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-3">
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Prestador</span>
+                              <p className="text-sm text-slate-700">{data.prestador || '—'}</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Veículo</span>
+                              <p className="text-sm text-slate-700">{data.veiculoTipo || '—'}{data.veiculoPlaca ? ` (${data.veiculoPlaca})` : ''}</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">CFOP</span>
+                              <p className="text-sm text-slate-700">{(data as any).cfopPadraoCliente || '—'}</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Modal</span>
+                              <p className="text-sm text-slate-700">Rodoviário</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-4 gap-3">
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Tipo Serviço</span>
+                              <p className="text-sm text-slate-700">Normal</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">ICMS (12%)</span>
+                              <p className="text-sm text-slate-700">
+                                {data.valorCliente > 0 ? `R$ ${(data.valorCliente * 0.12).toFixed(2)}` : '—'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Base ICMS</span>
+                              <p className="text-sm text-slate-700">{data.valorCliente > 0 ? `R$ ${data.valorCliente.toFixed(2)}` : '—'}</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Alíquota ICMS</span>
+                              <p className="text-sm text-slate-700">12%</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-3 border">
+                              <span className="text-xs text-slate-500 font-medium">Valor ICMS</span>
+                              <p className="text-sm font-bold text-slate-700">{data.valorCliente > 0 ? `R$ ${(data.valorCliente * 0.12).toFixed(2)}` : '—'}</p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="text-xs font-semibold text-slate-500 uppercase">Payload JSON</span>
+                            <pre className="mt-1 rounded-lg bg-slate-900 text-green-400 p-4 text-xs overflow-x-auto max-h-64 overflow-y-auto font-mono leading-relaxed">
+                              {JSON.stringify(payloadPreview, null, 2)}
+                            </pre>
+                          </div>
+                        </div>
+
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setShowFiscalPreview(false)}>
+                            Fechar
+                          </Button>
+                        </DialogFooter>
+                      </>
+                    );
+                  })()}
+                </DialogContent>
+              </Dialog>
             </TabsContent>
 
             <TabsContent value="enderecos" className="space-y-6">

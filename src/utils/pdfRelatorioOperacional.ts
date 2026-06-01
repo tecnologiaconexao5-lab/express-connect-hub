@@ -158,42 +158,93 @@ export const gerarPDFRepassePrestador = async (
   let sumEspera = 0;
   let sumPedagio = 0;
   let sumReemb = 0;
+  let sumOutros = 0;
   let sumDesc = 0;
   let sumLiquido = 0;
   let sumAdiant = 0;
   let sumConvenio = 0;
 
-  // Pré-calcula os totais para exibir no resumo
-  data.forEach((item) => {
+  // Totais serão calculados durante o .map das linhas para evitar duplicação
+
+  const rows = data.map((item) => {
     const fn = item.financeiro || {};
     const metadata = item.metadata?.financeiroPrestador || {};
     const pTotals = item.metadata?.totals?.prestador || {};
 
-    sumBase += Number(item.custo_prestador || pTotals.valorBase || fn.valorBase || 0);
-    sumKm += Number(metadata.kmExcedente || 0);
-    sumEspera += Number(metadata.espera || 0);
-    sumPedagio += Number(metadata.pedagio || 0);
-    sumReemb += Number(metadata.valorReembolsoOutros || 0);
-    sumDesc += Number(item.descontos || metadata.descontos || 0);
-    sumLiquido += Number(item.valor_final_repasse || pTotals.total || fn.receitaLiquida || 0);
-    sumAdiant += Number(metadata.adiantamento || fn.adiantamento || 0);
-    sumConvenio += Number(metadata.combustivel || fn.combustivel || 0);
+    // Ajuste de Data
+    let dateStr = item.data_finalizacao || item.data_escala || item.data || item.created_at;
+    let formattedDate = "-";
+    if (dateStr) {
+      if (dateStr.includes("/")) {
+        formattedDate = dateStr;
+      } else {
+        let safeDate = dateStr;
+        if (!safeDate.includes("T") && safeDate.length === 10) safeDate = `${safeDate}T12:00:00`;
+        const dObj = new Date(safeDate);
+        if (!isNaN(dObj.getTime())) formattedDate = dObj.toLocaleDateString("pt-BR");
+        else formattedDate = dateStr;
+      }
+    }
+
+    const vBase = Number(item.valorBasePrestador !== undefined ? item.valorBasePrestador : (item.custo_prestador || pTotals.valorBase || fn.valorBase || 0));
+    let vKm = Number(pTotals.detalhes?.km?.valorTotal || metadata.kmExcedente || 0);
+    const vEspera = Number(pTotals.detalhes?.espera?.valorTotal || metadata.espera || 0);
+    const vPedagio = Number(metadata.pedagio || 0);
+    const vReemb = Number(metadata.valorReembolsoOutros || 0);
+    const vDesc = Number(item.descontos || metadata.descontos || 0);
+    const vLiquido = Number(item.valor_final_repasse || pTotals.total || fn.receitaLiquida || (vBase + vKm + vEspera + vPedagio + vReemb - vDesc));
+    const vAdiant = Number(metadata.adiantamento || fn.adiantamento || 0);
+    const vConvenio = Number(metadata.combustivel || fn.combustivel || 0);
+
+    const calcLiquido = vBase + vKm + vEspera + vPedagio + vReemb - vDesc;
+    const diff = vLiquido - calcLiquido;
+    let vOutros = 0;
+    
+    if (diff > 0.01) {
+      const hasKmIndication = metadata.kmExcedente || metadata.km_excedente || metadata.valorKm || pTotals.detalhes?.km || item.metadata?.totals?.cliente?.detalhes?.km;
+      if (hasKmIndication) {
+        vKm += diff;
+      } else {
+        vOutros = diff;
+      }
+    }
+
+    sumBase += vBase;
+    sumKm += vKm;
+    sumEspera += vEspera;
+    sumPedagio += vPedagio;
+    sumReemb += vReemb;
+    sumOutros += vOutros;
+    sumDesc += vDesc;
+    sumLiquido += vLiquido;
+    sumAdiant += vAdiant;
+    sumConvenio += vConvenio;
+
+    return [
+      formattedDate,
+      String(item.numero || item.os_numero || "S/N"),
+      item.enderecos?.[0]?.cidade || item.origem || "-",
+      item.enderecos?.[item.enderecos?.length - 1]?.cidade || item.destino || "-",
+      fmtBRL(vBase),
+      fmtBRL(vKm),
+      fmtBRL(vEspera),
+      fmtBRL(vPedagio + vReemb),
+      fmtBRL(vOutros),
+      fmtBRL(vDesc),
+      fmtBRL(vLiquido)
+    ];
   });
 
   const subtotalAprovado = sumBase + sumKm + sumEspera + sumPedagio + sumReemb;
 
   const metricValues = [
     { label: "Operações", value: String(resumo.qtdOperacoes) },
-    { label: "Total Pendente", value: fmtBRL(resumo.pendencias) },
     { label: "Valor Base Operações", value: fmtBRL(sumBase) },
     { label: "KM Adicional", value: sumKm > 0 ? fmtBRL(sumKm) : "R$ 0,00" },
     { label: "Espera", value: sumEspera > 0 ? fmtBRL(sumEspera) : "R$ 0,00" },
-    { label: "Pedágios", value: sumPedagio > 0 ? fmtBRL(sumPedagio) : "R$ 0,00" },
-    { label: "Reembolsos", value: sumReemb > 0 ? fmtBRL(sumReemb) : "R$ 0,00" },
-    { label: "Subtotal Aprovado", value: fmtBRL(subtotalAprovado), col: "right" as const },
-    { label: "Convênio Combustível", value: sumConvenio > 0 ? fmtBRL(sumConvenio) : "R$ 0,00", col: "right" as const },
-    { label: "Adiantamentos", value: sumAdiant > 0 ? fmtBRL(sumAdiant) : "R$ 0,00", col: "right" as const },
-    { label: "Descontos Diversos", value: sumDesc > 0 ? fmtBRL(sumDesc) : "R$ 0,00", col: "right" as const },
+    { label: "Pedágios/Reembolsos", value: (sumPedagio + sumReemb) > 0 ? fmtBRL(sumPedagio + sumReemb) : "R$ 0,00" },
+    { label: "Outros Adicionais", value: sumOutros > 0 ? fmtBRL(sumOutros) : "R$ 0,00" },
+    { label: "Descontos", value: sumDesc > 0 ? fmtBRL(sumDesc) : "R$ 0,00" },
     { label: "TOTAL LÍQUIDO A RECEBER", value: fmtBRL(sumLiquido), col: "right" as const }
   ];
   y = drawInfoBlock(doc, page.margin, y, page.contentWidth, "RESUMO DO PRESTADOR", metricValues);
@@ -203,53 +254,15 @@ export const gerarPDFRepassePrestador = async (
   y += 2;
 
 
-  const rows = data.map((item) => {
-    const fn = item.financeiro || {};
-    const metadata = item.metadata?.financeiroPrestador || {};
-    const pTotals = item.metadata?.totals?.prestador || {};
 
-    const vBase = Number(item.custo_prestador || pTotals.valorBase || fn.valorBase || 0);
-    const vKm = Number(metadata.kmExcedente || 0);
-    const vEspera = Number(metadata.espera || 0);
-    const vPedagio = Number(metadata.pedagio || 0);
-    const vReemb = Number(metadata.valorReembolsoOutros || 0);
-    const vDesc = Number(item.descontos || metadata.descontos || 0);
-    const vLiquido = Number(item.valor_final_repasse || pTotals.total || fn.receitaLiquida || 0);
-    const vAdiant = Number(metadata.adiantamento || fn.adiantamento || 0);
-    const vConvenio = Number(metadata.combustivel || fn.combustivel || 0);
-
-    sumBase += vBase;
-    sumKm += vKm;
-    sumEspera += vEspera;
-    sumPedagio += vPedagio;
-    sumReemb += vReemb;
-    sumDesc += vDesc;
-    sumLiquido += vLiquido;
-    sumAdiant += vAdiant;
-    sumConvenio += vConvenio;
-
-    return [
-      fmtDate(item.data_finalizacao || item.created_at || item.data_escala || item.data),
-      String(item.numero || item.os_numero || "S/N").substring(0, 8),
-      item.enderecos?.[0]?.cidade || item.origem || "-",
-      item.enderecos?.[item.enderecos?.length - 1]?.cidade || item.destino || "-",
-      fmtBRL(vBase),
-      fmtBRL(vKm),
-      fmtBRL(vEspera),
-      fmtBRL(vPedagio),
-      fmtBRL(vReemb),
-      fmtBRL(vDesc),
-      fmtBRL(vLiquido)
-    ];
-  });
 
   y = drawCorporateTable(doc, page, logo, {
     startY: y,
-    columns: ["Data", "OS", "Origem", "Destino", "V. Base", "KM Extra", "Espera", "Pedágio", "Reemb.", "Desc.", "Líquido"],
+    columns: ["Data", "OS", "Origem", "Destino", "V. Base", "KM Extra", "Espera", "Pedágio/Reemb.", "Outros", "Desc.", "Líquido"],
     rows,
     fontSize: 6.5,
     headerFontSize: 7,
-    columnWidths: { 0: 18, 1: 18, 4: 18, 5: 16, 6: 16, 7: 18, 8: 18, 9: 18, 10: 22 }, // No widths for 2 and 3, let them auto-fill
+    columnWidths: { 0: 20, 1: 30, 4: 18, 5: 16, 6: 16, 7: 18, 8: 18, 9: 18, 10: 22 }, // No widths for 2 and 3, let them auto-fill
     columnAligns: { 0: "center", 1: "center", 4: "right", 5: "right", 6: "right", 7: "right", 8: "right", 9: "right", 10: "right" },
     onPageDraw: drawContentPageHeader,
   });
@@ -267,14 +280,12 @@ export const gerarPDFRepassePrestador = async (
   ];
   if (sumKm > 0) financeLines.push({ label: "KM Adicional", value: sumKm });
   if (sumEspera > 0) financeLines.push({ label: "Espera", value: sumEspera });
-  if (sumPedagio > 0) financeLines.push({ label: "Pedágio", value: sumPedagio });
-  if (sumReemb > 0) financeLines.push({ label: "Reembolso", value: sumReemb });
+  const totalPedReemb = sumPedagio + sumReemb;
+  if (totalPedReemb > 0) financeLines.push({ label: "Pedágios/Reembolsos", value: totalPedReemb });
+  if (sumOutros > 0) financeLines.push({ label: "Outros Adicionais", value: sumOutros });
   
-  financeLines.push({ label: "Subtotal", value: subtotalAprovado, isTotal: true });
-
-  if (sumConvenio > 0) financeLines.push({ label: "Convênio Combustível", value: -sumConvenio });
-  if (sumAdiant > 0) financeLines.push({ label: "Adiantamentos", value: -sumAdiant });
-  if (sumDesc > 0) financeLines.push({ label: "Descontos Diversos", value: -sumDesc });
+  const totalDescontos = sumDesc + sumAdiant + sumConvenio;
+  if (totalDescontos > 0) financeLines.push({ label: "Descontos", value: -totalDescontos });
 
   financeLines.push({ label: "TOTAL LÍQUIDO A RECEBER", value: sumLiquido, isTotal: true, highlight: true });
 
@@ -304,23 +315,25 @@ export const gerarPDFFaturamentoDetalhado = async (
 
   const totalOperacoes = operacoes.length;
 
-  const getValor = (o: any, ...campos: string[]): number => {
+  const getValor = (o: any, ...campos: string[]): number | undefined => {
     for (const c of campos) {
-      const v = Number(o[c]);
-      if (Number.isFinite(v) && v !== 0) return v;
+      if (o[c] !== undefined && o[c] !== null && o[c] !== "") {
+        const v = Number(o[c]);
+        if (Number.isFinite(v)) return v;
+      }
     }
-    return 0;
+    return undefined;
   };
 
   const KM_BASE_PADRAO = 200;
-  const subtotalFrete = operacoes.reduce((s, o) => s + getValor(o, "valor_cliente", "valorCliente", "valor_final", "valorFrete", "valor_total"), 0);
-  const totalPedagio = operacoes.reduce((s, o) => s + getValor(o, "pedagio", "valor_pedagio"), 0);
-  const totalAdicionais = operacoes.reduce((s, o) => s + getValor(o, "adicionais", "valorAdicional", "valor_espera", "ajudante"), 0);
-  const totalDescontos = operacoes.reduce((s, o) => s + getValor(o, "descontos", "valor_desconto"), 0);
-  const totalKM = operacoes.reduce((s, o) => s + getValor(o, "km_total", "kmTotal", "kmRodados"), 0);
+  const subtotalFrete = operacoes.reduce((s, o) => s + (getValor(o, "valor_frete", "valor_cliente", "valorCliente", "valor_final", "valorFrete", "valor_total") ?? 0), 0);
+  const totalPedagio = operacoes.reduce((s, o) => s + (getValor(o, "pedagio", "valor_pedagio") ?? 0), 0);
+  const totalAdicionais = operacoes.reduce((s, o) => s + (getValor(o, "adicionais", "valorAdicional", "valor_espera", "ajudante") ?? 0), 0);
+  const totalDescontos = operacoes.reduce((s, o) => s + (getValor(o, "descontos", "valor_desconto") ?? 0), 0);
+  const totalKM = operacoes.reduce((s, o) => s + (getValor(o, "km_total", "kmTotal", "kmRodados") ?? 0), 0);
   const totalKMAdicional = operacoes.reduce((s, o) => {
-    const kmTotal = getValor(o, "km_total", "kmTotal", "kmRodados");
-    const kmBase = getValor(o, "km_base", "kmBase", "km_franquia") || KM_BASE_PADRAO;
+    const kmTotal = getValor(o, "km_total", "kmTotal", "kmRodados") ?? 0;
+    const kmBase = getValor(o, "km_base", "kmBase", "km_franquia") ?? KM_BASE_PADRAO;
     return s + Math.max(0, kmTotal - kmBase);
   }, 0);
   const totalFaturado = subtotalFrete + totalPedagio + totalAdicionais - totalDescontos;
@@ -362,13 +375,26 @@ export const gerarPDFFaturamentoDetalhado = async (
   y += 2;
 
   const rows = operacoes.map((item) => {
-    const dataOS = item.data_finalizacao || item.created_at || item.data;
-    const vBase = getValor(item, "valor_cliente", "valorCliente", "valor_final", "valorFrete", "valor_total");
-    const vPedagio = getValor(item, "pedagio", "valor_pedagio");
-    const vAdic = getValor(item, "adicionais", "valorAdicional", "ajudante", "valor_espera");
-    const vDesc = getValor(item, "descontos", "valor_desconto");
-    const kmTotal = getValor(item, "km_total", "kmTotal", "kmRodados");
-    const kmBase = getValor(item, "km_base", "kmBase", "km_franquia") || KM_BASE_PADRAO;
+    let dateStr = item.data_finalizacao || item.created_at || item.data;
+    let formattedDate = "-";
+    if (dateStr) {
+      if (dateStr.includes("/")) {
+        formattedDate = dateStr;
+      } else {
+        let safeDate = dateStr;
+        if (!safeDate.includes("T") && safeDate.length === 10) safeDate = `${safeDate}T12:00:00`;
+        const dObj = new Date(safeDate);
+        if (!isNaN(dObj.getTime())) formattedDate = dObj.toLocaleDateString("pt-BR");
+        else formattedDate = dateStr;
+      }
+    }
+
+    const vBase = getValor(item, "valor_frete", "valor_cliente", "valorCliente", "valor_final", "valorFrete", "valor_total") ?? 0;
+    const vPedagio = getValor(item, "pedagio", "valor_pedagio") ?? 0;
+    const vAdic = getValor(item, "adicionais", "valorAdicional", "ajudante", "valor_espera") ?? 0;
+    const vDesc = getValor(item, "descontos", "valor_desconto") ?? 0;
+    const kmTotal = getValor(item, "km_total", "kmTotal", "kmRodados") ?? 0;
+    const kmBase = getValor(item, "km_base", "kmBase", "km_franquia") ?? KM_BASE_PADRAO;
     const kmAdic = Math.max(0, kmTotal - kmBase);
     const vLiquido = vBase + vPedagio + vAdic - vDesc;
 
@@ -380,7 +406,7 @@ export const gerarPDFFaturamentoDetalhado = async (
 
     return [
       item.numero || item.os_numero || "-",
-      fmtDate(dataOS),
+      formattedDate,
       origem,
       destino,
       item.veiculo_placa || "-",

@@ -489,6 +489,8 @@ export const enterpriseKanbanService = {
       }
     } catch { }
 
+    // Fallback: dados offline — usado apenas quando Supabase indisponivel
+    console.warn('[Talentos] Supabase indisponivel — usando dados offline (localStorage).')
     const local = getLocalData()
     return filtros ? applyFilters(local, filtros) : local
   },

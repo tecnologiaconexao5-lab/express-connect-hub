@@ -147,6 +147,7 @@ interface PrestadorLinha {
   margemPct: number;
   statusFinanceiro: string;
   tipoVeiculo: string;
+  metadata?: any;
   ocorrencia: string;
 }
 
@@ -337,7 +338,13 @@ const generateFaturamentoPDF = async (
   cliente: Cliente,
   filtros: { dataInicio: string; dataFim: string }
 ) => {
-  const opFormatadas = cliente.operacoes.map(o => ({
+  const opsFiltradas = cliente.operacoes.filter(os => {
+    if (filtros.dataInicio && os.data && os.data < filtros.dataInicio) return false;
+    if (filtros.dataFim && os.data && os.data > filtros.dataFim) return false;
+    return true;
+  });
+
+  const opFormatadas = opsFiltradas.map(o => ({
     numero: o.numero || o.numeroOc || o.id,
     data: o.data || "",
     veiculo_tipo: o.tipoVeiculo || o.tipo_veiculo || "-",
@@ -347,7 +354,11 @@ const generateFaturamentoPDF = async (
     ],
     valor_frete: o.valorCliente || 0,
     diaria: o.diaria || 0,
-    km_adicional: (o.kmExcedente || 0) * (o.valorKm || 0)
+    km_adicional: 0,
+    km_total: o.kmTotal || 0,
+    km_base: o.kmTotal ? Math.max(o.kmTotal - o.kmExcedente, 0) : 0,
+    veiculo_placa: o.placa || "-",
+    observacoes: o.observacao || "-",
   }));
 
   const periodo = (filtros.dataInicio || filtros.dataFim) 
@@ -362,7 +373,17 @@ const generateFaturamentoPDF = async (
   );
 };
 
-const generateExcelFaturamentoCliente = (cliente: Cliente) => {
+const generateExcelFaturamentoCliente = (
+  cliente: Cliente,
+  filtrosObj: { dataInicio: string; dataFim: string; status: string }
+) => {
+  const opsFiltradas = cliente.operacoes.filter(os => {
+    if (filtrosObj.dataInicio && os.data && os.data < filtrosObj.dataInicio) return false;
+    if (filtrosObj.dataFim && os.data && os.data > filtrosObj.dataFim) return false;
+    if (filtrosObj.status !== "todos" && os.status !== filtrosObj.status) return false;
+    return true;
+  });
+
   const headers = [
     "DATA VIAGEM",
     "MOTORISTA",
@@ -380,29 +401,48 @@ const generateExcelFaturamentoCliente = (cliente: Cliente) => {
     "OBS"
   ];
 
-  const rows = cliente.operacoes.map(os => {
-    const diaria = os.diaria ?? 400;
+  const rows = opsFiltradas.map(os => {
+    const diaria = os.diaria ?? 0;
     const kmTotal = os.kmTotal ?? 0;
-    const kmFranquia = 200; // padrão
-    const kmExcedente = Math.max(kmTotal - kmFranquia, 0);
-    const vlrKm = os.valorKm ?? 2.50;
-    const vlrTotal = diaria + (kmExcedente * vlrKm);
+    const kmExcedente = os.kmExcedente ?? 0;
+    const vlrKmUnit = os.valorKm ?? 0;
+    const totalVlrKm = kmExcedente * vlrKmUnit;
+    const vlrTotal = os.valorCliente ?? 0;
+
+    const rowObj: any = {
+      "DATA VIAGEM": os.data ? new Date(os.data).toLocaleDateString("pt-BR") : "",
+      "MOTORISTA": os.prestador || "",
+      "PLACA": os.placa || "",
+      "TIPO DE VEÍCULO": os.tipoVeiculo || "-",
+      "Observação": os.observacao || "",
+      "HORÁRIO DE CHEGADA": os.horarioChegada || "",
+      "HORÁRIO DE SAÍDA": os.horarioSaida || "",
+      "DIÁRIA": diaria,
+      "km total": kmTotal,
+      "KM Excedente": kmExcedente,
+      "Vlr.Km": totalVlrKm,
+      "Vlr.TOTAL": vlrTotal,
+      "Nº OC": os.numeroOc || os.numero || "",
+      "OBS": os.obs || ""
+    };
+
+    console.log("[EXCEL_CLIENTE_ROW]", rowObj);
 
     return [
-      { v: os.data ? new Date(os.data).toLocaleDateString("pt-BR") : "", t: 's' },
-      { v: os.prestador || "", t: 's' },
-      { v: os.placa || "", t: 's' },
-      { v: os.tipoVeiculo || "", t: 's' },
-      { v: os.observacao || "", t: 's' },
-      { v: os.horarioChegada || "", t: 's' },
-      { v: os.horarioSaida || "", t: 's' },
-      { v: diaria, t: 'n', z: '"R$"#,##0.00' },
-      { v: kmTotal, t: 'n', z: '#,##0' },
-      { v: kmExcedente, t: 'n', z: '#,##0' },
-      { v: vlrKm, t: 'n', z: '"R$"#,##0.00' },
-      { v: vlrTotal, t: 'n', z: '"R$"#,##0.00' },
-      { v: os.numeroOc || os.numero || "", t: 's' },
-      { v: os.obs || "", t: 's' }
+      { v: rowObj["DATA VIAGEM"], t: 's' },
+      { v: rowObj["MOTORISTA"], t: 's' },
+      { v: rowObj["PLACA"], t: 's' },
+      { v: rowObj["TIPO DE VEÍCULO"], t: 's' },
+      { v: rowObj["Observação"], t: 's' },
+      { v: rowObj["HORÁRIO DE CHEGADA"], t: 's' },
+      { v: rowObj["HORÁRIO DE SAÍDA"], t: 's' },
+      { v: rowObj["DIÁRIA"], t: 'n', z: '"R$"#,##0.00' },
+      { v: rowObj["km total"], t: 'n', z: '#,##0' },
+      { v: rowObj["KM Excedente"], t: 'n', z: '#,##0' },
+      { v: rowObj["Vlr.Km"], t: 'n', z: '"R$"#,##0.00' },
+      { v: rowObj["Vlr.TOTAL"], t: 'n', z: '"R$"#,##0.00' },
+      { v: rowObj["Nº OC"], t: 's' },
+      { v: rowObj["OBS"], t: 's' }
     ];
   });
 
@@ -508,17 +548,31 @@ const generateRelatorioPrestadoresPDF = async (
   resumo: { totalOps: number; valorBruto: number; valorPago: number; saldoPendente: number; mediaEntrega: number },
   prestadorInfo?: { cpfCnpj: string; tipo: string }
 ) => {
-  const dataFormatada = linhas.map(l => ({
-    data_finalizacao: l.dataColeta,
-    numero: l.os,
-    veiculo_tipo: l.tipoVeiculo,
-    enderecos: [{ cidade: l.origem }, { cidade: l.destino }],
-    custo_prestador: l.valorPrestador,
-    adicionais: 0,
-    descontos: 0,
-    valor_final_repasse: l.valorPrestador,
-    status_pagamento: "pago"
-  }));
+  const dataFormatada = linhas.map(l => {
+    const md = l.metadata?.financeiroPrestador || {};
+    const pTotals = l.metadata?.totals?.prestador || {};
+    const base = Number(l.valorBasePrestador || 0);
+    const km = Number(md.kmExcedente || 0);
+    const espera = Number(md.espera || 0);
+    const pedagio = Number(md.pedagio || 0);
+    const reemb = Number(md.valorReembolsoOutros || 0);
+    const desc = Number(md.descontos || 0);
+    const liquido = Number(l.valorPrestador || pTotals.total || (base + km + espera + pedagio + reemb - desc));
+
+    return {
+      data_finalizacao: l.dataColeta,
+      numero: l.os,
+      veiculo_tipo: l.tipoVeiculo,
+      enderecos: [{ cidade: l.origem }, { cidade: l.destino }],
+      custo_prestador: base,
+      valorBasePrestador: base,
+      adicionais: 0,
+      descontos: desc,
+      valor_final_repasse: liquido,
+      status_pagamento: "pago",
+      metadata: l.metadata
+    };
+  });
 
   const filtrosFake = {
     prestador: prestadorNome || "Todos (Geral)",
@@ -573,29 +627,92 @@ export default function RelatoriosEnterprise() {
 
   useEffect(() => {
     async function loadData() {
-      const [{ data: osData }, { data: escalaData }] = await Promise.all([
+      const [{ data: osData }, { data: escalaData }, { data: cliData }, { data: prestData }, { data: tabelasData }] = await Promise.all([
         supabase.from("ordens_servico").select("*").order("data", { ascending: false }),
-        supabase.from("alocacoes_escala").select("*").order("data_escala", { ascending: false })
+        supabase.from("alocacoes_escala").select("*").order("data_escala", { ascending: false }),
+        supabase.from("clientes").select("*"),
+        supabase.from("prestadores").select("*, veiculos(*)"),
+        supabase.from("tabelas_valores").select("*")
       ]);
+
+      const formatOC = (val: any): string => {
+        if (!val) return "";
+        const str = String(val).trim();
+        return str.toUpperCase().startsWith("OC-") ? str.toUpperCase() : `OC-${str.toUpperCase()}`;
+      };
+
+      const formatVeiculo = (val: string) => {
+        if (!val) return "-";
+        if (val.toLowerCase() === "vuc") return "VUC";
+        if (val.toLowerCase() === "hr") return "HR";
+        return val.replace(/_/g, ' ').split(' ').map(w => w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '').join(' ');
+      };
+
+      const getTipoVeiculoFaturamentoCliente = (o: any) => {
+        const getTermica = (t: any) => {
+          const term = t?.exigencia_termica || t?.classificacao_termica || t?.classificacaoTermica;
+          return term && term !== 'N/A' && term !== 'Nenhuma' ? ` ${term}` : '';
+        };
+        
+        const tabT1 = o.metadata?.tabelaValores;
+        const tabT2 = o.metadata?.totals?.cliente?.tabela;
+        const tabT3 = o.metadata?.faturamento;
+        
+        const tabelaId = o.metadata?.faturamento?.tabela_id || o.metadata?.tabela_id || o.metadata?.tabelaId || tabT1?.id || tabT2?.id || tabT3?.id;
+        const tabelaBanco = tabelasData?.find((t: any) => String(t.id) === String(tabelaId));
+
+        let tipoTabela = null;
+        if (tabT1?.tipo_veiculo) tipoTabela = tabT1.tipo_veiculo + getTermica(tabT1);
+        else if (tabT2?.tipo_veiculo) tipoTabela = tabT2.tipo_veiculo + getTermica(tabT2);
+        else if (tabT3?.tipo_veiculo) tipoTabela = tabT3.tipo_veiculo + getTermica(tabT3);
+        else if (tabelaBanco?.tipo_veiculo) tipoTabela = tabelaBanco.tipo_veiculo + getTermica(tabelaBanco);
+        
+        // Em vez de retornar VUC ou nome da tabela, retorna o tipo exato
+        const finalTipo = tipoTabela || "-";
+        
+        if (String(o.cliente_nome || o.cliente || "").toUpperCase().includes("DVL")) {
+          console.log("=== AUDITORIA TIPO VEICULO DVL ===");
+          console.log("1. metadata.tabelaValores:", tabT1);
+          console.log("2. metadata.totals.cliente.tabela:", tabT2);
+          console.log("3. metadata.faturamento:", tabT3);
+          console.log("4. FINAL ENVIADO PARA EXCEL (tipoVeiculo):", finalTipo, formatVeiculo(finalTipo));
+        }
+        
+        return formatVeiculo(finalTipo);
+      };
 
       const fmtdOS: OS[] = (osData || []).map(o => {
          const margem = (o.valor_cliente || 0) - (o.custo_prestador || 0);
          const margemPct = o.valor_cliente > 0 ? (margem / o.valor_cliente) * 100 : 0;
          return {
            id: o.id,
-           numero: o.numero,
+           numero: formatOC(o.numero),
            data: o.data || "",
-           cliente: o.cliente || "Avulso",
-           prestador: o.prestador || "Não alocado",
+           cliente: cliData?.find((c: any) => c.id === o.cliente_id)?.nome_fantasia || o.cliente || "Avulso",
+           prestador: prestData?.find((p: any) => p.id === o.prestador_id)?.nome_completo || o.prestador || "Não alocado",
            origem: o.enderecos?.[0]?.cidade || "N/A",
            destino: o.enderecos?.[o.enderecos.length-1]?.cidade || "N/A",
            status: o.status || "Pendente",
-           valorCliente: o.valor_cliente || 0,
-           custoPrestador: o.custo_prestador || 0,
+           valorCliente: o.metadata?.totals?.cliente?.total || o.valor_cliente || 0,
+           custoPrestador: o.metadata?.totals?.prestador?.total || o.custo_prestador || 0,
+           basePrestador: o.metadata?.totals?.prestador?.valorBase || o.custo_prestador || 0,
            margem: margem,
            margemPct: margemPct,
-           placa: o.veiculo_placa || o.placa || "-",
-           tipoVeiculo: o.tipo_veiculo || o.veiculo_tipo || "-",
+           placa: (() => {
+             if (o.veiculo_placa) return o.veiculo_placa;
+             if (o.placa) return o.placa;
+             if (o.metadata?.veiculo?.placa) return o.metadata.veiculo.placa;
+             if (o.metadata?.placa) return o.metadata.placa;
+             
+             const pData = prestData?.find((p: any) => String(p.id) === String(o.prestador_id));
+             if (pData?.veiculos && pData.veiculos.length > 0) {
+               const activeV = pData.veiculos.find((v: any) => v.status === 'ativo' || v.principal);
+               return activeV ? activeV.placa : pData.veiculos[0].placa;
+             }
+             return "-";
+           })(),
+           tipoVeiculo: getTipoVeiculoFaturamentoCliente(o),
+           metadata: o.metadata || null,
            horarioChegada: o.tempo_chegada_patio || o.tempoChegadaPatio || "07:45",
            horarioSaida: o.tempo_saida_rua || o.tempoSaidaRua || "08:30",
            diaria: o.valor_base || o.diaria || 400,
@@ -604,47 +721,74 @@ export default function RelatoriosEnterprise() {
            valorKm: o.valor_km || 2.50,
            observacao: o.observacao || o.observacoesGerais || "-",
            obs: o.obs || o.observacao_torre || "-",
-           numeroOc: o.numero_oc || o.numero || ""
+           numeroOc: formatOC(o.numero_oc || o.numero || "")
          };
       });
 
       const fmtdEscala: OS[] = (escalaData || []).map(o => {
-         const valorFrete = o.valor_frete || o.metadata?.totals?.cliente?.total || o.valor_fixo || 0;
-         const valorRepasse = o.valor_repasse || o.metadata?.totals?.prestador?.total || o.valor_fixo || 0;
+         const valorFrete = o.metadata?.totals?.cliente?.total || o.valor_frete || o.valor_fixo || 0;
+         const valorRepasse = o.metadata?.totals?.prestador?.total || o.valor_repasse || o.valor_fixo || 0;
          const margem = valorFrete - valorRepasse;
          const margemPct = valorFrete > 0 ? (margem / valorFrete) * 100 : 0;
+         
+         const baseData = o.data_escala || o.created_at || "";
+         const dtString = baseData.includes('T') ? baseData.split('T')[0] : baseData;
+         const shortId = `OC-${dtString.replace(/-/g, '')}-${String(o.id).substring(0, 4).toUpperCase()}`;
+         const finalNumero = formatOC(o.metadata?.numeroOC || shortId);
+
+         let safeData = baseData;
+         if (safeData && !safeData.includes('T') && safeData.length === 10) {
+            safeData = `${safeData}T12:00:00`;
+         }
+
          return {
            id: o.id,
-           numero: `ESC-${o.id}`,
-           data: o.data_escala || o.created_at || "",
-           cliente: o.cliente_id || o.cliente_nome || "Avulso",
-           prestador: o.prestador_id || o.prestador_nome || "Não alocado",
+           numero: finalNumero,
+           data: safeData,
+           cliente: cliData?.find((c: any) => String(c.id) === String(o.cliente_id))?.nome_fantasia || o.cliente_nome || "Avulso",
+           prestador: prestData?.find((p: any) => String(p.id) === String(o.prestador_id))?.nome_completo || o.prestador_nome || "Não alocado",
            origem: "Base",
            destino: "Rota",
            status: o.status || "Pendente",
            valorCliente: valorFrete,
            custoPrestador: valorRepasse,
+           basePrestador: o.metadata?.totals?.prestador?.valorBase || o.valor_repasse || o.valor_fixo || 0,
            margem: margem,
            margemPct: margemPct,
-           placa: o.placa || "-",
-           tipoVeiculo: o.tipo_veiculo || "-",
-           horarioChegada: "-",
-           horarioSaida: "-",
-           diaria: o.valor_fixo || 0,
-           kmTotal: o.km_realizados || 0,
-           kmExcedente: 0,
-           valorKm: 0,
-           observacao: o.observacoes || "-",
-           obs: "-",
-           numeroOc: ""
+           placa: (() => {
+             if (o.veiculo_placa) return o.veiculo_placa;
+             if (o.placa) return o.placa;
+             if (o.metadata?.veiculo?.placa) return o.metadata.veiculo.placa;
+             if (o.metadata?.placa) return o.metadata.placa;
+             
+             const pData = prestData?.find((p: any) => String(p.id) === String(o.prestador_id));
+             if (pData?.veiculos && pData.veiculos.length > 0) {
+               const activeV = pData.veiculos.find((v: any) => v.status === 'ativo' || v.principal);
+               return activeV ? activeV.placa : pData.veiculos[0].placa;
+             }
+             return "-";
+           })(),
+           tipoVeiculo: getTipoVeiculoFaturamentoCliente(o),
+           metadata: o.metadata || null,
+           horarioChegada: o.metadata?.tempoChegadaPatio || o.tempo_chegada_patio || "07:45",
+           horarioSaida: o.metadata?.tempoSaidaRua || o.tempo_saida_rua || "09:15",
+           diaria: o.metadata?.totals?.cliente?.valorBase || o.valor_fixo || 0,
+           kmTotal: o.km_realizados || o.km_total || 0,
+           kmExcedente: o.metadata?.totals?.cliente?.detalhes?.km?.excedente || o.km_excedente || 0,
+           valorKm: o.metadata?.totals?.cliente?.detalhes?.km?.valorKm || o.valor_km || 0,
+           observacao: o.metadata?.instrucoesPrestador || o.observacoes || "-",
+           obs: o.metadata?.observacaoCliente || "-",
+           numeroOc: finalNumero
          };
       });
 
-      const allOS = [...fmtdOS, ...fmtdEscala].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+      console.log("[DEBUG] loadData() fmtdEscala mapeado:", fmtdEscala.length, "registros", fmtdEscala);
+
+      const allOS = [...fmtdOS, ...fmtdEscala].sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
+      console.log("[DEBUG] allOS consolidado:", allOS.length, "registros", allOS);
       setRelatorioOS(allOS);
 
-      const { data: cliData } = await supabase.from("clientes").select("*");
-      const fmtdCli: Cliente[] = (cliData || []).map(c => {
+      const fmtdCli: Cliente[] = (cliData || []).map((c: any) => {
          const ops = allOS.filter(o => o.cliente === c.nome_fantasia || o.cliente === c.razao_social || String(c.id) === o.cliente);
          return {
             id: c.id,
@@ -659,8 +803,7 @@ export default function RelatoriosEnterprise() {
 
       setRelatorioClientes(fmtdCli);
 
-      const { data: prestData } = await supabase.from("prestadores").select("*");
-      const fmtdPrest: Prestador[] = (prestData || []).map(p => {
+      const fmtdPrest: Prestador[] = (prestData || []).map((p: any) => {
          const ops = allOS.filter(o => o.prestador === p.nome_completo);
          return {
             id: p.id,
@@ -703,6 +846,8 @@ export default function RelatoriosEnterprise() {
 
         let ops = relatorioOS;
 
+        console.log("[DEBUG] loadPrestadoresDetalhes() relatorioOS base:", ops.length, "registros", ops);
+
         if (filtrosPrestador.dataInicio) {
           ops = ops.filter(o => {
             const dateStr = o.data ? o.data.split('T')[0] : "";
@@ -716,12 +861,15 @@ export default function RelatoriosEnterprise() {
           });
         }
 
+        console.log("[DEBUG] loadPrestadoresDetalhes() após filtro de datas:", ops.length, "registros");
+
         if (filtrosPrestador.prestadorId !== "todos") {
            const nomePrestadorSelecionado = prestadorNomeMap[filtrosPrestador.prestadorId];
            ops = ops.filter(o => {
              return String(o.prestador) === String(filtrosPrestador.prestadorId) || 
                     String(o.prestador) === nomePrestadorSelecionado;
            });
+           console.log("[DEBUG] loadPrestadoresDetalhes() após filtro de prestador (ID:", filtrosPrestador.prestadorId, "Nome:", nomePrestadorSelecionado, "):", ops.length, "registros");
         }
 
         if (filtrosPrestador.clienteId !== "todos") {
@@ -730,7 +878,14 @@ export default function RelatoriosEnterprise() {
               return String(o.cliente) === String(filtrosPrestador.clienteId) ||
                      String(o.cliente) === nomeClienteMap;
            });
+           console.log("[DEBUG] loadPrestadoresDetalhes() após filtro de cliente:", ops.length, "registros");
         }
+
+        if (filtrosPrestador.statusFinanceiro !== "todos") {
+          ops = ops.filter(o => String(o.status).toLowerCase() === String(filtrosPrestador.statusFinanceiro).toLowerCase());
+        }
+
+        console.log("[DEBUG] loadPrestadoresDetalhes() Lista final usada pelo Relatorio Prestadores:", ops.length, "itens", ops);
 
         setPrestadoresOps(ops);
 
@@ -748,11 +903,13 @@ export default function RelatoriosEnterprise() {
             dataEntrega: o.data ? new Date(o.data).toLocaleDateString("pt-BR") : "-",
             valorFrete: o.valorCliente || 0,
             valorPrestador: o.custoPrestador || 0,
+            valorBasePrestador: o.basePrestador || 0,
             margem: o.margem || 0,
             margemPct: o.margemPct || 0,
             statusFinanceiro: "Pendente",
             tipoVeiculo: o.tipoVeiculo || "-",
             ocorrencia: "",
+            metadata: o.metadata,
           };
         });
 
@@ -930,7 +1087,7 @@ export default function RelatoriosEnterprise() {
                   {filteredOS.map((os) => (
                     <TableRow key={os.id}>
                       <TableCell className="font-medium">{os.numero}</TableCell>
-                      <TableCell className="text-sm">{os.data}</TableCell>
+                      <TableCell className="text-sm">{os.data ? new Date(os.data).toLocaleDateString("pt-BR") : ""}</TableCell>
                       <TableCell>{os.cliente}</TableCell>
                       <TableCell className="text-sm">{os.prestador}</TableCell>
                       <TableCell className="text-sm">{os.origem}</TableCell>
@@ -1046,6 +1203,20 @@ export default function RelatoriosEnterprise() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {relatorioClientes
               .filter(c => filtros.cliente === "todos" || String(c.id) === filtros.cliente)
+              .map(c => {
+                 const opsFiltradas = c.operacoes.filter(os => {
+                   if (filtros.dataInicio && os.data && os.data < filtros.dataInicio) return false;
+                   if (filtros.dataFim && os.data && os.data > filtros.dataFim) return false;
+                   if (filtros.status !== "todos" && os.status !== filtros.status) return false;
+                   return true;
+                 });
+                 return {
+                   ...c,
+                   operacoes: opsFiltradas,
+                   totalFaturado: opsFiltradas.reduce((sum, o) => sum + (o.valorCliente || 0), 0)
+                 };
+              })
+              .filter(c => c.operacoes.length > 0 || (!filtros.dataInicio && !filtros.dataFim))
               .map((cliente) => (
                 <div
                   key={cliente.id}
@@ -1084,7 +1255,7 @@ export default function RelatoriosEnterprise() {
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Detalhes - {clienteSelecionado.nome}</CardTitle>
                 <div className="flex gap-2">
-                  <Button onClick={() => generateExcelFaturamentoCliente(clienteSelecionado)} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+                  <Button onClick={() => generateExcelFaturamentoCliente(clienteSelecionado, filtros)} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
                     <Download className="w-4 h-4" />
                     Gerar Excel Cliente
                   </Button>
@@ -1110,10 +1281,15 @@ export default function RelatoriosEnterprise() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {clienteSelecionado.operacoes.map((os) => (
+                    {clienteSelecionado.operacoes.filter(os => {
+                      if (filtros.dataInicio && os.data && os.data < filtros.dataInicio) return false;
+                      if (filtros.dataFim && os.data && os.data > filtros.dataFim) return false;
+                      if (filtros.status !== "todos" && os.status !== filtros.status) return false;
+                      return true;
+                    }).map((os) => (
                       <TableRow key={os.id}>
                         <TableCell className="font-medium">{os.numero}</TableCell>
-                        <TableCell className="text-sm">{os.data}</TableCell>
+                        <TableCell className="text-sm">{os.data ? new Date(os.data).toLocaleDateString("pt-BR") : ""}</TableCell>
                         <TableCell className="text-sm">{os.origem}</TableCell>
                         <TableCell className="text-sm">{os.destino}</TableCell>
                         <TableCell>
@@ -1281,7 +1457,7 @@ export default function RelatoriosEnterprise() {
               { label: "Total Operações", value: prestadoresLinhas.length, color: "text-slate-700", icon: Package },
               { label: "Valor Bruto", value: fmtFin(prestadoresLinhas.reduce((s, l) => s + l.valorFrete, 0)), color: "text-blue-600", icon: DollarSign },
               { label: "Valor Pago", value: fmtFin(prestadoresLinhas.reduce((s, l) => s + l.valorPrestador, 0)), color: "text-emerald-600", icon: CreditCard },
-              { label: "Saldo Pendente", value: fmtFin(prestadoresLinhas.filter(l => l.statusFinanceiro === "Pendente").reduce((s, l) => s + l.valorFrete, 0)), color: "text-amber-600", icon: Clock },
+              { label: "Saldo Pendente", value: fmtFin(prestadoresLinhas.filter(l => l.statusFinanceiro === "Pendente" || l.statusFinanceiro.toLowerCase() === "pendente").reduce((s, l) => s + l.valorPrestador, 0)), color: "text-amber-600", icon: Clock },
               { label: "Média/Entrega", value: fmtFin(prestadoresLinhas.length > 0 ? prestadoresLinhas.reduce((s, l) => s + l.valorPrestador, 0) / prestadoresLinhas.length : 0), color: "text-violet-600", icon: TrendingUp },
               { label: "Km Rodado", value: "—", color: "text-muted-foreground", icon: Route },
               { label: "SLA", value: `${prestadoresLinhas.length > 0 ? Math.round(prestadoresLinhas.filter(l => l.statusFinanceiro === "Pago").length / prestadoresLinhas.length * 100) : 0}%`, color: "text-cyan-600", icon: Activity },
@@ -1320,21 +1496,76 @@ export default function RelatoriosEnterprise() {
                     return;
                   }
 
-                  let txt = `*RELATÓRIO DE REPASSE - CONEXÃO EXPRESS*\n`;
+                  let txt = `*DEMONSTRATIVO DE PAGAMENTO - CONEXÃO EXPRESS*\n`;
                   txt += `*Parceiro:* ${prestNome}\n`;
                   if (filtrosPrestador.dataInicio && filtrosPrestador.dataFim) {
                     txt += `*Período:* ${new Date(filtrosPrestador.dataInicio + 'T00:00:00').toLocaleDateString('pt-BR')} até ${new Date(filtrosPrestador.dataFim + 'T00:00:00').toLocaleDateString('pt-BR')}\n`;
                   }
-                  txt += `\n*RESUMO FINANCEIRO*\n`;
-                  txt += `• Total Operações: ${filtrados.length}\n`;
-                  txt += `• Valor Total Líquido a Pagar: ${fmtFin(filtrados.reduce((s, l) => s + l.valorPrestador, 0))}\n\n`;
-                  txt += `*DETALHAMENTO*\n`;
-                  filtrados.forEach((l) => {
-                    txt += `OS: ${l.os} | Data: ${l.dataColeta}\n`;
-                    txt += `Rota: ${l.origem} -> ${l.destino}\n`;
-                    txt += `Valor Líquido: ${fmtFin(l.valorPrestador)}\n`;
-                    txt += `------------------------\n`;
+                  
+                  let sumBase = 0, sumKm = 0, sumEspera = 0, sumPedagio = 0, sumReemb = 0, sumOutros = 0, sumDesc = 0, sumLiq = 0;
+
+                  let txtDetalhes = `\n*DETALHAMENTO DAS OPERAÇÕES*\n`;
+                  filtrados.forEach((l: any) => {
+                    const md = l.metadata?.financeiroPrestador || {};
+                    const pTotals = l.metadata?.totals?.prestador || {};
+                    
+                    const base = Number(l.valorBasePrestador || 0);
+                    let km = Number(pTotals.detalhes?.km?.valorTotal || md.kmExcedente || 0);
+                    const espera = Number(pTotals.detalhes?.espera?.valorTotal || md.espera || 0);
+                    const pedagio = Number(md.pedagio || 0);
+                    const reemb = Number(md.valorReembolsoOutros || 0);
+                    const desc = Number(md.descontos || 0);
+                    const liquido = Number(l.valorPrestador || pTotals.total || (base + km + espera + pedagio + reemb - desc));
+
+                    const calcLiquido = base + km + espera + pedagio + reemb - desc;
+                    const diff = liquido - calcLiquido;
+                    
+                    let outros = 0;
+                    if (diff > 0.01) {
+                      const hasKmIndication = md.kmExcedente || md.km_excedente || md.valorKm || pTotals.detalhes?.km || l.metadata?.totals?.cliente?.detalhes?.km;
+                      if (hasKmIndication) {
+                        km += diff;
+                      } else {
+                        outros = diff;
+                      }
+                    }
+
+                    sumBase += base;
+                    sumKm += km;
+                    sumEspera += espera;
+                    sumPedagio += pedagio;
+                    sumReemb += reemb;
+                    sumOutros += outros;
+                    sumDesc += desc;
+                    sumLiq += liquido;
+
+                    txtDetalhes += `OC: ${l.os}\n`;
+                    txtDetalhes += `Data: ${l.dataColeta}\n`;
+                    txtDetalhes += `Rota: ${l.origem} -> ${l.destino}\n`;
+                    txtDetalhes += `Diária/Base: ${fmtFin(base)}\n`;
+                    if (km > 0) txtDetalhes += `KM adicional: ${fmtFin(km)}\n`;
+                    if (espera > 0) txtDetalhes += `Espera: ${fmtFin(espera)}\n`;
+                    const pedReemb = pedagio + reemb;
+                    if (pedReemb > 0) txtDetalhes += `Pedágio/Reembolso: ${fmtFin(pedReemb)}\n`;
+                    if (outros > 0) txtDetalhes += `Outros adicionais: ${fmtFin(outros)}\n`;
+                    if (desc > 0) txtDetalhes += `Descontos: ${fmtFin(desc)}\n`;
+                    txtDetalhes += `Líquido: ${fmtFin(liquido)}\n`;
+                    txtDetalhes += `------------------------\n`;
                   });
+                  
+                  txt += `\n*RESUMO DO PERÍODO*\n`;
+                  txt += `Operações: ${filtrados.length}\n`;
+                  txt += `Valor base: ${fmtFin(sumBase)}\n`;
+                  if (sumKm > 0) txt += `KM adicional: ${fmtFin(sumKm)}\n`;
+                  if (sumEspera > 0) txt += `Espera: ${fmtFin(sumEspera)}\n`;
+                  const sumPedReemb = sumPedagio + sumReemb;
+                  if (sumPedReemb > 0) txt += `Pedágios/Reembolsos: ${fmtFin(sumPedReemb)}\n`;
+                  if (sumOutros > 0) txt += `Outros adicionais: ${fmtFin(sumOutros)}\n`;
+                  if (sumDesc > 0) txt += `Descontos: ${fmtFin(sumDesc)}\n`;
+                  txt += `Total líquido a receber: ${fmtFin(sumLiq)}\n`;
+                  
+                  txt += txtDetalhes;
+                  
                   txt += `\n_Documento gerado pelo sistema Conexão Express_`;
                   
                   navigator.clipboard.writeText(txt).then(() => {

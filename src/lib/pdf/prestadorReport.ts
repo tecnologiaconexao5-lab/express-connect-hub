@@ -208,9 +208,9 @@ export async function generatePrestadorReport(data: any): Promise<void> {
 
   const compositionLines: FinancialLine[] = [];
 
-  // Valor base da operação (repasse)
+  // Valor base da operação
   compositionLines.push({
-    label: "Valor da Operação (Repasse)",
+    label: "Valor Base (Repasse)",
     value: valorOperacao,
   });
 
@@ -230,12 +230,14 @@ export async function generatePrestadorReport(data: any): Promise<void> {
     });
   }
 
-  // Adicionais
+  // Pedagio
   if (valorPedagio > 0) {
-    compositionLines.push({ label: "Pedágio / Reembolso", value: valorPedagio, indent: true });
+    compositionLines.push({ label: "Pedagio", value: valorPedagio, indent: true });
   }
+
+  // Adicionais operacionais
   if (valorAdicionais > 0) {
-    compositionLines.push({ label: "Adicionais Operacionais", value: valorAdicionais, indent: true });
+    compositionLines.push({ label: "Adicionais / Reembolsos", value: valorAdicionais, indent: true });
   }
 
   // Descontos
@@ -243,15 +245,9 @@ export async function generatePrestadorReport(data: any): Promise<void> {
     compositionLines.push({ label: "Descontos / Glosas", value: valorDescontos, indent: true });
   }
 
-  // Subtotal antés dos descontos (se relevante)
-  const subtotal = valorOperacao + valorPedagio + valorAdicionais + valorKMExcedente;
-  if (valorDescontos > 0 && compositionLines.length > 2) {
-    compositionLines.push({ label: "Subtotal (antes de descontos)", value: subtotal });
-  }
-
-  // Total Líquido
+  // Total Liquido
   compositionLines.push({
-    label: "TOTAL LÍQUIDO A RECEBER",
+    label: "TOTAL LIQUIDO A RECEBER",
     value: totalLiquido,
     isTotal: true,
     highlight: true,

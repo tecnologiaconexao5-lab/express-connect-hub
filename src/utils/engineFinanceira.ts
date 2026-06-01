@@ -89,9 +89,9 @@ export function calcularFinanceiroEscala(params: EngineParams): EngineFinanceira
   } = params;
 
   // Parâmetros da Tabela (Cliente)
-  const diariaBase = tabelaValores?.valor_base || 0;
-  const kmFranquia = tabelaValores?.km_franquia || 200;
-  const valorKmCliente = tabelaValores?.valor_km_excedente || tabelaValores?.valor_km || 2.50;
+  const diariaBase = tabelaValores?.valor_base ?? 0;
+  const kmFranquia = tabelaValores?.km_franquia ?? 0;
+  const valorKmCliente = tabelaValores?.valor_km_excedente ?? tabelaValores?.valor_km ?? 0;
   
   // Cálculo de KM (Cliente)
   const kmRodados = Math.max((km.final || 0) - (km.inicial || 0), 0);
@@ -151,21 +151,15 @@ export function calcularFinanceiroEscala(params: EngineParams): EngineFinanceira
   
   if (financeiroRealPrestador) {
     // Prestador possui financeiro cadastrado no banco
-    if (financeiroRealPrestador.tipo_pagamento === 'diaria') {
-       basePrestador = financeiroRealPrestador.valor_diaria;
-    } else if (financeiroRealPrestador.tipo_pagamento === 'saida') {
-       basePrestador = financeiroRealPrestador.valor_saida;
-    } else if (financeiroRealPrestador.tipo_pagamento === 'fixo') {
-       basePrestador = financeiroRealPrestador.fixo_mensal;
+    if (financeiroRealPrestador.tipo_pagamento === 'diaria' || financeiroRealPrestador.periodicidade_pagamento === 'diaria' || (financeiroRealPrestador.valor_diaria ?? 0) > 0) {
+      basePrestador = financeiroRealPrestador.valor_diaria ?? 0;
     } else {
-       basePrestador = financeiroRealPrestador.valor_diaria || financeiroRealPrestador.valor_saida || 0;
+      basePrestador = financeiroRealPrestador.valor_saida ?? financeiroRealPrestador.fixo_mensal ?? 0;
     }
-
-    const kmFranquiaPrestador = financeiroRealPrestador.franquia_km || 0;
+    const kmFranquiaPrestador = financeiroRealPrestador.franquia_km ?? 0;
     kmExcedenteMotorista = Math.max(kmRodados - kmFranquiaPrestador, 0);
-    valorKmPrestadorFinal = financeiroRealPrestador.valor_km || 0;
-    
-  } else {
+    valorKmPrestadorFinal = financeiroRealPrestador.valor_km ?? 0;
+  } else if (financeiroPrestador) {
     // FALLBACK ANTIGO (se o prestador não tem regra própria, tenta a da tabela do cliente)
     const usarRegraTabela = tabelaValores && tabelaValores.tipo_repasse_prestador;
     

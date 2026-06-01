@@ -1,19 +1,24 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Bot, Sparkles, Users, MessageSquare, Send, Save, AlertTriangle,
   Truck, Award, ChevronDown, ChevronUp, Copy, CheckCircle, XCircle,
   Lightbulb, DollarSign, MapPin, UserCheck, Activity, Target, Megaphone,
+  Star, TrendingUp, Filter, Phone, MessageCircle,
 } from 'lucide-react'
 import { PremiumCard, PremiumCardContent } from '../design-system/PremiumCard'
 import { PremiumBadge } from '../design-system/PremiumBadge'
+import { EmptyState } from '../design-system/EmptyState'
+import { ScoreMeter } from '../score/ScoreMeter'
 import { useRecrutamentoStore } from '../../store/recrutamentoStore'
 import { formatCurrency, formatDate, cn } from '../../utils/cn'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
-import type { Operacao, Prestador, StatusPrestador } from '../../types/recrutamento'
+import { supabase } from '@/lib/supabase'
+import type { Operacao, Prestador, StatusPrestador, TalentosCandidato } from '../../types/recrutamento'
 
 type ResultadoTipo = 'sugestoes' | 'mensagem' | 'analise' | 'anuncio' | 'risco' | 'ajustes' | 'erro'
 
@@ -347,6 +352,14 @@ export function IAOperacional() {
   const [loading, setLoading] = useState<string | null>(null)
   const [expandidoIdx, setExpandidoIdx] = useState<number | null>(null)
 
+  // Motor Interno
+  const [ranking, setRanking] = useState<PerfilRanqueado[]>([])
+  const [rankingLoading, setRankingLoading] = useState(false)
+  const [filtroVeiculo, setFiltroVeiculo] = useState('todas')
+  const [filtroRegiao, setFiltroRegiao] = useState('')
+  const [filtroScoreMinimo, setFiltroScoreMinimo] = useState(0)
+  const [modoMotorInterno, setModoMotorInterno] = useState(true)
+
   const operacoesAbertas = useMemo(() => operacoes.filter(o => o.status === 'aberta' || o.status === 'em_captacao'), [operacoes])
   const selectedOp = useMemo(() => operacoes.find(o => o.id === selectedOpId) ?? null, [operacoes, selectedOpId])
 
@@ -358,6 +371,135 @@ export function IAOperacional() {
     const prestadoresViaveis = prestadores.filter(p => p.status !== 'bloqueado').length
     return { totalAbertas, totalVagas, totalPreenchidas, scoreMedio, prestadoresViaveis }
   }, [operacoesAbertas, prestadores])
+
+  // === MOTOR INTERNO DE RECOMENDAÇÃO ===
+  interface PerfilRanqueado {
+    id: string; nome: string; tipo: 'Prestador' | 'Candidato'; veiculo: string;
+    regiao: string; score: number; classificacao: string; motivos: string[];
+    pendencias: string[]; telefone: string; disponibilidade: string;
+  }
+
+  const carregarRanking = useCallback(async () => {
+    setRankingLoading(true)
+    try {
+      const [prestRes, candRes, crmRes] = await Promise.all([
+        supabase.from('recrutamento_prestadores').select('*').eq('status', 'agregado').limit(50),
+        supabase.from('recrutamento_candidatos').select('*').limit(50),
+        supabase.from('crm_interacoes_prestadores').select('prestador_id').limit(200),
+      ])
+
+      const interacoesIds = new Set((crmRes.data || []).map((r: any) => r.prestador_id))
+
+      const ranquear = (source: any[], tipo: 'Prestador' | 'Candidato'): PerfilRanqueado[] => {
+        return (source || []).map((p: any) => {
+          const veiculo = p.tipo_veiculo || p.veiculo || ''
+          const cidade = p.endereco?.cidade || p.cidade || ''
+          const uf = p.endereco?.uf || p.uf || ''
+          const regiao = cidade ? `${cidade}, ${uf}` : ''
+          const docs = p.documentos || []
+          const docsOk = Array.isArray(docs) ? docs.filter((d: any) => d.status === 'ok' || d.status === 'aprovado').length : 0
+          const disp = p.disponibilidade || p.disponibilidade_tipo || ''
+          const status = p.status || 'novo'
+          const opsCount = p.historico?.quantidadeOperacoes || 0
+          let s = 0
+          const mot: string[] = []
+          const pen: string[] = []
+          if (veiculo.trim()) { s += 25; mot.push('Veiculo cadastrado') } else { pen.push('Sem veiculo') }
+          if (regiao.trim()) { s += 20; mot.push('Regiao definida') } else { pen.push('Regiao nao definida') }
+          if (disp === 'imediata' || disp === 'imediato' || disp === 'parcial') { s += 20; mot.push('Disponibilidade ativa') } else { pen.push('Indisponivel') }
+          if (docsOk >= 3 || p.status_documental === 'completo') { s += 20; mot.push('Documentacao completa') } else { pen.push('Documentacao incompleta') }
+          if (status === 'agregado' || status === 'aprovado' || opsCount > 0) { s += 15; mot.push('Historico positivo') }
+          let classif = 'Baixo'
+          if (s >= 80) classif = 'Excelente'
+          else if (s >= 60) classif = 'Bom'
+          else if (s >= 40) classif = 'Regular'
+          return {
+            id: p.id, nome: p.nome || p.razao_social || '', tipo, veiculo, regiao, score: s,
+            classificacao: classif, motivos: mot, pendencias: pen,
+            telefone: Array.isArray(p.contatos) ? (p.contatos.find((c: any) => c.tipo === 'whatsapp' || c.tipo === 'telefone')?.valor || '') : (p.telefone || ''),
+            disponibilidade: disp,
+          }
+        })
+      }
+
+      const prests = ranquear(prestRes.data || [], 'Prestador')
+      const cands = ranquear(candRes.data || [], 'Candidato')
+      const todos = [...prests, ...cands].sort((a, b) => b.score - a.score).slice(0, 20)
+      setRanking(todos)
+    } catch {
+      setRanking([])
+    } finally {
+      setRankingLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { carregarRanking() }, [carregarRanking])
+
+  const [acoesRealizadas, setAcoesRealizadas] = useState<Record<string, string>>({})
+
+  const handleEnviarParaCrm = async (r: PerfilRanqueado) => {
+    const key = `${r.id}_crm`
+    if (acoesRealizadas[key]) { toast.info('Perfil ja enviado ao CRM hoje.'); return }
+    try {
+      const hoje = new Date().toISOString().split('T')[0]
+      const { data: existente } = await supabase.from('crm_interacoes_prestadores')
+        .select('id').eq('prestador_id', r.id).gte('created_at', hoje).limit(1)
+      if (existente && existente.length > 0) {
+        setAcoesRealizadas(p => ({ ...p, [key]: 'enviado_crm' }))
+        toast.info('Ja enviado ao CRM hoje.')
+        return
+      }
+      await supabase.from('crm_interacoes_prestadores').insert([{
+        prestador_id: r.id, prestador_nome: r.nome, tipo: 'observacao',
+        titulo: 'Perfil recomendado pela IA Operacional',
+        descricao: `Score: ${r.score}. Veiculo: ${r.veiculo || '—'}. Regiao: ${r.regiao || '—'}. Motivos: ${r.motivos.join(', ')}. Pendencias: ${r.pendencias.join(', ')}`,
+        status: 'realizado', data: new Date().toISOString(), usuario: 'IA Operacional',
+      }])
+      setAcoesRealizadas(p => ({ ...p, [key]: 'enviado_crm' }))
+      toast.success('Perfil enviado ao CRM!')
+    } catch (e: any) { toast.error('Erro ao enviar: ' + e.message) }
+  }
+
+  const handlePreSelecionar = async (r: PerfilRanqueado) => {
+    const key = `${r.id}_presel`
+    if (acoesRealizadas[key]) { toast.info('Ja pre-selecionado.'); return }
+    try {
+      const table = r.tipo === 'Prestador' ? 'recrutamento_prestadores' : 'recrutamento_candidatos'
+      const { data: current } = await supabase.from(table).select('tags, status').eq('id', r.id).single()
+      const tags = Array.isArray(current?.tags) ? current.tags : []
+      if (!tags.includes('pre-selecionado')) tags.push('pre-selecionado')
+      await supabase.from(table).update({ tags }).eq('id', r.id)
+      setAcoesRealizadas(p => ({ ...p, [key]: 'pre_selecionado' }))
+      toast.success('Perfil pre-selecionado!')
+    } catch (e: any) { toast.error('Erro: ' + e.message) }
+  }
+
+  const handleContatar = async (r: PerfilRanqueado) => {
+    const key = `${r.id}_contato`
+    try {
+      await supabase.from('crm_interacoes_prestadores').insert([{
+        prestador_id: r.id, prestador_nome: r.nome, tipo: 'ligacao',
+        titulo: 'Contato iniciado',
+        descricao: 'Contato iniciado a partir da IA Operacional.',
+        status: 'realizado', data: new Date().toISOString(), usuario: 'IA Operacional',
+        proxima_acao: 'Aguardar retorno',
+      }])
+      setAcoesRealizadas(p => ({ ...p, [key]: 'contato_registrado' }))
+      toast.success('Contato registrado no CRM!')
+    } catch (e: any) { toast.error('Erro: ' + e.message) }
+  }
+
+  const rankingFiltrado = useMemo(() => {
+    return ranking
+      .filter(r => filtroVeiculo === 'todas' || r.veiculo.toLowerCase().includes(filtroVeiculo.toLowerCase()))
+      .filter(r => !filtroRegiao || r.regiao.toLowerCase().includes(filtroRegiao.toLowerCase()))
+      .filter(r => r.score >= filtroScoreMinimo)
+  }, [ranking, filtroVeiculo, filtroRegiao, filtroScoreMinimo])
+
+  const tiposVeiculo = useMemo(() => {
+    const set = new Set(ranking.map(r => r.veiculo).filter(Boolean))
+    return [...set].sort()
+  }, [ranking])
 
   const limparResultados = useCallback(() => {
     setResultados([])
@@ -529,6 +671,95 @@ export function IAOperacional() {
           </PremiumCard>
         ))}
       </div>
+
+      <PremiumCard>
+        <PremiumCardContent className="p-4 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-violet-500/10 flex items-center justify-center">
+              <TrendingUp className="w-4 h-4 text-violet-400" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">Motor Interno de Recomendacao</p>
+              <p className="text-[10px] text-muted-foreground/50">
+                Ranking de prestadores e candidatos por aderencia — IA externa ainda nao conectada
+              </p>
+            </div>
+            <PremiumBadge variant="info" dot size="sm">Interno</PremiumBadge>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Select value={filtroVeiculo} onValueChange={setFiltroVeiculo}>
+              <SelectTrigger className="h-8 text-xs w-[140px]"><Filter className="w-3 h-3 mr-1" /><SelectValue placeholder="Veiculo" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">Todos veiculos</SelectItem>
+                {tiposVeiculo.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input placeholder="Regiao/UF" className="h-8 text-xs w-[130px]" value={filtroRegiao} onChange={e => setFiltroRegiao(e.target.value)} />
+            <Select value={String(filtroScoreMinimo)} onValueChange={v => setFiltroScoreMinimo(Number(v))}>
+              <SelectTrigger className="h-8 text-xs w-[130px]"><SelectValue placeholder="Score min" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">Score: Todos</SelectItem>
+                <SelectItem value="80">Score: 80+ (Excelente)</SelectItem>
+                <SelectItem value="60">Score: 60+ (Bom)</SelectItem>
+                <SelectItem value="40">Score: 40+ (Regular)</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={carregarRanking} disabled={rankingLoading}>
+              {rankingLoading ? 'Carregando...' : 'Atualizar'}
+            </Button>
+          </div>
+
+          {rankingFiltrado.length === 0 ? (
+            <EmptyState
+              title="Nenhum perfil elegivel encontrado"
+              description="Nao ha prestadores ou candidatos com os filtros atuais."
+            />
+          ) : (
+            <div className="space-y-2">
+              {rankingFiltrado.slice(0, 10).map((r, idx) => {
+                const crmKey = `${r.id}_crm`
+                const preselKey = `${r.id}_presel`
+                const contatoKey = `${r.id}_contato`
+                return (
+                <div key={r.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/20 border border-border/30 hover:border-primary/20 transition-all">
+                  <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted/40 text-xs font-bold text-muted-foreground">{idx + 1}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{r.nome}</span>
+                      <PremiumBadge size="sm" variant={r.tipo === 'Prestador' ? 'success' : 'info'}>{r.tipo}</PremiumBadge>
+                      <PremiumBadge size="sm" className={
+                        r.classificacao === 'Excelente' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                        r.classificacao === 'Bom' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                        r.classificacao === 'Regular' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                        'bg-red-500/10 text-red-400 border-red-500/20'
+                      }>{r.classificacao}</PremiumBadge>
+                      {acoesRealizadas[preselKey] && <PremiumBadge size="sm" variant="warning">Pre-selecionado</PremiumBadge>}
+                      {acoesRealizadas[crmKey] && <PremiumBadge size="sm" className="bg-blue-500/10 text-blue-400 border-blue-500/20">Enviado ao CRM</PremiumBadge>}
+                      {acoesRealizadas[contatoKey] && <PremiumBadge size="sm" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">Contato registrado</PremiumBadge>}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground/50 mt-0.5">
+                      <Truck className="w-3 h-3" />{r.veiculo || '—'}
+                      <MapPin className="w-3 h-3 ml-1" />{r.regiao || '—'}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {r.motivos.slice(0, 2).map((m, i) => <span key={i} className="text-[9px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-400"><TrendingUp className="w-2 h-2 inline mr-0.5" />{m}</span>)}
+                      {r.pendencias.slice(0, 2).map((p, i) => <span key={i} className="text-[9px] px-1 py-0.5 rounded bg-amber-500/10 text-amber-400"><AlertTriangle className="w-2 h-2 inline mr-0.5" />{p}</span>)}
+                    </div>
+                  </div>
+                  <ScoreMeter score={r.score} size="sm" />
+                  <div className="flex flex-col gap-1">
+                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 justify-start" onClick={() => handleContatar(r)}><Phone className="w-3 h-3" />Contatar</Button>
+                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 justify-start" onClick={() => handleEnviarParaCrm(r)}><Send className="w-3 h-3" />CRM</Button>
+                    <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 justify-start" onClick={() => handlePreSelecionar(r)}><UserCheck className="w-3 h-3" />Pre-selecionar</Button>
+                  </div>
+                </div>
+                )
+              })}
+            </div>
+          )}
+        </PremiumCardContent>
+      </PremiumCard>
 
       <PremiumCard>
         <PremiumCardContent className="p-4 space-y-4">

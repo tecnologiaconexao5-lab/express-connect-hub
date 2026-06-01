@@ -1,66 +1,100 @@
+import { supabase } from '@/lib/supabase'
 import type { CrmInteracao } from '../types/recrutamento'
 
-const STORAGE_KEY = 'prestadores_crm_interacoes'
+const TABLE = 'crm_interacoes_prestadores'
 
-function generateId(): string {
-  return `crm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-}
-
-function getStorage(): CrmInteracao[] {
-  const saved = localStorage.getItem(STORAGE_KEY)
-  if (saved) {
-    try { return JSON.parse(saved) } catch { }
+function fromDB(row: any): CrmInteracao {
+  return {
+    id: row.id,
+    prestadorId: row.prestador_id,
+    prestadorNome: row.prestador_nome || '',
+    tipo: row.tipo,
+    titulo: row.titulo || '',
+    descricao: row.descricao || '',
+    data: row.data,
+    usuario: row.usuario || '',
+    proximaAcao: row.proxima_acao || '',
+    dataProximoContato: row.data_proximo_contato || '',
+    status: row.status || 'realizado',
+    anexos: row.anexos || [],
+    createdAt: row.created_at,
   }
-  return []
 }
 
-function persist(data: CrmInteracao[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-}
-
-function delay(ms = 200): Promise<void> {
-  return new Promise(r => setTimeout(r, ms))
+function toDB(data: Partial<CrmInteracao>): Record<string, any> {
+  const out: Record<string, any> = {}
+  if (data.prestadorId !== undefined) out.prestador_id = data.prestadorId
+  if (data.prestadorNome !== undefined) out.prestador_nome = data.prestadorNome
+  if (data.tipo !== undefined) out.tipo = data.tipo
+  if (data.titulo !== undefined) out.titulo = data.titulo
+  if (data.descricao !== undefined) out.descricao = data.descricao
+  if (data.data !== undefined) out.data = data.data
+  if (data.usuario !== undefined) out.usuario = data.usuario
+  if (data.proximaAcao !== undefined) out.proxima_acao = data.proximaAcao
+  if (data.dataProximoContato !== undefined) out.data_proximo_contato = data.dataProximoContato
+  if (data.status !== undefined) out.status = data.status
+  if (data.anexos !== undefined) out.anexos = data.anexos
+  return out
 }
 
 export const crmService = {
   async listar(): Promise<CrmInteracao[]> {
-    await delay()
-    return getStorage().sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('*')
+      .order('data', { ascending: false })
+      .limit(200)
+
+    if (error) {
+      console.error('[CRM] Erro ao listar:', error)
+      return []
+    }
+    return (data || []).map(fromDB)
   },
 
   async listarPorPrestador(prestadorId: string): Promise<CrmInteracao[]> {
-    await delay()
-    return getStorage()
-      .filter(i => i.prestadorId === prestadorId)
-      .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
-  },
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('*')
+      .eq('prestador_id', prestadorId)
+      .order('data', { ascending: false })
+      .limit(100)
 
-  async criar(data: Omit<CrmInteracao, 'id' | 'createdAt'>): Promise<CrmInteracao> {
-    await delay()
-    const interacao: CrmInteracao = {
-      ...data,
-      id: generateId(),
-      createdAt: new Date().toISOString(),
+    if (error) {
+      console.error('[CRM] Erro ao listar por prestador:', error)
+      return []
     }
-    const list = getStorage()
-    list.push(interacao)
-    persist(list)
-    return interacao
+    return (data || []).map(fromDB)
   },
 
-  async atualizar(id: string, data: Partial<CrmInteracao>): Promise<CrmInteracao | null> {
-    await delay()
-    const list = getStorage()
-    const idx = list.findIndex(i => i.id === id)
-    if (idx === -1) return null
-    list[idx] = { ...list[idx], ...data }
-    persist(list)
-    return list[idx]
+  async criar(dados: Pick<CrmInteracao, 'prestadorId' | 'prestadorNome' | 'tipo' | 'titulo' | 'descricao' | 'data' | 'usuario' | 'proximaAcao' | 'dataProximoContato' | 'status' | 'anexos'>): Promise<CrmInteracao> {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .insert([toDB(dados)])
+      .select('*')
+      .single()
+
+    if (error) throw error
+    return fromDB(data)
+  },
+
+  async atualizar(id: string, dados: Partial<CrmInteracao>): Promise<CrmInteracao | null> {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .update(toDB(dados))
+      .eq('id', id)
+      .select('*')
+      .single()
+
+    if (error) {
+      console.error('[CRM] Erro ao atualizar:', error)
+      return null
+    }
+    return fromDB(data)
   },
 
   async remover(id: string): Promise<void> {
-    await delay()
-    const list = getStorage().filter(i => i.id !== id)
-    persist(list)
+    const { error } = await supabase.from(TABLE).delete().eq('id', id)
+    if (error) console.error('[CRM] Erro ao remover:', error)
   },
 }

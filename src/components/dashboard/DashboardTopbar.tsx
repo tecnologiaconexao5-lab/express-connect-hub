@@ -109,6 +109,19 @@ const DashboardTopbar = () => {
           
           <Tooltip>
             <TooltipTrigger asChild>
+              <Button size="sm" className="h-8 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => navigate("/operacao?tab=escala&acao=alocar")}>
+                <Plus className="w-3.5 h-3.5" />
+                <Truck className="w-3.5 h-3.5" />
+                Alocação
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Nova Alocação (Ir para Escala)</p>
+            </TooltipContent>
+          </Tooltip>
+          
+          <Tooltip>
+            <TooltipTrigger asChild>
               <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => navigate("/cadastros/clientes/novo")}>
                 <Plus className="w-3.5 h-3.5" />
                 <Users className="w-3.5 h-3.5" />

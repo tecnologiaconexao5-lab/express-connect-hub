@@ -190,13 +190,16 @@ export function PaginaPrestadores() {
         </div>
       ) : filtered.length === 0 ? (
         <EmptyState
-          title="Nenhum prestador encontrado"
-          description="Cadastre prestadores ou ajuste os filtros."
+          title="Nenhum prestador agregado encontrado"
+          description="Cadastre ou converta candidatos do Banco de Talentos."
           action={
-            <Button size="sm" onClick={() => {
-              navegar('pipeline-kanban')
-              toast.info('Cadastre um interessado no Pipeline Enterprise para iniciar o fluxo: interessado → candidato → aprovado → prestador')
-            }}><Plus className="w-4 h-4 mr-1.5" /> Novo Prestador</Button>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => {
+                navegar('pipeline-kanban')
+                toast.info('Cadastre um interessado no Pipeline Enterprise para iniciar o fluxo: interessado → candidato → aprovado → prestador')
+              }}><Plus className="w-4 h-4 mr-1.5" /> Novo Prestador</Button>
+              <Button size="sm" variant="outline" onClick={() => navegar('talentos')}><Users className="w-4 h-4 mr-1.5" /> Ver Banco de Talentos</Button>
+            </div>
           }
         />
       ) : (
@@ -255,6 +258,20 @@ function PrestadorCard({ prestador, onClick, onAction, onToggleBlock, onRemove }
   onRemove: (id: string) => void
 }) {
   const contato = prestador.contatos.find(c => c.tipo === 'whatsapp' || c.tipo === 'telefone')
+  const docsCount = prestador.documentos?.length || 0
+  const docsAprovados = prestador.documentos?.filter(d => d.status === 'aprovado').length || 0
+  const temVeiculo = !!(prestador.tipoVeiculo || prestador.placaVeiculo)
+  const temDocIncompleta = docsAprovados < 3
+  const ultimaOp = prestador.historico?.ultimaOperacao
+  const qtdOps = prestador.historico?.quantidadeOperacoes || 0
+
+  const scoreSimples = (
+    (docsAprovados >= 3 ? 30 : 0) +
+    (temVeiculo ? 20 : 0) +
+    (prestador.disponibilidade && prestador.disponibilidade !== 'indisponivel' ? 20 : 0) +
+    (prestador.status === 'agregado' || prestador.status === 'aprovado' ? 20 : 0) +
+    (qtdOps > 0 ? 10 : 0)
+  )
 
   return (
     <motion.div
@@ -279,17 +296,32 @@ function PrestadorCard({ prestador, onClick, onAction, onToggleBlock, onRemove }
               </div>
               <p className="text-xs text-muted-foreground/60">{prestador.cpfCnpj}</p>
             </div>
-            <ScoreMeter score={prestador.score.geral} size="sm" />
+            <ScoreMeter score={prestador.score.geral || scoreSimples} size="sm" />
           </PremiumCardHeader>
 
           <PremiumCardContent className="space-y-2">
             <div className="grid grid-cols-2 gap-1.5 text-xs text-muted-foreground/70">
-              <div className="flex items-center gap-1.5"><Truck className="w-3 h-3" /> {prestador.tipoVeiculo}</div>
+              <div className="flex items-center gap-1.5"><Truck className="w-3 h-3" /> {prestador.tipoVeiculo || '—'}</div>
               <div className="flex items-center gap-1.5"><MapPin className="w-3 h-3" /> {prestador.endereco.cidade}/{prestador.endereco.uf}</div>
               {contato && (
                 <div className="flex items-center gap-1.5"><Phone className="w-3 h-3" /> {contato.valor}</div>
               )}
-              <div className="flex items-center gap-1.5"><Star className="w-3 h-3" /> {prestador.historico?.quantidadeOperacoes || 0} ops</div>
+              <div className="flex items-center gap-1.5"><Star className="w-3 h-3" /> {qtdOps} ops</div>
+            </div>
+
+            {ultimaOp && (
+              <div className="text-[10px] text-muted-foreground/50 flex items-center gap-1">
+                <Activity className="w-2.5 h-2.5" />
+                Ultima operacao: {formatDate(ultimaOp)}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-1">
+              {prestador.status === 'agregado' && <PremiumBadge variant="success" size="sm">Apto</PremiumBadge>}
+              {prestador.status === 'bloqueado' && <PremiumBadge variant="danger" size="sm">Bloqueado</PremiumBadge>}
+              {prestador.disponibilidade === 'indisponivel' && <PremiumBadge variant="warning" size="sm">Indisponivel</PremiumBadge>}
+              {temDocIncompleta && prestador.status !== 'bloqueado' && <PremiumBadge variant="warning" size="sm">Documentacao incompleta</PremiumBadge>}
+              {!temVeiculo && <PremiumBadge variant="warning" size="sm">Sem veiculo</PremiumBadge>}
             </div>
 
             {prestador.tags.length > 0 && (

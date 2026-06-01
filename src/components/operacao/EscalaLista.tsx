@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { format, addDays, startOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar as CalendarIcon, Filter, Search, Plus, MapPin, Truck, Smartphone, Check, ChevronLeft, ChevronRight, MessageCircle, FileText, Download, Wallet, Clock, DollarSign, Percent, Activity, AlertTriangle, AlertCircle, CheckCircle, History, ExternalLink, Play, Edit } from "lucide-react";
+import { Calendar as CalendarIcon, Filter, Search, Plus, MapPin, Truck, Smartphone, Check, ChevronLeft, ChevronRight, MessageCircle, FileText, Download, Wallet, Clock, DollarSign, Percent, Activity, AlertTriangle, AlertCircle, CheckCircle, History, ExternalLink, Play, Edit, Package, BarChart3 } from "lucide-react";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,6 +99,7 @@ export default function EscalaLista() {
   // Form Nova Reserva
   const [novoTurno, setNovoTurno] = useState("integral");
   const [novaOS, setNovaOS] = useState("");
+  const [numeroOC, setNumeroOC] = useState("");
   const [novoPrestadorId, setNovoPrestadorId] = useState("");
   const [novoPrestadorNome, setNovoPrestadorNome] = useState("");
   const [filtroPrestadorModal, setFiltroPrestadorModal] = useState("");
@@ -105,6 +107,8 @@ export default function EscalaLista() {
   const [novoClienteId, setNovoClienteId] = useState("");
   const [novoClienteNome, setNovoClienteNome] = useState("");
   const [prestadorVeiculo, setPrestadorVeiculo] = useState<{tipo_veiculo: string, placa: string, refrigerado: boolean} | null>(null);
+  const [instrucoesPrestador, setInstrucoesPrestador] = useState("");
+  const [observacaoCliente, setObservacaoCliente] = useState("");
   const [tabelaValores, setTabelaValores] = useState<any>(null);
   const [tabelaRascunhoEncontrada, setTabelaRascunhoEncontrada] = useState<any>(null);
   const [kmExcedentePrestador, setKmExcedentePrestador] = useState<number>(0);
@@ -118,11 +122,24 @@ export default function EscalaLista() {
   const [horarioFim, setHorarioFim] = useState("18:00");
   const [kmInicial, setKmInicial] = useState<number>(0);
   const [kmFinal, setKmFinal] = useState<number>(0);
+  const [statusOperacional, setStatusOperacional] = useState("planejado");
+  const [observacaoOperacional, setObservacaoOperacional] = useState("");
   const [tempoChegadaPatio, setTempoChegadaPatio] = useState("07:45");
   const [tempoInicioCarregamento, setTempoInicioCarregamento] = useState("08:15");
   const [tempoFimCarregamento, setTempoFimCarregamento] = useState("09:00");
   const [tempoSaidaRua, setTempoSaidaRua] = useState("09:15");
   const [tempoFinalizacaoEntregas, setTempoFinalizacaoEntregas] = useState("17:30");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("acao") === "alocar") {
+      setTimeout(() => {
+        handleCellClick("", new Date());
+        setModalOpen(true);
+        window.history.replaceState({}, '', window.location.pathname + "?tab=escala");
+      }, 500); // Wait for initial render and data load
+    }
+  }, []);
 
   // Função para buscar tabela de valores do cliente
   const buscarTabelaValoresCliente = useCallback(async (clienteId: string, clienteNome: string, tipoVeiculo: string, dataEscalaStr?: string) => {
@@ -260,7 +277,7 @@ export default function EscalaLista() {
       try {
         const { data, error } = await supabase
           .from("prestadores")
-          .select("id, nome_completo, cpf_cnpj, telefone, whatsapp, veiculos(tipo, placa), status, regiao_principal, valor_diaria, valor_saida, fixo_mensal, franquia_km, valor_km, tipo_pagamento")
+          .select("id, nome_completo, cpf_cnpj, telefone, whatsapp, veiculos(tipo, placa), status, regiao_principal, valor_diaria, valor_saida, fixo_mensal, franquia_km, valor_km")
           .eq("status", "ativo");
         
         if (error) throw error;
@@ -277,7 +294,7 @@ export default function EscalaLista() {
           status: "disponivel",
           avatar: p.nome_completo ? p.nome_completo.substring(0,2).toUpperCase() : "PR",
           financeiro_real: {
-             tipo_pagamento: p.tipo_pagamento,
+             tipo_pagamento: "pix",
              valor_diaria: p.valor_diaria || 0,
              valor_saida: p.valor_saida || 0,
              fixo_mensal: p.fixo_mensal || 0,
@@ -344,7 +361,7 @@ export default function EscalaLista() {
               prestadorNome: prestNome,
               clienteId: r.cliente_id,
               clienteNome: cliNome,
-              data: r.data_escala,
+              data: (r.data_escala && r.data_escala.includes('T') ? r.data_escala.split('T')[0] : r.data_escala) + 'T12:00:00',
               turno: r.turno,
               status: r.status,
               statusPagamento: r.status_pagamento,
@@ -356,8 +373,10 @@ export default function EscalaLista() {
               prestadorVeiculo: { tipo_veiculo: r.tipo_veiculo, placa: r.placa },
               financeiro: meta.financeiro || {},
               totals: { valorBase, totalAdicionais: adicionais, totalDescontos: descontos, total },
+              metadata: meta,
             };
           });
+          console.log("[DEBUG] loadAlocacoes retornou:", mapped.length, "registros", mapped);
           setAlocacoes(mapped);
           return; // Não usa localStorage se Supabase respondeu
         }
@@ -408,8 +427,8 @@ export default function EscalaLista() {
         days = differenceInDays(endOfMonth(start), start) + 1;
         break;
       case 'personalizado':
-        start = new Date(dataInicio);
-        days = Math.max(1, differenceInDays(new Date(dataFim), start) + 1);
+        start = new Date(dataInicio + 'T12:00:00');
+        days = Math.max(1, differenceInDays(new Date(dataFim + 'T12:00:00'), start) + 1);
         break;
       default:
         start = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -444,17 +463,21 @@ export default function EscalaLista() {
 
       let matchCliente = true;
       if (filtroCliente !== "todos") {
-        matchCliente = alocacoesFiltradas.some(a => a.prestadorId === p.id && diasPeriodo.some(d => isSameDay(new Date(a.data), d)));
+        matchCliente = alocacoesFiltradas.some(a => a.prestadorId === p.id && diasPeriodo.some(d => isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), d)));
       }
 
       let matchStatus = true;
       if (filtroStatus !== "todos") {
-        matchStatus = alocacoesFiltradas.some(a => a.prestadorId === p.id && a.tipo === filtroStatus && diasPeriodo.some(d => isSameDay(new Date(a.data), d)));
+        matchStatus = alocacoesFiltradas.some(a => a.prestadorId === p.id && a.tipo === filtroStatus && diasPeriodo.some(d => isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), d)));
       }
 
       return matchNome && matchVeiculo && matchCliente && matchStatus;
     });
   }, [prestadores, filtroNome, filtroVeiculo, filtroCliente, filtroStatus, alocacoesFiltradas, diasPeriodo]);
+
+  const listaControleDiario = useMemo(() => {
+    return alocacoesFiltradas.filter(a => a.data && diasPeriodo.some(dp => isSameDay(dp, new Date(a.data))));
+  }, [alocacoesFiltradas, diasPeriodo]);
 
 
 
@@ -476,7 +499,7 @@ export default function EscalaLista() {
     setSelectedCell({prestadorId, data});
     
     // Encontrar se já existe alocação para preencher os campos
-    const existing = alocacoes.find(a => a.prestadorId === prestadorId && isSameDay(new Date(a.data), data));
+    const existing = alocacoes.find(a => a.prestadorId === prestadorId && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), data));
     if (existing) {
       setNovoPrestadorId(existing.prestadorId);
       setNovoPrestadorNome(existing.prestadorNome || "");
@@ -485,6 +508,7 @@ export default function EscalaLista() {
       setNovoTurno(existing.turno || "integral");
       setNovoTipo(existing.tipo || "reserva");
       setNovaOS(existing.os || "");
+      setNumeroOC(existing.metadata?.numeroOC || "");
       setHorarioInicio(existing.horarioInicio || "08:00");
       setHorarioFim(existing.horarioFim || "18:00");
       if (existing.financeiro) {
@@ -502,8 +526,12 @@ export default function EscalaLista() {
       else setTempoFimCarregamento("09:00");
       if (existing.tempoSaidaRua !== undefined) setTempoSaidaRua(existing.tempoSaidaRua);
       else setTempoSaidaRua("09:15");
-      if (existing.tempoFinalizacaoEntregas !== undefined) setTempoFinalizacaoEntregas(existing.tempoFinalizacaoEntregas);
-      else setTempoFinalizacaoEntregas("17:30");
+      setTempoFinalizacaoEntregas(existing.tempoFinalizacaoEntregas || "17:30");
+      
+      setStatusOperacional(existing.metadata?.statusOperacional || "planejado");
+      setObservacaoOperacional(existing.metadata?.observacaoOperacional || "");
+      setInstrucoesPrestador(existing.metadata?.instrucoesPrestador || "");
+      setObservacaoCliente(existing.metadata?.observacaoCliente || "");
       
       if (existing.clienteId && existing.prestadorVeiculo?.tipo_veiculo) {
         buscarTabelaValoresCliente(existing.clienteId, existing.clienteNome || "", existing.prestadorVeiculo.tipo_veiculo, existing.data);
@@ -518,6 +546,9 @@ export default function EscalaLista() {
       setNovoTurno("integral");
       setNovoTipo("reserva");
       setNovaOS("");
+      const dtStr = format(data, 'yyyyMMdd');
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      setNumeroOC(`OC-${dtStr}-${randomSuffix}`);
       setHorarioInicio("08:00");
       setHorarioFim("18:00");
       setKmExcedentePrestador(0);
@@ -562,6 +593,10 @@ export default function EscalaLista() {
       setAjusteClienteMotivo("");
       setKmExcedentePrestador(0);
       setMinutosEspera(0);
+      setStatusOperacional("planejado");
+      setObservacaoOperacional("");
+      setInstrucoesPrestador("");
+      setObservacaoCliente("");
       
       buscarDadosVeiculoPrestador(prestadorId);
     }
@@ -609,7 +644,7 @@ export default function EscalaLista() {
     }
 
     const totals = calcularTotalAlocacao();
-    const existing = alocacoes.find(a => a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data), selectedCell?.data ? selectedCell.data : new Date()));
+    const existing = alocacoes.find(a => a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), selectedCell?.data ? selectedCell.data : new Date()));
     const prestadorSelecionado = prestadores.find(p => p.id === novoPrestadorId);
     
     let financeiroStatus = 'ok';
@@ -624,7 +659,7 @@ export default function EscalaLista() {
       prestadorNome: novoPrestadorNome,
       clienteId: novoClienteId,
       clienteNome: novoClienteNome,
-      data: selectedCell?.data ? selectedCell.data.toISOString() : new Date().toISOString(),
+      data: (selectedCell?.data ? format(selectedCell.data, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')) + 'T12:00:00',
       turno: novoTurno,
       tipo: novoTipo,
       os: novaOS,
@@ -643,7 +678,7 @@ export default function EscalaLista() {
       tempoFimCarregamento,
       tempoSaidaRua,
       tempoFinalizacaoEntregas,
-      metadata: { financeiro_status: financeiroStatus }
+      metadata: { kmInicial, kmFinal, numeroOC, financeiro_status: financeiroStatus, statusOperacional, observacaoOperacional, instrucoesPrestador, observacaoCliente, financeiro, totals, os: novaOS, turno: novoTurno, horarioInicio, horarioFim, tempoChegadaPatio, tempoInicioCarregamento, tempoFimCarregamento, tempoSaidaRua, tempoFinalizacaoEntregas }
     };
 
     // --- Payload para o banco (snake_case conforme schema alocacoes_escala) ---
@@ -666,11 +701,17 @@ export default function EscalaLista() {
       valor_ajudante: (financeiro.ajudantes || 0) * (financeiro.valorAjudante || 0),
       valor_adicional: totals.prestador.adicionais,
       valor_desconto: totals.prestador.descontos,
-      valor_total: totals.prestador.total, // Total Repasse
       km_realizados: Math.max((kmFinal || 0) - (kmInicial || 0), 0),
       // Metadados extras
       metadata: {
+        kmInicial,
+        kmFinal,
+        numeroOC,
         financeiro_status: financeiroStatus,
+        statusOperacional,
+        observacaoOperacional,
+        instrucoesPrestador,
+        observacaoCliente,
         financeiro: financeiro,
         totals: totals,
         os: novaOS,
@@ -707,10 +748,23 @@ export default function EscalaLista() {
       }
     };
 
+    console.log("[DEBUG] Salvando alocacao no banco...", {
+      payload, 
+      id_existente: existing?.id, 
+      data_original: selectedCell?.data,
+      data_salva: payload.data_escala,
+      prestador_id: payload.prestador_id,
+      cliente_id: payload.cliente_id,
+      valor_frete: payload.valor_frete,
+      valor_repasse: payload.valor_repasse,
+      km_realizados: payload.km_realizados
+    });
+
     try {
       if (existing?.id && typeof existing.id === 'string' && existing.id.includes('-')) {
         // Atualizar registro existente no Supabase
-        const { error } = await supabase.from('alocacoes_escala').update(payload).eq('id', existing.id);
+        const { error, data } = await supabase.from('alocacoes_escala').update(payload).eq('id', existing.id).select();
+        console.log("[DEBUG] Resposta Supabase UPDATE:", { error, data });
         if (error && error.code !== '42P01') throw error;
         if (!error) {
           setAlocacoes(prev => prev.map(a => a.id === existing.id ? { ...novaAlocacao, id: existing.id } : a));
@@ -721,9 +775,10 @@ export default function EscalaLista() {
       } else {
         // Inserir novo registro no Supabase
         const { data: inserted, error } = await supabase.from('alocacoes_escala').insert([payload]).select('id').single();
+        console.log("[DEBUG] Resposta Supabase INSERT:", { error, inserted });
         if (error && error.code === '42P01') {
           // Tabela não existe → fallback localStorage
-          const novas = [...alocacoes.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data), new Date(novaAlocacao.data)))), novaAlocacao];
+          const novas = [...alocacoes.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), new Date(novaAlocacao.data.includes('T') ? novaAlocacao.data : novaAlocacao.data + 'T12:00:00')))), novaAlocacao];
           setAlocacoes(novas);
           localStorage.setItem("conexao_escala_operacional", JSON.stringify(novas));
           toast.info('Salvo localmente (tabela não encontrada no banco)');
@@ -731,13 +786,13 @@ export default function EscalaLista() {
           throw error;
         } else {
           const idReal = inserted?.id || novaAlocacao.id;
-          setAlocacoes(prev => [...prev.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data), new Date(novaAlocacao.data)))), { ...novaAlocacao, id: idReal }]);
+          setAlocacoes(prev => [...prev.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), new Date(novaAlocacao.data.includes('T') ? novaAlocacao.data : novaAlocacao.data + 'T12:00:00')))), { ...novaAlocacao, id: idReal }]);
           toast.success(`Alocação de ${novoPrestadorNome || 'prestador'} salva!`);
         }
       }
     } catch (err: any) {
       // Fallback genérico para localStorage
-      const novas = [...alocacoes.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data), new Date(novaAlocacao.data)))), novaAlocacao];
+      const novas = [...alocacoes.filter(a => !(a.prestadorId === novoPrestadorId && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), new Date(novaAlocacao.data.includes('T') ? novaAlocacao.data : novaAlocacao.data + 'T12:00:00')))), novaAlocacao];
       setAlocacoes(novas);
       localStorage.setItem("conexao_escala_operacional", JSON.stringify(novas));
       toast.success('Alocação salva localmente!');
@@ -759,7 +814,7 @@ export default function EscalaLista() {
        // Alocar 30% da frota aleatoriamente
        prestadoresFiltrados.forEach(p => {
           if (Math.random() > 0.7) {
-             const exist = novas.find(a => a.prestadorId === p.id && isSameDay(new Date(a.data), d));
+             const exist = novas.find(a => a.prestadorId === p.id && isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), d));
              if (!exist) {
                novas.push({
                  id: Math.random(),
@@ -1123,10 +1178,10 @@ export default function EscalaLista() {
 
        {/* Quick KPIs as Operational Chips */}
        <div className="flex items-center gap-2 shrink-0 px-4 py-1.5 bg-slate-100 border-b border-slate-200 overflow-x-auto custom-scrollbar">
-          <Badge variant="outline" className="bg-blue-50/80 text-blue-700 border-blue-200 flex items-center gap-1.5 px-2 py-0.5"><Truck className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">{alocacoesFiltradas.length}</span> <span className="text-[9px] uppercase font-semibold">Alocações</span></Badge>
-          <Badge variant="outline" className="bg-emerald-50/80 text-emerald-700 border-emerald-200 flex items-center gap-1.5 px-2 py-0.5"><CheckCircle className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">{alocacoesFiltradas.filter(a => a.status === 'operacao' || a.status === 'confirmado' || a.statusPagamento === 'a pagar').length}</span> <span className="text-[9px] uppercase font-semibold">Em Rota/Conf.</span></Badge>
-          <Badge variant="outline" className="bg-amber-50/80 text-amber-700 border-amber-200 flex items-center gap-1.5 px-2 py-0.5"><Clock className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">{alocacoesFiltradas.filter(a => a.tipo === 'reserva' || a.status === 'aguardando').length}</span> <span className="text-[9px] uppercase font-semibold">Aguardando</span></Badge>
-          <Badge variant="outline" className="bg-orange-50/80 text-orange-700 border-orange-200 flex items-center gap-1.5 px-2 py-0.5"><DollarSign className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">R$ {alocacoesFiltradas.reduce((acc, a) => acc + (a.totals?.total ?? a.metadata?.totals?.prestador?.total ?? 0), 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span> <span className="text-[9px] uppercase font-semibold">Repasse</span></Badge>
+          <Badge variant="outline" className="bg-blue-50/80 text-blue-700 border-blue-200 flex items-center gap-1.5 px-2 py-0.5"><Truck className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">{listaControleDiario.length}</span> <span className="text-[9px] uppercase font-semibold">Alocações</span></Badge>
+          <Badge variant="outline" className="bg-emerald-50/80 text-emerald-700 border-emerald-200 flex items-center gap-1.5 px-2 py-0.5"><CheckCircle className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">{listaControleDiario.filter(a => a.status === 'operacao' || a.status === 'confirmado' || a.statusPagamento === 'a pagar').length}</span> <span className="text-[9px] uppercase font-semibold">Em Rota/Conf.</span></Badge>
+          <Badge variant="outline" className="bg-amber-50/80 text-amber-700 border-amber-200 flex items-center gap-1.5 px-2 py-0.5"><Clock className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">{listaControleDiario.filter(a => a.tipo === 'reserva' || a.status === 'aguardando').length}</span> <span className="text-[9px] uppercase font-semibold">Aguardando</span></Badge>
+          <Badge variant="outline" className="bg-orange-50/80 text-orange-700 border-orange-200 flex items-center gap-1.5 px-2 py-0.5"><DollarSign className="w-3.5 h-3.5 opacity-70"/> <span className="font-bold text-sm">R$ {listaControleDiario.reduce((acc, a) => acc + (a.totals?.total ?? a.metadata?.totals?.prestador?.total ?? 0), 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span> <span className="text-[9px] uppercase font-semibold">Repasse</span></Badge>
        </div>
 
        {/* Main Tabs Area */}
@@ -1136,7 +1191,9 @@ export default function EscalaLista() {
                 <TabsTrigger value="tabelas" className="text-xs font-bold h-8 px-4 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200 data-[state=active]:text-primary"><FileText className="w-3.5 h-3.5 mr-1.5"/> Controle Diário</TabsTrigger>
                 <TabsTrigger value="grade" className="text-xs font-bold h-8 px-4 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200 data-[state=active]:text-primary"><Truck className="w-3.5 h-3.5 mr-1.5"/> Grade Horizontal</TabsTrigger>
                 <TabsTrigger value="calendario" className="text-xs font-bold h-8 px-4 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200 data-[state=active]:text-primary"><CalendarIcon className="w-3.5 h-3.5 mr-1.5"/> Calendário Mensal</TabsTrigger>
-                <TabsTrigger value="confirmacoes" className="text-xs font-bold h-8 px-4 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200 data-[state=active]:text-primary"><Check className="w-3.5 h-3.5 mr-1.5"/> Fila e Pátio</TabsTrigger>
+                 <TabsTrigger value="confirmacoes" className="text-xs font-bold h-8 px-4 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200 data-[state=active]:text-primary"><Check className="w-3.5 h-3.5 mr-1.5"/> Fila e Pátio</TabsTrigger>
+                 <TabsTrigger value="indicadores" className="text-xs font-bold h-8 px-4 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200 data-[state=active]:text-primary"><Activity className="w-3.5 h-3.5 mr-1.5"/> Indicadores</TabsTrigger>
+                 <TabsTrigger value="graficos" className="text-xs font-bold h-8 px-4 rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-slate-200 data-[state=active]:text-primary"><BarChart3 className="w-3.5 h-3.5 mr-1.5"/> Gráficos</TabsTrigger>
              </TabsList>
           </div>
 
@@ -1156,7 +1213,7 @@ export default function EscalaLista() {
                    
                    return gridDays.map((d, index) => {
                      const isSelectedPeriod = diasPeriodo.some((pDay) => isSameDay(pDay, d));
-                     const dayAlocacoes = alocacoesFiltradas.filter((a) => isSameDay(new Date(a.data), d));
+                     const dayAlocacoes = alocacoesFiltradas.filter((a) => isSameDay(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), d));
                      const isToday = isSameDay(d, new Date());
                      const isCurrentMonth = d.getMonth() === currentDate.getMonth();
 
@@ -1252,7 +1309,7 @@ export default function EscalaLista() {
                     prestadoresFiltrados.map(p => (
                     <div key={p.id} className="hover:bg-slate-50/50 transition" style={{display:'grid', gridTemplateColumns:`repeat(${diasPeriodo.length}, minmax(100px, 1fr))`}}>
                       {diasPeriodo.map((d, i) => {
-                        const res = alocacoesFiltradas.find(r => r.prestadorId === p.id && isSameDay(new Date(r.data), d));
+                        const res = alocacoesFiltradas.find(r => r.prestadorId === p.id && isSameDay(new Date(r.data.includes('T') ? r.data : r.data + 'T12:00:00'), d));
                         let slotStyle = "bg-white text-slate-400";
                         if (p.status === "inativo") slotStyle = "bg-slate-50 text-slate-300";
                         let slotLabel = "Livre";
@@ -1364,14 +1421,18 @@ export default function EscalaLista() {
                               </TableRow>
                             </TableHeader>
                             <TableBody className="divide-y divide-slate-100">
-                              {alocacoesFiltradas.filter(a => a.data && diasPeriodo.some(dp => isSameDay(dp, new Date(a.data)))).length === 0 ? (
-                                <TableRow>
-                                  <TableCell colSpan={14} className="h-32 text-center text-slate-500 font-medium">
-                                    Nenhuma alocação encontrada para os filtros selecionados.
-                                  </TableCell>
-                                </TableRow>
-                              ) : (
-                                alocacoesFiltradas.filter(a => a.data && diasPeriodo.some(dp => isSameDay(dp, new Date(a.data)))).map((a, i) => {
+                              {(() => {
+                                console.log("[DEBUG] Lista usada pelo Controle Diario:", listaControleDiario.length, "itens", listaControleDiario);
+                                if (listaControleDiario.length === 0) {
+                                  return (
+                                    <TableRow>
+                                      <TableCell colSpan={14} className="h-32 text-center text-slate-500 font-medium">
+                                        Nenhuma alocação encontrada para os filtros selecionados.
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                }
+                                return listaControleDiario.map((a, i) => {
                                   const prest = prestadores.find(p => p.id === a.prestadorId);
                                   const veiculoLabel = prest ? (TIPO_VEICULO_LABEL[prest.veiculo as keyof typeof TIPO_VEICULO_LABEL] || prest.veiculo) : (a.prestadorVeiculo?.tipo_veiculo || "—");
                                   const placaLabel = prest?.placa || a.prestadorVeiculo?.placa || "—";
@@ -1413,7 +1474,7 @@ export default function EscalaLista() {
                                       <TableCell className="text-[10px] font-semibold text-slate-500">{a.clienteNome || "—"}</TableCell>
                                       <TableCell className="text-xs font-semibold text-slate-700">{veiculoLabel}</TableCell>
                                       <TableCell><span className="font-mono font-bold text-slate-800 bg-slate-100 border-t-2 border-t-blue-600 border-x border-b border-slate-300 px-1.5 py-0.5 rounded shadow-[0_1px_2px_rgba(0,0,0,0.1)] text-[10px] uppercase tracking-wider">{placaLabel}</span></TableCell>
-                                      <TableCell className="text-xs font-bold text-slate-700">{a.os || "—"}</TableCell>
+                                      <TableCell className="text-xs font-bold text-slate-700">{a.metadata?.numeroOC || a.numero_oc || a.os || "—"}</TableCell>
                                       <TableCell>
                                         <Badge className={`text-[9px] font-bold px-1.5 py-0.5 flex items-center w-max gap-1 border shadow-sm ${statusStyle.color}`}>
                                           {statusStyle.icon}
@@ -1452,7 +1513,7 @@ export default function EscalaLista() {
                                         </div>
                                       </TableCell>
                                       <TableCell className="text-right pr-6 space-x-1">
-                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-blue-600" onClick={(e) => { e.stopPropagation(); handleCellClick(a.prestadorId, new Date(a.data)); }} title="Editar">
+                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-blue-600" onClick={(e) => { e.stopPropagation(); handleCellClick(a.prestadorId, new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00')); }} title="Editar">
                                           <Edit className="w-3.5 h-3.5" />
                                         </Button>
                                         <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-emerald-600" onClick={(e) => { e.stopPropagation(); handleShareWhatsApp(a); }} title="WhatsApp">
@@ -1465,7 +1526,7 @@ export default function EscalaLista() {
                                     </TableRow>
                                   );
                                 })
-                              )}
+                              })()}
                             </TableBody>
                           </Table>
                         </div>
@@ -1602,8 +1663,8 @@ export default function EscalaLista() {
 
         {/* Modal de Reserva */}
         <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
+          <DialogContent className="w-[90vw] max-w-[1200px] xl:max-w-[1400px] bg-slate-50/90 backdrop-blur-xl border-slate-200/60 shadow-2xl h-[90vh] flex flex-col overflow-hidden rounded-3xl p-0">
+            <div className="flex-none bg-white px-6 py-4 border-b border-slate-200 flex items-center justify-between z-20 shadow-sm"><DialogHeader>
               <DialogTitle>Gerenciar Alocação de Recurso</DialogTitle>
               <DialogDescription className="flex items-center flex-wrap gap-1 mt-1">
                 Alocação para <strong className="text-slate-800">{prestadorAtivo?.nome || 'Prestador em seleção'}</strong> em
@@ -1618,17 +1679,17 @@ export default function EscalaLista() {
                   }}
                 />
               </DialogDescription>
-            </DialogHeader>
+            </DialogHeader></div>
             
-            <Tabs defaultValue="dados" className="w-full">
-              <TabsList className="grid grid-cols-3 w-full">
-                <TabsTrigger value="dados" className="text-xs"><FileText className="w-3 h-3 mr-1"/>Dados da Alocação</TabsTrigger>
-                <TabsTrigger value="financeiro" className="text-xs"><DollarSign className="w-3 h-3 mr-1"/>Dados Financeiros</TabsTrigger>
-                <TabsTrigger value="resumo" className="text-xs"><Check className="w-3 h-3 mr-1"/>Resumo do Dia</TabsTrigger>
-              </TabsList>
+            
+              
 
-             <TabsContent value="dados" className="space-y-4 py-4">
-                <div className="space-y-1">
+             
+            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-slate-50/30">
+               {/* Coluna Esquerda: Setup da Viagem */}
+               <div className="flex-none w-full lg:w-[400px] bg-white border-r border-slate-200 p-6 overflow-y-auto custom-scrollbar flex flex-col gap-4 z-10 shadow-[4px_0_12px_rgba(0,0,0,0.02)]">
+                 <h3 className="text-sm font-extrabold text-slate-800 tracking-tight mb-2 flex items-center gap-2"><Truck className="w-4 h-4 text-indigo-600"/> Setup da Viagem</h3>
+                 <div className="space-y-1">
                    <Label className="text-xs font-bold text-primary">Prestador *</Label>
                    <div className="relative">
                      <Input 
@@ -1750,8 +1811,44 @@ export default function EscalaLista() {
                      placeholder="Vincular OS existente, se houver..."
                    />
                 </div>
-                
-                <div className="border-t pt-4 mt-4 space-y-3">
+                 <div className="space-y-1">
+                   <Label className="text-xs font-bold text-primary">Turno Operacional</Label>
+                   <Select value={novoTurno} onValueChange={setNovoTurno}>
+                     <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                     <SelectContent>
+                       <SelectItem value="madrugada">Madrugada</SelectItem>
+                       <SelectItem value="manha">Manhã</SelectItem>
+                       <SelectItem value="tarde">Tarde</SelectItem>
+                       <SelectItem value="noite">Noite</SelectItem>
+                       <SelectItem value="integral">Integral (24h)</SelectItem>
+                     </SelectContent>
+                   </Select>
+                 </div>
+               </div>
+
+               {/* Coluna Direita: Abas operacionais e financeiras */}
+               <div className="flex-1 overflow-y-auto custom-scrollbar p-6 flex flex-col">
+                 <Tabs defaultValue="dados" className="w-full flex flex-col min-h-0">
+              <div className="mb-4">
+                <TabsList className="grid grid-cols-4 w-full">
+                <TabsTrigger value="dados" className="text-xs"><FileText className="w-3 h-3 mr-1"/>Dados da Alocação</TabsTrigger>
+                <TabsTrigger value="financeiro" className="text-xs"><DollarSign className="w-3 h-3 mr-1"/>Dados Financeiros</TabsTrigger>
+                <TabsTrigger value="resumo" className="text-xs"><Check className="w-3 h-3 mr-1"/>Resumo do Dia</TabsTrigger>
+                <TabsTrigger value="status" className="text-xs"><Play className="w-3 h-3 mr-1"/>Status da Entrega</TabsTrigger>
+              </TabsList>
+              </div>
+                 
+
+<TabsContent value="dados" className="space-y-6">
+<div className="border-t pt-4 mt-4 space-y-3">
+                   <div className="space-y-1 mb-4">
+                     <Label className="text-xs">Nº OC / Ordem de Carregamento</Label>
+                     <Input 
+                       value={numeroOC} 
+                       onChange={(e) => setNumeroOC(e.target.value)} 
+                       placeholder="Ex: OC-20260511-1234"
+                     />
+                   </div>
                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Controle de KM e Franquia</h4>
                    <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
@@ -1781,8 +1878,9 @@ export default function EscalaLista() {
                    </div>
                    {(() => {
                      const kmRodados = Math.max(kmFinal - kmInicial, 0);
-                     const kmFranquia = tabelaValores?.km_franquia || 200;
-                     const valorKm = tabelaValores?.valor_km || 2.50;
+                     const prestadorSelecionado = prestadores.find(p => p.id === (novoPrestadorId || prestadorAtivo?.id));
+                     const kmFranquia = prestadorSelecionado?.financeiro_real?.franquia_km || 0;
+                     const valorKm = prestadorSelecionado?.financeiro_real?.valor_km || 0;
                      const kmExcedente = Math.max(kmRodados - kmFranquia, 0);
                      const totalExcedente = kmExcedente * valorKm;
                      const tabelaNaoConfigurada = novoClienteId && !regraEspecialAtiva;
@@ -1852,9 +1950,19 @@ export default function EscalaLista() {
                       <Input type="time" value={horarioFim} onChange={e => setHorarioFim(e.target.value)} />
                    </div>
                 </div>
-                <div className="space-y-1">
-                   <Label className="text-xs">Instruções / Observações</Label>
-                   <Textarea placeholder="Ex: Necessário chegar 30m antes na base." rows={2}/>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                   <div className="space-y-1">
+                      <Label className="text-xs">Instruções ao Prestador</Label>
+                      <Textarea value={instrucoesPrestador} onChange={e => setInstrucoesPrestador(e.target.value)} placeholder="Ex: Chegar 30m antes." rows={2} className="text-xs"/>
+                   </div>
+                   <div className="space-y-1">
+                      <Label className="text-xs">Observação Operacional</Label>
+                      <Textarea value={observacaoOperacional} onChange={e => setObservacaoOperacional(e.target.value)} placeholder="Ex: Doca 4 ocupada." rows={2} className="text-xs"/>
+                   </div>
+                   <div className="space-y-1">
+                      <Label className="text-xs">Observação p/ Faturamento</Label>
+                      <Textarea value={observacaoCliente} onChange={e => setObservacaoCliente(e.target.value)} placeholder="Ex: Diária extra autorizada." rows={2} className="text-xs"/>
+                   </div>
                 </div>
               </TabsContent>
               
@@ -2224,9 +2332,10 @@ export default function EscalaLista() {
                   {(() => {
                     const totals = calcularTotalAlocacao();
                     const horaSaida = tempoSaidaRua ? parseInt(tempoSaidaRua.split(":")[0]) : 8;
-                    const diariaBase = tabelaValores?.valor_base || 400;
-                    const kmFranquia = tabelaValores?.km_franquia || 200;
-                    const valorKm = tabelaValores?.valor_km || 2.50;
+                     const prestadorSelecionado = prestadores.find(p => p.id === (novoPrestadorId || prestadorAtivo?.id));
+                      const diariaBase = prestadorSelecionado?.financeiro_real?.valor_diaria || 350;
+                     const kmFranquia = prestadorSelecionado?.financeiro_real?.franquia_km || 0;
+                     const valorKm = prestadorSelecionado?.financeiro_real?.valor_km || 0;
                     const kmRodados = Math.max(kmFinal - kmInicial, 0);
                     
                     const tabelaNaoConfigurada = novoClienteId && !regraEspecialAtiva;
@@ -2257,7 +2366,8 @@ export default function EscalaLista() {
                     
                     const kmExcedente = Math.max(kmRodados - kmFranquia, 0);
                     const valorKmExcedente = kmExcedente * valorKm;
-                    const totalDia = diariaCalculada + (tabelaNaoConfigurada ? 0 : valorKmExcedente) + totals.totalAdicionais - totals.totalDescontos;
+                    const adicionaisManuais = Math.max(totals.totalAdicionais - valorKmExcedente, 0);
+                    const totalDia = diariaCalculada + valorKmExcedente + adicionaisManuais - totals.totalDescontos;
 
                     return (
                       <div className="space-y-3">
@@ -2297,42 +2407,22 @@ export default function EscalaLista() {
 
                         <div className="flex justify-between items-center text-xs py-1 border-b">
                           <span className="text-slate-500 font-semibold">Franquia KM:</span>
-                          {tabelaNaoConfigurada ? (
-                            <Badge className="bg-red-50 text-red-600 border border-red-100 font-bold text-[10px] border-0">
-                              Tabela não configurada
-                            </Badge>
-                          ) : (
-                            <span className="font-bold text-slate-800">{kmFranquia} km</span>
-                          )}
+                          <span className="font-bold text-slate-800">{kmFranquia} km</span>
                         </div>
 
                         <div className="flex justify-between items-center text-xs py-1 border-b">
                           <span className="text-slate-500 font-semibold">KM Excedente:</span>
-                          {tabelaNaoConfigurada ? (
-                            <span className="font-bold text-slate-400">-</span>
-                          ) : (
-                            <span className="font-bold text-orange-600">{kmExcedente} km</span>
-                          )}
+                          <span className="font-bold text-orange-600">{kmExcedente} km</span>
                         </div>
 
                         <div className="flex justify-between items-center text-xs py-1 border-b">
                           <span className="text-slate-500 font-semibold">Valor KM Adicional:</span>
-                          {tabelaNaoConfigurada ? (
-                            <Badge className="bg-red-50 text-red-600 border border-red-100 font-bold text-[10px] border-0">
-                              Tabela não configurada
-                            </Badge>
-                          ) : (
-                            <span className="font-bold text-slate-800">R$ {valorKm.toFixed(2)}</span>
-                          )}
+                          <span className="font-bold text-slate-800">R$ {valorKm.toFixed(2)}</span>
                         </div>
 
                         <div className="flex justify-between items-center text-xs py-1 border-b">
                           <span className="text-slate-500 font-semibold">Total KM Excedente:</span>
-                          {tabelaNaoConfigurada ? (
-                            <span className="font-bold text-slate-400">-</span>
-                          ) : (
-                            <span className="font-bold text-slate-800">R$ {valorKmExcedente.toFixed(2)}</span>
-                          )}
+                          <span className="font-bold text-slate-800">R$ {valorKmExcedente.toFixed(2)}</span>
                         </div>
 
                         <div className="flex justify-between items-center text-xs py-1 border-b">
@@ -2351,7 +2441,7 @@ export default function EscalaLista() {
 
                         <div className="flex justify-between items-center text-xs py-1 border-b text-muted-foreground">
                           <span>+ Adicionais Financeiros:</span>
-                          <span className="font-medium text-slate-800">R$ {totals.totalAdicionais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          <span className="font-medium text-slate-800">R$ {adicionaisManuais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                         </div>
 
                         <div className="flex justify-between items-center text-xs py-1 border-b text-red-500">
@@ -2389,7 +2479,7 @@ export default function EscalaLista() {
                                 kmInicial,
                                 kmFinal,
                                 totals: calcularTotalAlocacao(),
-                                metadata: { financeiro_status: prestadores.find(p => p.id === (novoPrestadorId || prestadorAtivo?.id))?.financeiro_real?.valor_diaria === 0 || !tabelaValores ? (!tabelaValores ? 'pendente' : 'fallback') : 'ok' }
+                                metadata: { financeiro_status: prestadores.find(p => p.id === (novoPrestadorId || prestadorAtivo?.id))?.financeiro_real?.valor_diaria === 0 || !tabelaValores ? (!tabelaValores ? 'pendente' : 'fallback') : 'ok', statusOperacional, observacaoOperacional }
                               };
                               handleGerarRelatorioPagamento(tempAloc);
                             }}
@@ -2402,14 +2492,277 @@ export default function EscalaLista() {
                   })()}
                 </div>
               </TabsContent>
-            </Tabs>
 
-            <DialogFooter className="flex justify-between items-center sm:justify-between mt-4">
+              <TabsContent value="status" className="py-4 space-y-6 max-h-[60vh] overflow-y-auto pr-1">
+                 {/* Status Visual Grid */}
+                 <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                   {[
+                     { id: 'planejado', label: 'Planejado', icon: CalendarIcon },
+                     { id: 'aguardando', label: 'Aguardando', icon: Clock },
+                     { id: 'carregando', label: 'Carregando', icon: Package },
+                     { id: 'em_rota', label: 'Em Rota', icon: Truck },
+                     { id: 'finalizado', label: 'Finalizado', icon: CheckCircle },
+                     { id: 'cancelado', label: 'Cancelado', icon: AlertTriangle }
+                   ].map(st => {
+                      const isActive = statusOperacional === st.id;
+                      const Icon = st.icon;
+                      return (
+                        <div 
+                          key={st.id} 
+                          onClick={() => setStatusOperacional(st.id)}
+                          className={`cursor-pointer border rounded-xl p-3 flex flex-col items-center justify-center gap-2 text-center transition-all ${isActive ? 'bg-indigo-50 border-indigo-500 shadow-md ring-1 ring-indigo-500 ring-offset-1' : 'bg-white border-slate-200 hover:border-indigo-300 hover:bg-slate-50'}`}
+                        >
+                          <Icon className={`w-5 h-5 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
+                          <span className={`text-[10px] uppercase font-bold ${isActive ? 'text-indigo-700' : 'text-slate-500'}`}>{st.label}</span>
+                        </div>
+                      )
+                   })}
+                 </div>
+
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   {/* Cronograma Visual */}
+                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-4 border-b pb-2">Timeline Operacional</h4>
+                     <div className="space-y-4">
+                       {[
+                         { label: "Alocado", time: horarioInicio || "--:--", done: !!horarioInicio },
+                         { label: "Chegada no Pátio", time: tempoChegadaPatio || "--:--", done: !!tempoChegadaPatio },
+                         { label: "Início Carregamento", time: tempoInicioCarregamento || "--:--", done: !!tempoInicioCarregamento },
+                         { label: "Fim Carregamento", time: tempoFimCarregamento || "--:--", done: !!tempoFimCarregamento },
+                         { label: "Saída (Em Rota)", time: tempoSaidaRua || "--:--", done: !!tempoSaidaRua },
+                         { label: "Entregas Finalizadas", time: tempoFinalizacaoEntregas || "--:--", done: !!tempoFinalizacaoEntregas }
+                       ].map((step, idx, arr) => (
+                         <div key={idx} className="flex items-start gap-4 relative">
+                           {idx !== arr.length - 1 && <div className={`absolute left-[11px] top-6 w-0.5 h-6 ${step.done ? 'bg-indigo-500' : 'bg-slate-200'}`}></div>}
+                           <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 z-10 bg-white ${step.done ? 'border-indigo-500 text-indigo-500' : 'border-slate-300 text-slate-300'}`}>
+                             {step.done ? <Check className="w-3 h-3 font-bold"/> : <div className="w-1.5 h-1.5 rounded-full bg-slate-300"/>}
+                           </div>
+                           <div className="flex-1 flex justify-between items-center pt-1">
+                             <span className={`text-xs font-bold ${step.done ? 'text-slate-800' : 'text-slate-400'}`}>{step.label}</span>
+                             <span className={`text-xs font-mono ${step.done ? 'text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md' : 'text-slate-400'}`}>{step.time}</span>
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                   </div>
+
+                   {/* Observação */}
+                   <div className="space-y-2">
+                     <Label className="text-xs font-bold text-primary">Observação Operacional</Label>
+                     <textarea 
+                       className="flex w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 min-h-[200px] resize-y custom-scrollbar" 
+                       placeholder="Adicione observações importantes, ocorrências ou detalhes sobre o andamento da viagem..."
+                       value={observacaoOperacional}
+                       onChange={e => setObservacaoOperacional(e.target.value)}
+                     />
+                   </div>
+                 </div>
+                  </TabsContent>
+
+                  <TabsContent value="indicadores" className="data-[state=active]:flex-1 data-[state=active]:flex data-[state=active]:flex-col overflow-auto m-0 p-0 bg-white custom-scrollbar h-full">
+                    {(() => {
+                      const dados = listaControleDiario;
+                      const totalOps = dados.length;
+                      const totalValorCliente = dados.reduce(function(s, a) { return s + (Number(a.valorTotal) || 0); }, 0);
+                      const totalRepasse = dados.reduce(function(s, a) { return s + (Number(a.valorFrete) || 0) + (Number(a.valorPedagio) || 0) + (Number(a.valorAjudante) || 0) + (Number(a.valorAdicional) || 0) - (Number(a.valorDesconto) || 0); }, 0);
+                      const margemTotal = totalValorCliente - totalRepasse;
+                      const margemPct = totalValorCliente > 0 ? (margemTotal / totalValorCliente * 100) : 0;
+                      const kmTotal = dados.reduce(function(s, a) { return s + (Number(a.kmRealizados) || 0); }, 0);
+                      const ticketMedio = totalOps > 0 ? totalValorCliente / totalOps : 0;
+                      const prestadoresUnicos = new Set(dados.map(function(a) { return a.prestadorId; }).filter(Boolean));
+                      const opsPorStatus: Record<string, number> = {};
+                      dados.forEach(function(a) {
+                        const st = a.status || 'indefinido';
+                        opsPorStatus[st] = (opsPorStatus[st] || 0) + 1;
+                      });
+                      const formatar = function(v: number) { return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+                      return (
+                        <div className="p-8 space-y-8 overflow-y-auto h-full">
+                          <div>
+                            <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Activity className="w-5 h-5 text-primary" /> Indicadores da Escala</h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Operacoes</span>
+                                <p className="text-3xl font-black text-slate-800 mt-1">{totalOps || '—'}</p>
+                              </div>
+                              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Valor Cliente</span>
+                                <p className="text-3xl font-black text-blue-600 mt-1">{totalValorCliente > 0 ? 'R$ ' + formatar(totalValorCliente) : '—'}</p>
+                              </div>
+                              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Repasse Prestador</span>
+                                <p className="text-3xl font-black text-orange-600 mt-1">{totalRepasse > 0 ? 'R$ ' + formatar(totalRepasse) : '—'}</p>
+                              </div>
+                              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Margem</span>
+                                <p className={`text-3xl font-black mt-1 ${margemTotal >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                  {margemTotal !== 0 ? 'R$ ' + formatar(margemTotal) : '—'}
+                                </p>
+                                <span className={`text-xs font-semibold ${margemPct >= 20 ? 'text-emerald-500' : margemPct >= 0 ? 'text-amber-500' : 'text-red-500'}`}>
+                                  {margemPct.toFixed(1)}%
+                                </span>
+                              </div>
+                              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">KM Rodado</span>
+                                <p className="text-3xl font-black text-slate-800 mt-1">{kmTotal > 0 ? kmTotal.toLocaleString('pt-BR') + ' km' : '—'}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ticket Medio</span>
+                              <p className="text-2xl font-black text-slate-800 mt-1">{ticketMedio > 0 ? 'R$ ' + formatar(ticketMedio) : '—'}</p>
+                            </div>
+                            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Prestadores Ativos</span>
+                              <p className="text-2xl font-black text-slate-800 mt-1">{prestadoresUnicos.size || '—'}</p>
+                            </div>
+                            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Margem %</span>
+                              <p className={`text-2xl font-black mt-1 ${margemPct >= 20 ? 'text-emerald-600' : margemPct >= 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                                {margemPct.toFixed(1)}%
+                              </p>
+                            </div>
+                          </div>
+
+                          {Object.keys(opsPorStatus).length > 0 && (
+                            <div>
+                              <h4 className="text-sm font-bold text-slate-700 mb-3">Operacoes por Status</h4>
+                              <div className="space-y-2">
+                                {Object.entries(opsPorStatus).map(function(_a) {
+                                  const status = _a[0];
+                                  const qtd = _a[1];
+                                  const pct = totalOps > 0 ? (qtd / totalOps * 100) : 0;
+                                  return (
+                                    <div key={status} className="flex items-center gap-3">
+                                      <span className="text-xs font-medium text-slate-600 w-28 capitalize">{status.replace(/_/g, ' ')}</span>
+                                      <div className="flex-1 bg-slate-100 rounded-full h-6 overflow-hidden">
+                                        <div className="bg-primary h-full rounded-full transition-all" style={{width: pct + '%'}} />
+                                      </div>
+                                      <span className="text-xs font-bold text-slate-700 w-12 text-right">{qtd}</span>
+                                      <span className="text-xs text-slate-400 w-12 text-right">{pct.toFixed(1)}%</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </TabsContent>
+
+                  <TabsContent value="graficos" className="data-[state=active]:flex-1 data-[state=active]:flex data-[state=active]:flex-col overflow-auto m-0 p-0 bg-slate-50 custom-scrollbar h-full">
+                    {(() => {
+                      const dados = listaControleDiario;
+                      if (dados.length === 0) {
+                        return (
+                          <div className="flex items-center justify-center h-full">
+                            <div className="text-center text-slate-400">
+                              <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                              <p className="text-sm font-semibold">Nenhum dado disponivel</p>
+                              <p className="text-xs mt-1">Ajuste os filtros ou periodo para visualizar os graficos.</p>
+                            </div>
+                          </div>
+                        );
+                      }
+                      const diasMap: Record<string, { cliente: number; repasse: number; margem: number; }> = {};
+                      dados.forEach(function(a) {
+                        try { const d = format(new Date(a.data.includes('T') ? a.data : a.data + 'T12:00:00'), 'dd/MM'); const vc = Number(a.valorTotal) || 0; const rp = (Number(a.valorFrete)||0) + (Number(a.valorPedagio)||0) + (Number(a.valorAjudante)||0) + (Number(a.valorAdicional)||0) - (Number(a.valorDesconto)||0); const m = vc - rp; if (!diasMap[d]) diasMap[d] = { cliente: 0, repasse: 0, margem: 0 }; diasMap[d].cliente += vc; diasMap[d].repasse += rp; diasMap[d].margem += m; } catch(_e){}
+                      });
+                      const evolucaoDiaria = Object.entries(diasMap).map(function(_a) { return { dia: _a[0], ..._a[1] }; }).sort(function(a,b) { return a.dia.localeCompare(b.dia); });
+
+                      const statusCount: Record<string, number> = {};
+                      dados.forEach(function(a) { const s = a.status || 'indefinido'; statusCount[s] = (statusCount[s] || 0) + 1; });
+                      const statusData = Object.entries(statusCount).map(function(_a) { return { name: _a[0].replace(/_/g, ' '), value: _a[1] }; });
+
+                      const clienteMap: Record<string, { qtd: number; valor: number }> = {};
+                      dados.forEach(function(a) { const k = a.clienteNome || '—'; if (!clienteMap[k]) clienteMap[k] = { qtd: 0, valor: 0 }; clienteMap[k].qtd++; clienteMap[k].valor += Number(a.valorTotal) || 0; });
+                      const clienteData = Object.entries(clienteMap).sort(function(a,b) { return b[1].valor - a[1].valor; }).slice(0, 10);
+
+                      const prestMap: Record<string, { qtd: number; valor: number }> = {};
+                      dados.forEach(function(a) { const k = a.prestadorNome || '—'; if (!prestMap[k]) prestMap[k] = { qtd: 0, valor: 0 }; prestMap[k].qtd++; const rp = (Number(a.valorFrete)||0) + (Number(a.valorPedagio)||0) + (Number(a.valorAjudante)||0) + (Number(a.valorAdicional)||0) - (Number(a.valorDesconto)||0); prestMap[k].valor += rp; });
+                      const prestData = Object.entries(prestMap).sort(function(a,b) { return b[1].qtd - a[1].qtd; }).slice(0, 10);
+
+                      return (
+                        <div className="p-6 space-y-8 overflow-y-auto h-full">
+                          <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-primary" /> Gráficos da Escala</h3>
+
+                          <Card>
+                            <CardHeader className="pb-2"><CardTitle className="text-sm font-bold">Evolucao Financeira por Dia</CardTitle></CardHeader>
+                            <CardContent>
+                              <ResponsiveContainer width="100%" height={260}>
+                                <LineChart data={evolucaoDiaria}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                  <XAxis dataKey="dia" tick={{ fontSize: 11 }} />
+                                  <YAxis tick={{ fontSize: 11 }} />
+                                  <Tooltip formatter={function(v: number) { return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2 }); }} />
+                                  <Legend />
+                                  <Line type="monotone" dataKey="cliente" name="Valor Cliente" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                                  <Line type="monotone" dataKey="repasse" name="Repasse" stroke="#f97316" strokeWidth={2} dot={false} />
+                                  <Line type="monotone" dataKey="margem" name="Margem" stroke="#10b981" strokeWidth={2} dot={false} />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </CardContent>
+                          </Card>
+
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <Card className="lg:col-span-1">
+                              <CardHeader className="pb-2"><CardTitle className="text-sm font-bold">Operacoes por Status</CardTitle></CardHeader>
+                              <CardContent>
+                                <ResponsiveContainer width="100%" height={240}>
+                                  <BarChart data={statusData} layout="vertical">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                    <XAxis type="number" tick={{ fontSize: 10 }} />
+                                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
+                                    <Tooltip />
+                                    <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              </CardContent>
+                            </Card>
+                            <Card className="lg:col-span-1">
+                              <CardHeader className="pb-2"><CardTitle className="text-sm font-bold">Top Clientes (valor)</CardTitle></CardHeader>
+                              <CardContent>
+                                <ResponsiveContainer width="100%" height={240}>
+                                  <BarChart data={clienteData.map(function(c) { return { name: c[0].length > 18 ? c[0].slice(0, 15) + '...' : c[0], valor: c[1].valor }; })} layout="vertical">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                    <XAxis type="number" tick={{ fontSize: 10 }} />
+                                    <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 10 }} />
+                                    <Tooltip formatter={function(v: number) { return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2 }); }} />
+                                    <Bar dataKey="valor" fill="#06b6d4" radius={[0, 4, 4, 0]} />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              </CardContent>
+                            </Card>
+                            <Card className="lg:col-span-1">
+                              <CardHeader className="pb-2"><CardTitle className="text-sm font-bold">Top Prestadores (ops)</CardTitle></CardHeader>
+                              <CardContent>
+                                <ResponsiveContainer width="100%" height={240}>
+                                  <BarChart data={prestData.map(function(p) { return { name: p[0].length > 18 ? p[0].slice(0, 15) + '...' : p[0], qtd: p[1].qtd }; })} layout="vertical">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                    <XAxis type="number" tick={{ fontSize: 10 }} />
+                                    <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 10 }} />
+                                    <Tooltip />
+                                    <Bar dataKey="qtd" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </TabsContent>
+
+                </Tabs>
+</div></div><div className="flex-none bg-white border-t border-slate-200 p-4 z-20 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]"><DialogFooter className="flex justify-between items-center sm:justify-between w-full">
               <Button variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 bg-emerald-50/50 gap-2 font-bold text-xs" onClick={() => handleShareWhatsApp(alocacaoEmEdicao)}>
                 <MessageCircle className="w-4 h-4"/> Confirmar via WA
               </Button>
               <Button onClick={handleCreateReserva}>Salvar na Grade</Button>
-            </DialogFooter>
+            </DialogFooter></div>
           </DialogContent>
          </Dialog>
 
@@ -2589,3 +2942,6 @@ export default function EscalaLista() {
     </div>
   );
 }
+
+
+

@@ -23,7 +23,7 @@ export interface RegraFaixa {
 export interface AdicionaisTaxas {
   pedagio: { ativo: boolean; tipo: "%"|"R$"; valor: number };
   ajudante: { ativo: boolean; valor: number };
-  espera: { ativo: boolean; minutosFree: number; valorHora: number };
+  espera: { ativo: boolean; minutosFree: number; valorHora: number; faixas?: { minInicial: number; minFinal: number | null; valor: number }[] };
   descarga: { ativo: boolean; valor: number };
   taxaAdmin: { ativo: boolean; valorPorcent: number };
   devolucao: { ativo: boolean; valor: number };
@@ -110,7 +110,7 @@ export const emptyTabelaValores = (): TabelaValores => ({
   adicionais: {
     pedagio: { ativo: false, tipo: "R$", valor: 0 },
     ajudante: { ativo: false, valor: 0 },
-    espera: { ativo: false, minutosFree: 60, valorHora: 0 },
+    espera: { ativo: false, minutosFree: 60, valorHora: 0, faixas: [] },
     descarga: { ativo: false, valor: 0 },
     taxaAdmin: { ativo: false, valorPorcent: 0 },
     devolucao: { ativo: false, valor: 0 },

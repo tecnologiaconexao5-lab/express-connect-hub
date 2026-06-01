@@ -1,355 +1,161 @@
 const fs = require('fs');
-let code = fs.readFileSync('src/components/financeiro/PagamentoPrestadores.tsx', 'utf8');
+let code = fs.readFileSync('src/components/operacao/EscalaLista.tsx', 'utf8');
 
-// 1. Interfaces
-code = code.replace(
-  'interface PagamentoManual {',
-  'interface ExtratoContaCorrente {\n  id: string;\n  data: string;\n  origem: string;\n  descricao: string;\n  credito: number;\n  debito: number;\n  saldo: number;\n  status: string;\n}\n\ninterface PagamentoManual {'
-);
-code = code.replace(
-  'status_pagamento: string;\n  elegivel_lote: boolean;',
-  'status_pagamento: string;\n  status_aprovacao?: string;\n  elegivel_lote: boolean;\n  lote_id?: string;'
-);
+const regexFinanceiro = /<TabsContent value=\"financeiro\"[\s\S]*?<\/TabsContent>/;
+const matchFinanceiro = code.match(regexFinanceiro);
 
-// 2. States and imports
-code = code.replace(
-  'const [aba, setAba] = useState(searchParams.get("aba") || "listagem");',
-  'const [aba, setAba] = useState(searchParams.get("aba") || "listagem");\n  const [prestadorCC, setPrestadorCC] = useState<string>("");\n  const [extratoCC, setExtratoCC] = useState<ExtratoContaCorrente[]>([]);'
-);
+if (matchFinanceiro) {
+  // We'll replace it entirely with a cleanly separated one!
+  const novoFinanceiro = `<TabsContent value="financeiro" className="py-4 space-y-6 max-h-[60vh] overflow-y-auto pr-1">
+                {(() => {
+                  const totals = calcularTotalAlocacao();
+                  const faturamentoCliente = totals.faturamentoTotal;
+                  const repassePrestador = totals.repasseTotal;
+                  const margem = faturamentoCliente - repassePrestador;
+                  
+                  return (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Bloco 1: Faturamento Cliente */}
+                        <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                          <h4 className="text-sm font-bold text-blue-800 mb-3 border-b border-blue-100 pb-2 flex items-center gap-2">
+                            <TrendingUp className="w-4 h-4" />
+                            Faturamento Cliente
+                          </h4>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-slate-600">Diária Base</span>
+                              <span className="font-medium text-slate-800">{fmtBRL(totals.valorDiaria)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs">
+                              <span className="text-slate-600">KM Excedente ({Math.max(kmFinal - kmInicial - (tabelaValores?.km_franquia || 0), 0)}km x {fmtBRL(tabelaValores?.valor_km_excedente || 0)})</span>
+                              <span className="font-medium text-slate-800">{fmtBRL(Math.max(kmFinal - kmInicial - (tabelaValores?.km_franquia || 0), 0) * (tabelaValores?.valor_km_excedente || 0))}</span>
+                            </div>
+                            {ajusteClienteValor !== 0 && (
+                              <div className="flex justify-between text-xs">
+                                <span className="text-slate-600">Ajuste Manual</span>
+                                <span className="font-medium text-slate-800">{fmtBRL(ajusteClienteValor)}</span>
+                              </div>
+                            )}
+                            <div className="pt-2 mt-2 border-t border-blue-100/50 flex justify-between font-bold text-sm">
+                              <span className="text-blue-900">Total Cliente</span>
+                              <span className="text-blue-700">{fmtBRL(faturamentoCliente)}</span>
+                            </div>
+                          </div>
+                        </div>
 
-// 3. fetchExtratoContaCorrente
-const fetchExtratoStr = `
-  useEffect(() => {
-    if (prestadorCC && aba === 'conta-corrente') {
-      fetchExtratoContaCorrente(prestadorCC);
-    }
-  }, [prestadorCC, aba]);
+                        {/* Bloco 2: Repasse Prestador */}
+                        <div className="bg-orange-50/50 p-4 rounded-xl border border-orange-100">
+                          <h4 className="text-sm font-bold text-orange-800 mb-3 border-b border-orange-100 pb-2 flex items-center gap-2">
+                            <Truck className="w-4 h-4" />
+                            Repasse Prestador
+                          </h4>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-slate-600">Diária Motorista</span>
+                              <span className="font-medium text-slate-800">{fmtBRL(financeiro.valorDiaria)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs">
+                              <span className="text-slate-600">KM Adicional Prestador</span>
+                              <span className="font-medium text-slate-800">{fmtBRL(Math.max(kmFinal - kmInicial - (tabelaValores?.km_franquia || 0), 0) * (financeiro.valorKm || 0))}</span>
+                            </div>
+                            <div className="pt-2 mt-2 border-t border-orange-100/50 flex justify-between font-bold text-sm">
+                              <span className="text-orange-900">Total Prestador</span>
+                              <span className="text-orange-700">{fmtBRL(repassePrestador)}</span>
+                            </div>
+                          </div>
+                        </div>
 
-  const fetchExtratoContaCorrente = async (prestadorId: string) => {
-    try {
-      // Puxar OS finalizadas
-      const { data: osData, error: osError } = await supabase
-        .from('ordens_servico')
-        .select('id, numero, custo_prestador, pedagio, adicionais, descontos, data, status')
-        .eq('prestador_id', prestadorId)
-        .in('status', ['finalizada', 'concluida'])
-        .order('data', { ascending: true });
-
-      // Puxar pagamentos_prestadores (manuais/fechamentos)
-      const { data: pagData, error: pagError } = await supabase
-        .from('pagamentos_prestadores')
-        .select('*')
-        .eq('prestador_id', prestadorId)
-        .order('data_competencia', { ascending: true });
-
-      if (osError || pagError) throw osError || pagError;
-
-      let saldoAcumulado = 0;
-      const extrato: ExtratoContaCorrente[] = [];
-
-      (osData || []).forEach(os => {
-        const totalCred = (os.custo_prestador || 0) + (os.pedagio || 0) + (os.adicionais || 0);
-        const totalDeb = (os.descontos || 0);
-        saldoAcumulado += totalCred - totalDeb;
-        extrato.push({
-          id: os.id,
-          data: os.data || '',
-          origem: 'OS Finalizada',
-          descricao: \`OS \${os.numero}\`,
-          credito: totalCred,
-          debito: totalDeb,
-          saldo: saldoAcumulado,
-          status: os.status
-        });
-      });
-
-      (pagData || []).forEach(pag => {
-        if (pag.origem_lancamento === 'manual') {
-           const isCredito = pag.natureza === 'credito';
-           saldoAcumulado += isCredito ? pag.valor : -pag.valor;
-           extrato.push({
-             id: pag.id,
-             data: pag.data_competencia || pag.created_at,
-             origem: pag.tipo_lancamento,
-             descricao: pag.observacao || pag.tipo_lancamento,
-             credito: isCredito ? pag.valor : 0,
-             debito: !isCredito ? pag.valor : 0,
-             saldo: saldoAcumulado,
-             status: pag.status_pagamento
-           });
-        }
-      });
-
-      extrato.sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
-      
-      let saldoCron = 0;
-      extrato.forEach(e => {
-        saldoCron += e.credito - e.debito;
-        e.saldo = saldoCron;
-      });
-
-      setExtratoCC(extrato);
-    } catch (e: any) {
-      console.error('Erro ao buscar extrato', e);
-    }
-  };
-
-  const handleAtualizarStatus = async (id: string, updates: any) => {
-    try {
-      const { error } = await supabase.from('pagamentos_prestadores').update(updates).eq('id', id);
-      if (error) throw error;
-      toast.success('Status atualizado!');
-      fetchPagamentosManuais();
-    } catch (e: any) {
-      toast.error('Erro: ' + e.message);
-    }
-  };
-`;
-
-code = code.replace(
-  'const verificarElegibilidadeLote = (prestadorId: string): boolean => {',
-  fetchExtratoStr + '\n  const verificarElegibilidadeLote = (prestadorId: string): boolean => {'
-);
-
-// 4. Update Fechamento Automático
-const fechamentoAntigo = /try \{\s+const \{ data: pagamento, error \} = await supabase\s+\.from\("pagamentos_prestadores"\)\s+\.insert\(\[\{[\s\S]*?\}\]\)\s+\.select\(\)\s+\.single\(\);/m;
-const novoFechamento = `try {
-      const { data: existente } = await supabase
-        .from("pagamentos_prestadores")
-        .select("id")
-        .eq("prestador_id", selectedPrestador.id)
-        .eq("tipo_pagamento", "fechamento")
-        .eq("periodo_inicio", dataInicio)
-        .eq("periodo_fim", dataFim)
-        .maybeSingle();
-
-      if (existente) {
-        if (!window.confirm("Já existe um fechamento para este prestador neste período. Deseja atualizar os valores?")) {
-           return;
-        }
-      }
-
-      const payload = {
-          prestador_id: selectedPrestador.id,
-          prestador_nome: selectedPrestador.nome_completo,
-          prestador_documento: selectedPrestador.cpf_cnpj,
-          periodo_inicio: dataInicio,
-          periodo_fim: dataFim,
-          qtd_os: total.quantidade,
-          valor_servicos: total.servicos,
-          valor_reembolsos: ajustes.reembolso,
-          valor_bonus: ajustes.bonus,
-          valor_descontos: total.descontos + ajustes.desconto,
-          valor_adiantamentos: 0,
-          valor_liquido: total.liquido,
-          status_conferencia: "em_aberto",
-          status_pagamento: "pendente",
-          status_aprovacao: "aguardando_aprovacao",
-          tipo_pagamento: "fechamento",
-          origem_lancamento: "fechamento",
-          impacto_dre: true,
-          impacto_fluxo_caixa: true,
-          data_competencia: dataFim
-      };
-
-      let pagamentoId = existente?.id;
-      if (existente) {
-        const { error } = await supabase.from("pagamentos_prestadores").update(payload).eq("id", existente.id);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase.from("pagamentos_prestadores").insert([payload]).select().single();
-        if (error) throw error;
-        pagamentoId = data.id;
-      }`;
-code = code.replace(fechamentoAntigo, novoFechamento);
-
-// 5. Update UI Tabs
-code = code.replace(
-  '<div className="space-y-4">\n      <div className="flex items-center justify-between">',
-  '<div className="space-y-4">\n      <div className="flex items-center justify-between">'
-);
-
-const uiAntigo = /<Card>\s*<CardHeader className="pb-3">/;
-const uiNovo = `<Tabs value={aba} onValueChange={setAba}>
-        <TabsList>
-          <TabsTrigger value="listagem">Fechamentos e Pagamentos</TabsTrigger>
-          <TabsTrigger value="conta-corrente">Conta Corrente</TabsTrigger>
-        </TabsList>
-        <TabsContent value="listagem" className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">`;
-code = code.replace(uiAntigo, uiNovo);
-
-code = code.replace(
-  '<Dialog open={showDetalhe} onOpenChange={setShowDetalhe}>',
-  `        </TabsContent>
-        <TabsContent value="conta-corrente" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Conta Corrente do Prestador</CardTitle>
-              <CardDescription>Extrato financeiro com entradas, saídas e saldo acumulado</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="w-1/3">
-                <Label>Selecionar Prestador</Label>
-                <Select value={prestadorCC} onValueChange={setPrestadorCC}>
-                  <SelectTrigger><SelectValue placeholder="Escolha um prestador..." /></SelectTrigger>
-                  <SelectContent>
-                    {prestadores.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.nome_completo}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {prestadorCC && (
-                <div className="border rounded-lg">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Data</TableHead>
-                        <TableHead>Origem</TableHead>
-                        <TableHead>Descrição</TableHead>
-                        <TableHead className="text-right">Crédito (+)</TableHead>
-                        <TableHead className="text-right">Débito (-)</TableHead>
-                        <TableHead className="text-right">Saldo</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {extratoCC.length === 0 ? (
-                        <TableRow><TableCell colSpan={7} className="text-center py-4">Nenhum lançamento encontrado</TableCell></TableRow>
-                      ) : (
-                        extratoCC.map(e => (
-                          <TableRow key={e.id}>
-                            <TableCell>{new Date(e.data).toLocaleDateString('pt-BR')}</TableCell>
-                            <TableCell><Badge variant="outline">{e.origem}</Badge></TableCell>
-                            <TableCell>{e.descricao}</TableCell>
-                            <TableCell className="text-right text-green-600">{e.credito > 0 ? e.credito.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</TableCell>
-                            <TableCell className="text-right text-red-600">{e.debito > 0 ? e.debito.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</TableCell>
-                            <TableCell className={\`text-right font-bold \${e.saldo >= 0 ? 'text-blue-600' : 'text-red-600'}\`}>{e.saldo.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</TableCell>
-                            <TableCell><Badge variant="secondary">{e.status}</Badge></TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      <Dialog open={showDetalhe} onOpenChange={setShowDetalhe}>`
-);
-
-// Update Actions in Pagamentos Manuais
-const actionsAntigo = `                        {p.status_conferencia !== 'conferido' && (
-                          <Button size="icon" variant="ghost" title="Marcar Conferido" onClick={async () => {
-                            await supabase.from('pagamentos_prestadores').update({ status_conferencia: 'conferido', elegivel_lote: verificarElegibilidadeLote(p.prestador_id) && p.status_pagamento === 'pendente' && (p.natureza === 'credito' ? p.valor : -p.valor) > 0 }).eq('id', p.id);
-                            fetchPagamentosManuais();
-                          }}>
-                            <FileCheck className="w-4 h-4 text-blue-600" />
-                          </Button>
-                        )}
-                        {p.status_pagamento === "pendente" && p.status_conferencia === 'conferido' && (
-                          <Button size="icon" variant="ghost" title="Marcar Pago" onClick={() => handleMarcarPago(p.id)}>
-                            <Check className="w-4 h-4 text-green-600" />
-                          </Button>
-                        )}
-                        <Button size="icon" variant="ghost" title="Ver Detalhes">
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                        {p.status_pagamento !== "pago" && p.status_pagamento !== "cancelado" && (
-                          <Button size="icon" variant="ghost" title="Cancelar" onClick={async () => {
-                            await supabase.from('pagamentos_prestadores').update({ status_pagamento: 'cancelado' }).eq('id', p.id);
-                            fetchPagamentosManuais();
-                          }}>
-                            <X className="w-4 h-4 text-red-600" />
-                          </Button>
-                        )}`;
-
-const actionsNovo = `                        {p.status_conferencia !== 'conferido' && (
-                          <Button size="icon" variant="ghost" title="Marcar Conferido" onClick={() => handleAtualizarStatus(p.id, { status_conferencia: 'conferido', elegivel_lote: verificarElegibilidadeLote(p.prestador_id) })}>
-                            <FileCheck className="w-4 h-4 text-blue-600" />
-                          </Button>
-                        )}
-                        {p.status_conferencia === 'conferido' && (p.status_aprovacao === 'aguardando_aprovacao' || !p.status_aprovacao) && (
-                          <>
-                            <Button size="icon" variant="ghost" title="Aprovar Pagamento" onClick={() => handleAtualizarStatus(p.id, { status_aprovacao: 'aprovado' })}>
-                              <Check className="w-4 h-4 text-green-600" />
-                            </Button>
-                            <Button size="icon" variant="ghost" title="Rejeitar Pagamento" onClick={() => handleAtualizarStatus(p.id, { status_aprovacao: 'rejeitado' })}>
-                              <FileX className="w-4 h-4 text-red-600" />
-                            </Button>
-                          </>
-                        )}
-                        {p.status_aprovacao === 'aprovado' && p.status_pagamento === 'pendente' && p.elegivel_lote && (
-                          <Button size="sm" variant="outline" className="text-xs py-0 h-8" title="Liberar Lote" onClick={() => handleAtualizarStatus(p.id, { status_pagamento: 'em_lote' })}>
-                            Lote
-                          </Button>
-                        )}
-                        {(p.status_pagamento === 'pendente' || p.status_pagamento === 'em_lote') ? (
-                           <Button size="icon" variant="ghost" title="Marcar Pago" onClick={() => handleMarcarPago(p.id)}>
-                             <DollarSign className="w-4 h-4 text-green-600" />
-                           </Button>
-                        ) : null}
-                        <Button size="icon" variant="ghost" title="Ver Detalhes">
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                        {p.status_pagamento !== "pago" && p.status_pagamento !== "cancelado" && (
-                          <Button size="icon" variant="ghost" title="Cancelar" onClick={() => handleAtualizarStatus(p.id, { status_pagamento: 'cancelado' })}>
-                            <X className="w-4 h-4 text-red-600" />
-                          </Button>
-                        )}`;
-code = code.replace(actionsAntigo, actionsNovo);
-
-// 6. Append export function gerarLancamentosPrestadorPorOS
-const funcExport = `
-export async function gerarLancamentosPrestadorPorOS(os: any) {
-  if (!os || os.status !== 'finalizada' || !os.prestador_id) return;
+                        {/* Bloco 3: Resultado Operacional */}
+                        <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100">
+                          <h4 className="text-sm font-bold text-emerald-800 mb-3 border-b border-emerald-100 pb-2 flex items-center gap-2">
+                            <Wallet className="w-4 h-4" />
+                            Resultado Operacional
+                          </h4>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-xs">
+                              <span className="text-slate-600">Faturamento</span>
+                              <span className="font-medium text-emerald-700">{fmtBRL(faturamentoCliente)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs">
+                              <span className="text-slate-600">Custo</span>
+                              <span className="font-medium text-rose-600">-{fmtBRL(repassePrestador)}</span>
+                            </div>
+                            <div className="pt-2 mt-2 border-t border-emerald-100/50 flex justify-between font-bold text-sm">
+                              <span className="text-emerald-900">Margem Bruta</span>
+                              <span className="text-emerald-700">{fmtBRL(margem)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </TabsContent>`;
   
-  const { data: existente } = await supabase
-    .from('pagamentos_prestadores')
-    .select('id')
-    .eq('os_id', os.id)
-    .eq('origem_lancamento', 'os')
-    .maybeSingle();
-    
-  if (existente) return;
-  
-  const totalCred = (os.custo_prestador || 0) + (os.pedagio || 0) + (os.adicionais || 0);
-  const totalDeb = (os.descontos || 0);
-  const valorLiquido = totalCred - totalDeb;
-  
-  const payload = {
-    prestador_id: os.prestador_id,
-    os_id: os.id,
-    os_numero: os.numero,
-    tipo_lancamento: 'Serviço OS',
-    natureza: valorLiquido >= 0 ? 'credito' : 'debito',
-    valor: Math.abs(valorLiquido),
-    valor_liquido: valorLiquido,
-    valor_servicos: os.custo_prestador || 0,
-    valor_pedagio: os.pedagio || 0,
-    valor_adicionais: os.adicionais || 0,
-    valor_descontos: os.descontos || 0,
-    data_competencia: os.data || new Date().toISOString().split('T')[0],
-    status_conferencia: 'em_aberto',
-    status_aprovacao: 'aguardando_aprovacao',
-    status_pagamento: 'pendente',
-    origem_lancamento: 'os',
-    impacto_dre: true,
-    impacto_fluxo_caixa: true,
-    categoria_financeira: 'Custo Logístico'
-  };
-  
-  await supabase.from('pagamentos_prestadores').insert([payload]);
+  code = code.replace(regexFinanceiro, novoFinanceiro);
 }
+
+const statusBlock = `
+                {/* Aba Acompanhamento Operacional */}
+                <div className="mt-8 border-t border-slate-200 pt-6">
+                  <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-blue-500" />
+                    Acompanhamento Operacional
+                  </h3>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {/* Planejada */}
+                    <div className="border rounded-xl p-3 bg-white flex flex-col gap-1 relative overflow-hidden group hover:border-slate-300 transition-colors">
+                      <div className="absolute top-0 right-0 p-1.5 opacity-10">
+                        <Calendar className="w-8 h-8" />
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Status Inicial</span>
+                      <p className="font-medium text-sm text-slate-700">Planejada</p>
+                    </div>
+
+                    {/* Aguardando Chegada */}
+                    <div className="border rounded-xl p-3 bg-white flex flex-col gap-1 relative overflow-hidden group hover:border-orange-300 transition-colors cursor-pointer"
+                         onClick={() => setNovoStatus("aguardando")}>
+                      <div className="absolute top-0 right-0 p-1.5 opacity-10">
+                        <Clock className="w-8 h-8" />
+                      </div>
+                      <span className="text-[10px] font-bold text-orange-400 uppercase">No Pátio</span>
+                      <p className="font-medium text-sm text-slate-700">Aguard. Chegada</p>
+                      {novoStatus === 'aguardando' && <div className="absolute bottom-0 left-0 w-full h-1 bg-orange-400" />}
+                    </div>
+
+                    {/* Em Rota */}
+                    <div className="border rounded-xl p-3 bg-white flex flex-col gap-1 relative overflow-hidden group hover:border-blue-300 transition-colors cursor-pointer"
+                         onClick={() => setNovoStatus("operacao")}>
+                      <div className="absolute top-0 right-0 p-1.5 opacity-10">
+                        <Truck className="w-8 h-8" />
+                      </div>
+                      <span className="text-[10px] font-bold text-blue-400 uppercase">Em Serviço</span>
+                      <p className="font-medium text-sm text-slate-700">Em Rota</p>
+                      {novoStatus === 'operacao' && <div className="absolute bottom-0 left-0 w-full h-1 bg-blue-500" />}
+                    </div>
+
+                    {/* Finalizado */}
+                    <div className="border rounded-xl p-3 bg-white flex flex-col gap-1 relative overflow-hidden group hover:border-emerald-300 transition-colors cursor-pointer"
+                         onClick={() => setNovoStatus("finalizado")}>
+                      <div className="absolute top-0 right-0 p-1.5 opacity-10">
+                        <CheckCircle className="w-8 h-8" />
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-400 uppercase">Concluído</span>
+                      <p className="font-medium text-sm text-slate-700">Finalizado</p>
+                      {novoStatus === 'finalizado' && <div className="absolute bottom-0 left-0 w-full h-1 bg-emerald-500" />}
+                    </div>
+                  </div>
+                </div>
 `;
 
-code = code + '\n' + funcExport;
+// Insert the statusBlock inside the `resumo` tab just before the `</TabsContent>` of resumo
+const indexOfResumo = code.indexOf('<TabsContent value="resumo"');
+if (indexOfResumo !== -1) {
+  const indexOfResumoEnd = code.indexOf('</TabsContent>', indexOfResumo);
+  code = code.substring(0, indexOfResumoEnd) + statusBlock + code.substring(indexOfResumoEnd);
+}
 
-fs.writeFileSync('src/components/financeiro/PagamentoPrestadores.tsx', code);
-console.log('Done modifying.');
+fs.writeFileSync('src/components/operacao/EscalaLista.tsx', code);
+console.log('Financeiro e status injetados');

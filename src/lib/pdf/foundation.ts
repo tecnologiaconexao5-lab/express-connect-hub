@@ -580,7 +580,7 @@ export function drawFinancialComposition(
     if (line.isTotal) {
       doc.setDrawColor(ORANGE[0], ORANGE[1], ORANGE[2]);
       doc.setLineWidth(0.5);
-      doc.line(x + padding, curY - 7, valueX, curY - 7);
+      doc.line(x + padding, ly, valueX, ly);
     }
 
     doc.setFontSize(7.5);
@@ -759,9 +759,10 @@ export const fmtBRL = (v: any): string => {
 export const fmtDate = (d?: string): string => {
   try {
     if (!d) return "—";
-    const parsed = new Date(d);
+    const dateStr = d.length === 10 && d.includes("-") ? d + "T12:00:00" : d;
+    const parsed = new Date(dateStr);
     if (isNaN(parsed.getTime())) return "—";
-    return parsed.toLocaleDateString("pt-BR");
+    return parsed.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
   } catch {
     return "—";
   }

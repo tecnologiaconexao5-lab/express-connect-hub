@@ -294,6 +294,9 @@ export interface TalentosCandidato {
   dataContato: string
   ultimoContato: string
   observacoes: string
+  documentosAprovados: number
+  statusDocumental: string
+  disponibilidade: string
 }
 
 export interface AutomacaoRegra {

@@ -112,10 +112,15 @@ ALTER TABLE fiscal_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fiscal_logs ENABLE ROW LEVEL SECURITY;
 
 -- Policies (Simplified for admin/authenticated)
+DROP POLICY IF EXISTS "Enable ALL for authenticated users" ON fiscal_nfse;
 CREATE POLICY "Enable ALL for authenticated users" ON fiscal_nfse FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Enable ALL for authenticated users" ON fiscal_ctes;
 CREATE POLICY "Enable ALL for authenticated users" ON fiscal_ctes FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Enable ALL for authenticated users" ON fiscal_mdfes;
 CREATE POLICY "Enable ALL for authenticated users" ON fiscal_mdfes FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Enable ALL for authenticated users" ON fiscal_events;
 CREATE POLICY "Enable ALL for authenticated users" ON fiscal_events FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Enable ALL for authenticated users" ON fiscal_logs;
 CREATE POLICY "Enable ALL for authenticated users" ON fiscal_logs FOR ALL USING (auth.role() = 'authenticated');
 
 -- Functions/Triggers to update 'updated_at'

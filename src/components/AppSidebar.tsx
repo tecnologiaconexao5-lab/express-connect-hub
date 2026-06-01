@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ChevronDown, ChevronLeft, Truck } from "lucide-react";
+import { ChevronDown, Truck } from "lucide-react";
 import { sidebarItems, getVisibleSidebarItems, SidebarItem } from "@/lib/sidebarData";
 import { cn } from "@/lib/utils";
 
 interface Props {
-  collapsed: boolean;
-  onToggle: () => void;
+  expanded: boolean;
 }
 
 const SidebarItemComponent = ({
@@ -18,7 +17,8 @@ const SidebarItemComponent = ({
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const isActive = location.pathname === item.path;
+  const isActive = location.pathname === item.path ||
+    (item.children?.some(c => location.pathname + location.search === c.path));
   const [open, setOpen] = useState(isActive);
 
   const hasChildren = item.children && item.children.length > 0;
@@ -41,39 +41,41 @@ const SidebarItemComponent = ({
       <button
         onClick={handleClick}
         className={cn(
-          "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 group",
+          "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 group relative",
           isActive
-            ? "bg-tms-sidebar-active text-tms-sidebar-active-fg font-medium shadow-sm"
-            : "text-tms-sidebar-fg hover:bg-tms-sidebar-hover hover:text-tms-sidebar-fg"
+            ? "bg-primary/20 text-white font-medium shadow-sm border border-primary/30"
+            : "text-slate-300 hover:bg-white/10 hover:text-white"
         )}
-        title={collapsed ? item.title : undefined}
+        title={item.title}
       >
         <Icon className="w-5 h-5 shrink-0" />
-        {!collapsed && (
-          <>
-            <span className="flex-1 text-left truncate">{item.title}</span>
-            {hasChildren && (
-              <ChevronDown
-                className={cn(
-                  "w-4 h-4 transition-transform duration-200 opacity-60",
-                  open && "rotate-180"
-                )}
-              />
+        <span className={cn(
+          "flex-1 text-left truncate transition-all duration-200",
+          collapsed ? "w-0 opacity-0 overflow-hidden pointer-events-none" : "w-auto opacity-100"
+        )}>
+          {item.title}
+        </span>
+        {hasChildren && (
+          <ChevronDown
+            className={cn(
+              "w-4 h-4 transition-all duration-200 opacity-60 shrink-0",
+              collapsed && "hidden",
+              open && "rotate-180"
             )}
-          </>
+          />
         )}
       </button>
       {!collapsed && hasChildren && open && (
-        <div className="ml-5 mt-1 space-y-0.5 border-l-2 border-tms-sidebar-hover/50 pl-3">
+        <div className="ml-5 mt-1 space-y-0.5 border-l-2 border-white/10 pl-3">
           {item.children!.map((child) => (
             <button
               key={child.path}
               onClick={() => navigate(child.path)}
               className={cn(
-                "w-full text-left text-xs py-1.5 px-2 rounded-md transition-colors",
+                "w-full text-left text-xs py-1.5 px-2 rounded-lg transition-colors",
                 location.pathname + location.search === child.path
-                  ? "text-tms-sidebar-active font-semibold bg-tms-sidebar-active/10"
-                  : "text-tms-sidebar-fg/70 hover:text-tms-sidebar-fg hover:bg-tms-sidebar-hover/50"
+                  ? "text-white font-semibold bg-white/10"
+                  : "text-slate-400 hover:text-white hover:bg-white/5"
               )}
             >
               {child.title}
@@ -85,38 +87,36 @@ const SidebarItemComponent = ({
   );
 };
 
-const AppSidebar = ({ collapsed, onToggle }: Props) => {
+const AppSidebar = ({ expanded }: Props) => {
+  const collapsed = !expanded;
   return (
     <aside
       className={cn(
-        "h-screen bg-tms-sidebar flex flex-col transition-all duration-300 shrink-0 border-r border-tms-sidebar-hover/30",
-        collapsed ? "w-16" : "w-60"
+        "h-screen flex flex-col shrink-0 transition-all duration-300 ease-in-out z-50",
+        expanded && "shadow-2xl shadow-black/30"
       )}
+      style={{
+        background: "linear-gradient(180deg, #0f172a 0%, #1e293b 100%)",
+        width: expanded ? 240 : 64,
+        position: "absolute",
+        left: 0,
+        top: 0,
+      }}
     >
       {/* Logo */}
-      <div className="h-16 flex items-center px-4 border-b border-tms-sidebar-hover/30">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 shadow-sm">
-          <Truck className="w-4 h-4 text-primary-foreground" />
+      <div className="h-16 flex items-center px-4 border-b border-white/10">
+        <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shrink-0 shadow-lg shadow-primary/20">
+          <Truck className="w-4 h-4 text-white" />
         </div>
-        {!collapsed && (
-          <div className="ml-3 overflow-hidden">
-            <h2 className="text-sm font-bold text-tms-sidebar-fg truncate tracking-tight">
-              Conexão Express
-            </h2>
-            <p className="text-[10px] text-tms-sidebar-fg/50 font-medium">TMS</p>
-          </div>
-        )}
-        <button
-          onClick={onToggle}
-          className="ml-auto p-1.5 rounded-md hover:bg-tms-sidebar-hover text-tms-sidebar-fg/60 hover:text-tms-sidebar-fg transition"
-        >
-          <ChevronLeft
-            className={cn(
-              "w-4 h-4 transition-transform duration-200",
-              collapsed && "rotate-180"
-            )}
-          />
-        </button>
+        <div className={cn(
+          "ml-3 overflow-hidden transition-all duration-200",
+          collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+        )}>
+          <h2 className="text-sm font-bold text-white truncate tracking-tight">
+            Conexao Express
+          </h2>
+          <p className="text-[10px] text-slate-400 font-medium">TMS</p>
+        </div>
       </div>
 
       {/* Nav */}
@@ -125,6 +125,16 @@ const AppSidebar = ({ collapsed, onToggle }: Props) => {
           <SidebarItemComponent key={item.path} item={item} collapsed={collapsed} />
         ))}
       </nav>
+
+      {/* Footer */}
+      <div className={cn(
+        "p-3 border-t border-white/10 text-center transition-all duration-200",
+        collapsed ? "text-[9px]" : "text-[10px]"
+      )}>
+        <span className="text-slate-500">
+          {collapsed ? "v1.0" : "Express Connect Hub v1.0"}
+        </span>
+      </div>
     </aside>
   );
 };

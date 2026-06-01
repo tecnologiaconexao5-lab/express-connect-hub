@@ -275,6 +275,46 @@ export default function TabelaValoresForm({ tabela, modo, onVoltar, onSalvar }: 
                              <div className="w-full flex flex-col gap-1">
                                 <Input disabled={!cfg.ativo || readOnly} type="number" value={cfg.minutosFree} onChange={(e) => updateNested("adicionais", k as any, { minutosFree: Number(e.target.value) })} className="h-8 text-xs" placeholder="Tolerância (min)"/>
                                 <Input disabled={!cfg.ativo || readOnly} type="number" value={cfg.valorHora} onChange={(e) => updateNested("adicionais", k as any, { valorHora: Number(e.target.value) })} className="h-8 text-xs" placeholder="R$/hora"/>
+                                
+                                {k === 'espera' && cfg.ativo && (
+                                   <div className="w-full flex flex-col gap-2 mt-3 col-span-full border-t pt-2">
+                                      <div className="flex items-center justify-between">
+                                         <Label className="text-[10px] font-bold text-slate-700 uppercase">Faixas de Espera</Label>
+                                         {!readOnly && (
+                                            <Button variant="outline" size="sm" className="h-6 text-[10px] px-2" onClick={() => {
+                                               const novasFaixas = [...(cfg.faixas || []), { minInicial: 0, minFinal: null, valor: 0 }];
+                                               updateNested("adicionais", "espera", { faixas: novasFaixas });
+                                            }}>+ Faixa</Button>
+                                         )}
+                                      </div>
+                                      {(cfg.faixas || []).length === 0 ? (
+                                         <span className="text-[10px] text-muted-foreground italic leading-tight">Nenhuma faixa específica cadastrada. O cálculo usará Tolerância e R$/hora padrão.</span>
+                                      ) : (
+                                         <div className="flex flex-col gap-1">
+                                            {(cfg.faixas || []).map((fx: any, idx: number) => (
+                                               <div key={idx} className="flex items-center gap-1">
+                                                  <Input disabled={readOnly} type="number" className="h-7 text-xs w-14 px-1 text-center" placeholder="Min" value={fx.minInicial} onChange={e => {
+                                                     const f = [...cfg.faixas]; f[idx].minInicial = Number(e.target.value); updateNested("adicionais", "espera", { faixas: f });
+                                                  }}/>
+                                                  <span className="text-[10px] text-muted-foreground">a</span>
+                                                  <Input disabled={readOnly} type="number" className="h-7 text-xs w-14 px-1 text-center" placeholder="Max" value={fx.minFinal === null ? "" : fx.minFinal} onChange={e => {
+                                                     const f = [...cfg.faixas]; f[idx].minFinal = e.target.value ? Number(e.target.value) : null; updateNested("adicionais", "espera", { faixas: f });
+                                                  }}/>
+                                                  <span className="text-[10px] text-muted-foreground">min</span>
+                                                  <Input disabled={readOnly} type="number" className="h-7 text-xs flex-1 ml-1 px-1" placeholder="R$" value={fx.valor} onChange={e => {
+                                                     const f = [...cfg.faixas]; f[idx].valor = Number(e.target.value); updateNested("adicionais", "espera", { faixas: f });
+                                                  }}/>
+                                                  {!readOnly && (
+                                                     <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500" onClick={() => {
+                                                        const f = cfg.faixas.filter((_: any, i: number) => i !== idx); updateNested("adicionais", "espera", { faixas: f });
+                                                     }}><Trash2 className="w-3.5 h-3.5"/></Button>
+                                                  )}
+                                               </div>
+                                            ))}
+                                         </div>
+                                      )}
+                                   </div>
+                                )}
                              </div>
                           )}
                       </div>

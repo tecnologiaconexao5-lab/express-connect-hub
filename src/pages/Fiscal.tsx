@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FileText, FileSpreadsheet, UploadCloud, Link as LinkIcon, Plus, Stamp, Search, Download, Truck, Printer, Send, CreditCard, FileCheck, AlertCircle, Settings, Eye, Trash2, RefreshCw } from "lucide-react";
+import { FileText, FileSpreadsheet, UploadCloud, Link as LinkIcon, Plus, Stamp, Search, Download, Truck, Printer, Send, CreditCard, FileCheck, AlertCircle, Settings, Eye, Trash2, RefreshCw, Building2, Radio, LayoutDashboard, ShieldAlert } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,14 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import CteTab from "@/components/fiscal/cte/CteTab";
 import MdfeTab from "@/components/fiscal/mdfe/MdfeTab";
+import EmitenteFiscalConfig from "@/components/fiscal/EmitenteFiscalConfig";
+import RegrasFiscaisCte from "@/components/fiscal/RegrasFiscaisCte";
+import RegrasFiscaisNfse from "@/components/fiscal/RegrasFiscaisNfse";
+import FocusNfeConfig from "@/components/fiscal/FocusNfeConfig";
+import FiscalDashboard from "@/components/fiscal/FiscalDashboard";
+import AuditoriaFiscal from "@/components/fiscal/AuditoriaFiscal";
+import DocumentosTab from "@/components/fiscal/DocumentosTab";
+import NfseTab from "@/components/fiscal/NfseTab";
 
 // Mocks isolados, usar apenas para teste se necessário via env var
 const MOCK_MODE = import.meta.env.DEV && import.meta.env.VITE_USE_FISCAL_MOCKS === 'true';
@@ -158,9 +166,9 @@ export default function Fiscal() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <FileText className="w-8 h-8 text-primary" /> Central Fiscal
+            <FileText className="w-8 h-8 text-primary" /> Central Fiscal Conexao Express
           </h1>
-          <p className="text-muted-foreground">Emissão de NFS-e, CT-e, MDF-e e Boletos via Focus NFe / Efí</p>
+          <p className="text-muted-foreground">Emissao de NFS-e, CT-e, MDF-e — Ambiente de homologacao</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setShowConfigModal(true)} className="gap-1">
@@ -201,12 +209,24 @@ export default function Fiscal() {
         </Card>
       </div>
 
-      <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="mb-4 justify-start overflow-x-auto flex-wrap">
-           <TabsTrigger value="cte" className="gap-2"><FileSpreadsheet className="w-4 h-4"/>CT-e</TabsTrigger>
-           <TabsTrigger value="mdfe" className="gap-2"><Truck className="w-4 h-4"/>MDF-e</TabsTrigger>
-           <TabsTrigger value="nfse" className="gap-2"><Stamp className="w-4 h-4"/>NFS-e</TabsTrigger>
-        </TabsList>
+       <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
+         <TabsList className="mb-4 justify-start overflow-x-auto flex-wrap">
+            <TabsTrigger value="dashboard" className="gap-2"><LayoutDashboard className="w-4 h-4"/>Dashboard</TabsTrigger>
+            <TabsTrigger value="cte" className="gap-2"><FileSpreadsheet className="w-4 h-4"/>CT-e</TabsTrigger>
+            <TabsTrigger value="mdfe" className="gap-2"><Truck className="w-4 h-4"/>MDF-e</TabsTrigger>
+            <TabsTrigger value="nfse" className="gap-2"><Stamp className="w-4 h-4"/>NFS-e</TabsTrigger>
+            <TabsTrigger value="emitente" className="gap-2"><Building2 className="w-4 h-4"/>Emitente</TabsTrigger>
+            <TabsTrigger value="regras" className="gap-2"><AlertCircle className="w-4 h-4"/>Regras CT-e</TabsTrigger>
+           <TabsTrigger value="regras_nfse" className="gap-2"><Stamp className="w-4 h-4"/>Regras NFS-e</TabsTrigger>
+           <TabsTrigger value="documentos" className="gap-2"><FileText className="w-4 h-4"/>Documentos</TabsTrigger>
+            <TabsTrigger value="focus" className="gap-2"><Radio className="w-4 h-4"/>Focus NFe</TabsTrigger>
+           <TabsTrigger value="auditoria" className="gap-2"><ShieldAlert className="w-4 h-4"/>Auditoria</TabsTrigger>
+         </TabsList>
+
+         {/* --- Dashboard --- */}
+         <TabsContent value="dashboard" className="pt-4">
+            <FiscalDashboard />
+         </TabsContent>
 
         {/* --- CT-e --- */}
         <TabsContent value="cte" className="pt-4">
@@ -218,52 +238,40 @@ export default function Fiscal() {
            <MdfeTab />
         </TabsContent>
 
-        {/* --- NFS-e --- */}
-        <TabsContent value="nfse" className="space-y-4 pt-4">
-           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="relative w-full max-w-sm">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Buscar NFS-e, tomador..." className="pl-9 w-full" />
-              </div>
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                 <Button variant="outline" onClick={handleVincularOS}><LinkIcon className="w-4 h-4 mr-2"/> Vincular OS</Button>
-                 <Button variant="outline" onClick={() => handleEmitirDocumento("nfse")}><Stamp className="w-4 h-4 mr-2"/> Emitir NFS-e</Button>
-                 <Button className="bg-orange-600 hover:bg-orange-700 text-white" onClick={() => handleEmitirDocumento("boleto")}><CreditCard className="w-4 h-4 mr-2"/> Gerar Boleto Efí</Button>
-              </div>
-           </div>
+         {/* --- NFS-e --- */}
+         <TabsContent value="nfse" className="pt-4">
+            <NfseTab />
+         </TabsContent>
 
-           <Card>
-             <CardContent className="p-0">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Nº NFS-e</TableHead><TableHead>Tomador (Cliente)</TableHead><TableHead className="text-center">Cod. Serviço</TableHead><TableHead>Data Emissão</TableHead><TableHead className="text-right">Valor do Serviço</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Documento</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {nfses.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="h-24 text-center">
-                          <div className="flex flex-col items-center justify-center text-muted-foreground">
-                            <Stamp className="w-8 h-8 mb-2 opacity-20" />
-                            <p>Nenhuma NFS-e encontrada no banco de dados.</p>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : nfses.map((n, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="font-semibold text-green-700">{n.numero || "-"}</TableCell>
-                        <TableCell className="text-sm font-medium">{n.cliente || "-"}</TableCell>
-                        <TableCell className="text-xs text-center">{n.servico || "-"}</TableCell>
-                        <TableCell className="text-xs">{n.data_emissao ? new Date(n.data_emissao).toLocaleDateString() : "-"}</TableCell>
-                        <TableCell className="text-right font-medium">{fmtFin(n.valor || 0)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={n.status === "Autorizado" ? "bg-green-50 text-green-700 border-green-200" : n.status === "Rejeitado" || n.status === "Erro" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}>{n.status}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right"><Button variant="ghost" size="icon" className="h-8 w-8"><Download className="w-4 h-4 text-muted-foreground"/></Button></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-             </CardContent>
-           </Card>
-        </TabsContent>
+         {/* --- Emitente Fiscal --- */}
+         <TabsContent value="emitente" className="pt-4">
+            <EmitenteFiscalConfig />
+         </TabsContent>
+
+         {/* --- Regras Fiscais --- */}
+         <TabsContent value="regras" className="pt-4">
+            <RegrasFiscaisCte />
+         </TabsContent>
+
+         {/* --- Regras NFS-e --- */}
+         <TabsContent value="regras_nfse" className="pt-4">
+            <RegrasFiscaisNfse />
+         </TabsContent>
+
+         {/* --- Documentos --- */}
+         <TabsContent value="documentos" className="pt-4">
+            <DocumentosTab />
+         </TabsContent>
+
+         {/* --- Focus NFe --- */}
+         <TabsContent value="focus" className="pt-4">
+            <FocusNfeConfig />
+         </TabsContent>
+
+         {/* --- Auditoria --- */}
+         <TabsContent value="auditoria" className="pt-4">
+            <AuditoriaFiscal />
+         </TabsContent>
 
       </Tabs>
 

@@ -138,13 +138,16 @@ export function RecrutamentoModule() {
         email: c.email || '',
         tipoVeiculo: c.veiculo,
         regiao: `${c.cidade}, ${c.uf}`,
-        experiencia: '',
+        experiencia: c.tags?.includes('experiente') ? 'Experiente' : c.tags?.includes('recorrente') ? 'Recorrente' : '',
         score: c.score,
         status: STAGE_TO_STATUS[c.stage] ?? 'novo',
         canalCaptacao: extractOrigem(c.tags) as TalentosCandidato['canalCaptacao'],
         dataContato: c.dataEntrada,
         ultimoContato: c.dataAtualizacao,
         observacoes: c.observacoesIA || '',
+        documentosAprovados: (c.documentos || []).filter(d => d.status === 'ok').length,
+        statusDocumental: c.statusDocumental,
+        disponibilidade: c.disponibilidadeTipo,
       }))
       setTalentos(mapped)
     } catch {
